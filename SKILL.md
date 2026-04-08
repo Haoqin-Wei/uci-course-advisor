@@ -1,5 +1,5 @@
 ---
-name: recommend-course
+name: uci-course-advisor
 description: 根据用户要求推荐课程。当用户提问关于课程、教授推荐相关问题时调用。
 metadata:
   tags:
