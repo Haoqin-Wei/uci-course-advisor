@@ -10,8 +10,8 @@ Lifecycle (called by MemoryManager from chat.py):
     system_prompt_block() — static context injected into Claude's system prompt
     prefetch(query)       — dynamic recall before each LLM call
     on_turn_start(turn)   — per-turn nudge / counter
-    sync_turn(u, a)       — persist a completed turn (non-blocking)
-    on_session_end(hist)  — reflection + extraction at session end
+    sync_turn(u, a)       — completed-turn lifecycle hook
+    on_session_end()      — session cleanup hook
     shutdown()            — flush queues, close files
 
 Design intent:
@@ -75,8 +75,8 @@ class MemoryProvider(ABC):
         session_id: str,
     ) -> None:
         """
-        Persist a completed turn. Should be non-blocking — queue
-        for background processing if your backend has latency.
+        Completed-turn lifecycle hook. Chat transcripts are persisted
+        by app.data.sessions, not by MemoryProvider implementations.
         """
 
     # ── Session boundaries ──────────────────────────────────
@@ -85,12 +85,12 @@ class MemoryProvider(ABC):
         self,
         user_id: str,
         session_id: str,
-        history: list[dict],
     ) -> None:
         """
         Called when the session ends explicitly (browser closes,
-        /session/end called, gateway timeout). Use for end-of-session
-        fact extraction and consolidation.
+        /session/end called, gateway timeout). Do not persist chat
+        history here; sessions/{session_id}/turns.jsonl is the unique
+        transcript source.
         """
 
     def shutdown(self) -> None:

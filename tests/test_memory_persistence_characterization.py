@@ -81,6 +81,24 @@ def test_added_preference_persists_after_fresh_memory_manager(runtime_paths):
     assert "Prefers compact schedules" in prefetched_context
 
 
+def test_sync_turn_does_not_write_duplicate_turn_log(runtime_paths):
+    from app.memory.manager import get_memory_manager
+
+    manager = get_memory_manager()
+    session_id = "sess_memory_dedup"
+
+    manager.initialize_session(session_id, "demo_001")
+    manager.on_turn_start(session_id, "demo_001")
+    manager.sync_turn(
+        "demo_001",
+        "Which CS course should I take?",
+        "Consider ICS 45C.",
+        session_id,
+    )
+
+    assert not (runtime_paths.memory_root / "demo_001" / "turn_log.jsonl").exists()
+
+
 def test_deleted_preference_is_gone_after_fresh_memory_manager_but_loaded_cache_is_stale(
     app_client,
     runtime_paths,

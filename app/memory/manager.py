@@ -109,11 +109,11 @@ class MemoryManager:
         except Exception as e:
             logger.warning("sync_turn failed: %s", e)
 
-    def on_session_end(self, user_id: str, session_id: str, history: list[dict]) -> None:
+    def on_session_end(self, user_id: str, session_id: str) -> None:
         if not self._provider:
             return
         try:
-            self._provider.on_session_end(user_id, session_id, history)
+            self._provider.on_session_end(user_id, session_id)
         finally:
             self._turn_counts.pop(session_id, None)
             self._initialized_sessions.discard(session_id)

@@ -5,10 +5,10 @@ File layout per user (under data/memory/):
     {user_id}/
         ├── profile.json         Channel A: structured identity (major, year, target_gpa, ...)
         ├── facts.json           Channel A: event-style hard facts (currently_taking, completed)
-        ├── preferences.json     Channel B: soft preferences from periodic reflection
-        ├── turn_log.jsonl       Append-only log of every turn
-        └── sessions/
-            └── {session_id}.json   Snapshot at session end
+        └── preferences.json     Channel B: soft preferences from periodic reflection
+
+Chat transcripts are owned by app.data.sessions:
+    sessions/{session_id}/turns.jsonl
 
 Architecture (post-refactor):
     Channel A — every turn, immediate writes — handled by chat.py via
@@ -23,7 +23,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -152,20 +151,15 @@ class JSONFileMemoryProvider(MemoryProvider):
         assistant_message: str,
         session_id: str,
     ) -> None:
-        """Append the turn to a JSONL log. No memo extraction anymore."""
-        try:
-            user_dir = self.base_dir / user_id
-            user_dir.mkdir(parents=True, exist_ok=True)
-            entry = {
-                "ts": datetime.utcnow().isoformat(),
-                "session_id": session_id,
-                "user": user_message,
-                "assistant": assistant_message,
-            }
-            with (user_dir / "turn_log.jsonl").open("a", encoding="utf-8") as f:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        except Exception as e:
-            logger.warning("sync_turn failed for user=%s: %s", user_id, e)
+        """
+        No-op by design.
+
+        Full per-turn transcripts are persisted only in
+        sessions/{session_id}/turns.jsonl through app.data.sessions.
+        Keeping a Memory-level turn_log.jsonl created a second complete
+        copy that could drift from the session repository.
+        """
+        return None
 
     # ── Session boundaries ──────────────────────────────────
 
@@ -173,22 +167,15 @@ class JSONFileMemoryProvider(MemoryProvider):
         self,
         user_id: str,
         session_id: str,
-        history: list[dict],
     ) -> None:
-        try:
-            session_dir = self.base_dir / user_id / "sessions"
-            session_dir.mkdir(parents=True, exist_ok=True)
-            snapshot = {
-                "session_id": session_id,
-                "ended_at": datetime.utcnow().isoformat(),
-                "message_count": len(history),
-                "history": history,
-            }
-            with (session_dir / f"{session_id}.json").open("w", encoding="utf-8") as f:
-                json.dump(snapshot, f, ensure_ascii=False, indent=2)
-            logger.info("Session %s archived (%d msgs)", session_id, len(history))
-        except Exception as e:
-            logger.warning("on_session_end failed: %s", e)
+        """
+        No-op by design.
+
+        Session-end snapshots used to duplicate complete chat history
+        under data/memory/{user_id}/sessions. The session repository is
+        now the only transcript store.
+        """
+        return None
 
     def shutdown(self) -> None:
         for user_id, data in self._loaded.items():

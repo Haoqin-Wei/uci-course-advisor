@@ -174,7 +174,7 @@ def test_authenticated_chat_ignores_body_student_id_and_uses_cookie_user(
     assert state["major"] != "Data Science"
 
 
-def test_end_session_uses_cookie_user_not_body_student_id(
+def test_end_session_uses_cookie_user_without_archiving_duplicate_history(
     app_client,
     runtime_paths,
 ):
@@ -196,8 +196,8 @@ def test_end_session_uses_cookie_user_not_body_student_id(
     )
 
     assert response.status_code == 200
-    assert response.json()["messages_archived"] == 2
-    assert (
+    assert response.json() == {"ok": True, "messages_archived": 0}
+    assert not (
         runtime_paths.memory_root
         / alice["id"]
         / "sessions"

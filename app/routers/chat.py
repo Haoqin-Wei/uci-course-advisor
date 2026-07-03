@@ -1525,10 +1525,8 @@ async def end_session(
     user: dict = Depends(current_user_optional),
 ):
     user_id = user["id"]
-    session = get_or_create_session(req.session_id)
-    history = session.get("history", [])
-    get_memory_manager().on_session_end(user_id, req.session_id, history)
-    return {"ok": True, "messages_archived": len(history)}
+    get_memory_manager().on_session_end(user_id, req.session_id)
+    return {"ok": True, "messages_archived": 0}
 
 
 DAY_MAP = {"M": "Mon", "Tu": "Tue", "W": "Wed", "Th": "Thu", "F": "Fri"}
