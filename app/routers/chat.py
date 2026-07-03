@@ -958,14 +958,18 @@ async def _handle_agent(
     would produce duplicate text.
 
     Returns (reply_text, cards, followups, validation) on success.
-    v1: cards/followups/validation are always [], [], None — the agent
-    produces free-form text. Structured cards can be layered on later
-    by post-processing the reply or by adding a "propose_card" tool.
+
+    `cards` is populated when the LLM calls the `propose_recommendation`
+    tool — the loop emits a `cards_proposed` event that we accumulate
+    here (last call wins, so a multi-step turn that re-stages overrides
+    earlier picks). followups/validation are still always [], None for
+    the agent path; those land in their own follow-up phases.
     """
     from app.llm import adapter
 
     accumulated = ""
     saw_any_event = False
+    proposed_cards: list[dict] = []
 
     try:
         async for event in adapter.stream_agent_response(
@@ -1008,6 +1012,33 @@ async def _handle_agent(
                     "label": event.get("label"),
                     "ok":    event.get("ok", True),
                 })
+            elif t == "cards_proposed":
+                # propose_recommendation tool fired. Default behavior
+                # is REPLACE — if the LLM re-stages mid-turn during the
+                # normal loop, the latest batch is authoritative
+                # (refinement after a bad pick).
+                # EXCEPTION: from_fallback=True means the loop hit a
+                # budget limit and the fallback path made a last-ditch
+                # call. That call only has partial data (the courses
+                # the LLM managed to enrich before the cap) and tends
+                # to be conservative — it would silently shrink the
+                # earlier proposal. Merge those in instead, deduping
+                # by course_id so the prior batch is preserved.
+                new_cards = event.get("cards") or []
+                if event.get("from_fallback") and proposed_cards:
+                    existing_ids = {c.get("course_id") for c in proposed_cards}
+                    added = 0
+                    for c in new_cards:
+                        if c.get("course_id") not in existing_ids:
+                            proposed_cards.append(c)
+                            existing_ids.add(c.get("course_id"))
+                            added += 1
+                    logger.info("[agent handler] cards_proposed (fallback merge): "
+                                "+%d items (total %d)", added, len(proposed_cards))
+                else:
+                    proposed_cards = new_cards
+                    logger.info("[agent handler] cards_proposed: %d items",
+                                len(proposed_cards))
             elif t == "limit_reached":
                 # Budget hit. The loop will keep streaming token/final
                 # events from its no-tools fallback after this; the
@@ -1039,13 +1070,13 @@ async def _handle_agent(
         if not accumulated:
             return None    # nothing shown → safe to fall back
         await queue.put({"type": "error", "message": str(e)})
-        return (accumulated, [], [], None)
+        return (accumulated, proposed_cards, [], None)
 
     if not saw_any_event:
         # Generator yielded zero events — typically LLM_ENABLED=False.
         return None
 
-    return (accumulated, [], [], None)
+    return (accumulated, proposed_cards, [], None)
 
 
 from fastapi.responses import StreamingResponse
@@ -1362,19 +1393,77 @@ async def _stream_continue(req: ContinueRequest, user_id: str):
 class ScheduleRequest(BaseModel):
     session_id: str = "demo_session"
     course_id: str
-    section: str = "A"
+    # section is the section_num ("A", "A1", "B3") — NOT the 5-digit
+    # registrar code. For E4-style picks the frontend sends "A" for Lec,
+    # "A1" for Dis. Defaults to None (used by /remove to wipe all
+    # entries of a course; for /add the frontend always sends one).
+    section: Optional[str] = "A"
     # Frontend passes the term selector value; backend uses it to fetch
     # the right sections from db.get_sections (term-strict). None falls
     # back to session-state term, then to the catalog registry default.
     term: Optional[str] = None
 
 
+def _resolve_section_num(course_id: str, sec: Optional[str],
+                         term: Optional[str]) -> Optional[str]:
+    """
+    Normalise an entry's `section` field to a canonical section_num
+    ("A" / "A1" / "B"). The frontend pre-E4 sometimes stored the
+    5-digit registrar code ("34190") here; the current picker stores
+    section_num directly. To compare entries reliably we look the
+    string up against the course's actual sections and return its
+    section_num, treating section_num and section_code as
+    interchangeable inputs. None on miss — callers fall back to
+    raw-string equality.
+    """
+    if not sec:
+        return None
+    sec_str = str(sec).strip()
+    if not term:
+        return sec_str        # best effort; can't resolve without term
+    from app.data.db import get_sections
+    env = get_sections(course_id, term)
+    if not env.get("found"):
+        return sec_str
+    for s in env.get("sections", []):
+        if s.get("section_num") == sec_str or s.get("section_code") == sec_str:
+            return s.get("section_num") or s.get("section_code")
+    return sec_str
+
+
+def _entries_match(entry: dict, course_id: str, req_section: Optional[str],
+                   term: Optional[str]) -> bool:
+    """True if `entry` refers to the same (course, section) as the
+    request, surviving the section_num-vs-section_code mismatch
+    described in _resolve_section_num."""
+    if entry.get("course_id") != course_id:
+        return False
+    entry_norm = _resolve_section_num(course_id, entry.get("section"), term)
+    req_norm   = _resolve_section_num(course_id, req_section, term)
+    return entry_norm == req_norm and entry_norm is not None
+
+
 @router.post("/schedule/add")
 async def add_to_schedule(req: ScheduleRequest):
+    """Phase E4: each (course_id, section) pair is a separate schedule
+    entry. Adding Lec A and Dis A1 of the same course produces TWO
+    entries (and downstream, two calendar events) so the user sees
+    both blocks on the day grid.
+
+    Stores the normalized section_num so subsequent compares hit the
+    fast path instead of going through _resolve_section_num every
+    time."""
     session = get_or_create_session(req.session_id)
-    entry = {"course_id": req.course_id, "section": req.section, "status": "pending"}
-    existing_ids = [e["course_id"] for e in session.get("pending_schedule", [])]
-    if req.course_id not in existing_ids:
+    sec_norm = _resolve_section_num(req.course_id, req.section, req.term)
+    sec_canon = sec_norm or req.section
+    entry = {"course_id": req.course_id, "section": sec_canon, "status": "pending"}
+    # Dedup using section-equivalence (handles legacy entries that stored
+    # the 5-digit registrar code where the new picker stores section_num).
+    is_dup = any(
+        _entries_match(e, req.course_id, sec_canon, req.term)
+        for e in session.get("pending_schedule", [])
+    )
+    if not is_dup:
         session.setdefault("pending_schedule", []).append(entry)
     events = _build_schedule_events(session, req.term)
     return {"ok": True, "pending_schedule": session["pending_schedule"], "events": events}
@@ -1382,12 +1471,37 @@ async def add_to_schedule(req: ScheduleRequest):
 
 @router.post("/schedule/remove")
 async def remove_from_schedule(req: ScheduleRequest):
+    """If `section` is provided, remove only that specific (course, section).
+    Section-equivalence aware so legacy entries (5-digit codes stored
+    where section_num is now expected) get matched and removed.
+    If omitted, remove every entry for the course."""
     session = get_or_create_session(req.session_id)
-    session["pending_schedule"] = [
-        e for e in session.get("pending_schedule", []) if e["course_id"] != req.course_id
-    ]
+    if req.section:
+        session["pending_schedule"] = [
+            e for e in session.get("pending_schedule", [])
+            if not _entries_match(e, req.course_id, req.section, req.term)
+        ]
+    else:
+        session["pending_schedule"] = [
+            e for e in session.get("pending_schedule", []) if e["course_id"] != req.course_id
+        ]
     events = _build_schedule_events(session, req.term)
     return {"ok": True, "pending_schedule": session["pending_schedule"], "events": events}
+
+
+class ScheduleClearRequest(BaseModel):
+    session_id: str = "demo_session"
+    term: Optional[str] = None
+
+
+@router.post("/schedule/clear")
+async def clear_schedule(req: ScheduleClearRequest):
+    """Wipe every entry in this session's pending_schedule. Escape hatch
+    when the user accumulates stuck entries (e.g. from legacy format
+    that the section-equivalence fix can't auto-resolve)."""
+    session = get_or_create_session(req.session_id)
+    session["pending_schedule"] = []
+    return {"ok": True, "pending_schedule": [], "events": []}
 
 
 class EndSessionRequest(BaseModel):
@@ -1443,7 +1557,7 @@ def _build_schedule_events(session, term: Optional[str] = None):
 
     events = []
     for entry in session.get("pending_schedule", []):
-        cid, sid = entry["course_id"], entry.get("section", "A")
+        cid, sid = entry["course_id"], entry.get("section") or "A"
 
         course_env = get_course_info(cid)
         title = (
@@ -1456,10 +1570,15 @@ def _build_schedule_events(session, term: Optional[str] = None):
         if not sections:
             continue
 
-        # Match the requested section_code; otherwise grab the first
-        # lecture-like section (Lec > Sem > anything) so the calendar
-        # shows the primary meeting, not a Friday Dis.
-        sec = next((s for s in sections if s.get("section_code") == sid), None)
+        # Match by section_num (what the frontend picker sends: "A" /
+        # "A1") — NOT section_code (the 5-digit registrar number).
+        # Section_code matching was the legacy path and never hit;
+        # the frontend has always passed section_num here.
+        sec = next((s for s in sections if (s.get("section_num") or "") == sid), None)
+        if sec is None:
+            # Fall back to section_code match for old callers that
+            # somehow stored a code, then to first Lec/Sem.
+            sec = next((s for s in sections if s.get("section_code") == sid), None)
         if sec is None:
             lec_order = {"Lec": 0, "Sem": 1, "Stu": 2}
             sec = sorted(
@@ -1477,13 +1596,19 @@ def _build_schedule_events(session, term: Optional[str] = None):
 
         for day in _parse_days(days_str):
             events.append({
-                "course_id":  cid,
-                "title":      title,
-                "section":    sec.get("section_code", sid),
-                "instructor": primary_instructor,
-                "day":        day,
-                "start":      start,
-                "end":        end,
-                "location":   sec.get("location") or "",
+                "course_id":   cid,
+                "title":       title,
+                "section_num": sec.get("section_num") or sid,    # "A" / "A1"
+                "section_code": sec.get("section_code", ""),    # "34190" — 5-digit registrar code
+                "section_type": sec.get("section_type"),         # "Lec" / "Dis" / "Lab"
+                "instructor":  primary_instructor,
+                "day":         day,
+                "start":       start,
+                "end":         end,
+                "location":    sec.get("location") or "",
+                # Keep legacy `section` key (= section_code) for callers
+                # that haven't migrated yet (the frontend grid currently
+                # reads only course_id / day / start / end / location).
+                "section":     sec.get("section_code", ""),
             })
     return events

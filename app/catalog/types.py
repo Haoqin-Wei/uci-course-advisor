@@ -122,6 +122,7 @@ class SectionRecord:
     ge_categories: tuple[str, ...] = field(default_factory=tuple)
     # Schedule + capacity (optional — loader dependent)
     section_type: Optional[str] = None           # "Lec" / "Dis" / "Lab" / "Sem"
+    section_num: Optional[str] = None            # "A" / "A1" / "B" / "C3" — letter prefix is the pairing-group key (Lec A ↔ Dis A1)
     days: Optional[str] = None                   # "TuTh" / "MWF" / "F"
     start_time: Optional[str] = None             # "11:00" (24h "HH:MM")
     end_time: Optional[str] = None               # "12:20"
@@ -131,6 +132,8 @@ class SectionRecord:
     num_on_waitlist: Optional[int] = None
     status: Optional[str] = None                 # "OPEN" / "Waitl" / "FULL" / "NewOnly"
     is_cancelled: bool = False
+    restrictions: Optional[str] = None           # SOC 'Rstr' column, e.g. "A" / "BX" / "EJL"
+    final_exam: Optional[dict] = None            # Anteater finalExam shape — examStatus + (if SCHEDULED) dayOfWeek/month/day/startTime/endTime/bldg
     provenance: Optional[Provenance] = None
 
     @property

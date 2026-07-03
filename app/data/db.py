@@ -60,8 +60,11 @@ def _anteater_course_key(ref: CourseRef) -> str:
 def _section_record_to_dict(s: SectionRecord) -> dict:
     """Shape that agent tools serialize back to the LLM. Plain primitives
     only — no dataclasses, no None vs missing ambiguity for the LLM."""
+    # `restrictions` may not be on older SectionRecord dataclasses
+    # (CSV loader hasn't been re-cut). Tolerate missing attribute.
     return {
         "section_code":  s.section_code,
+        "section_num":   getattr(s, "section_num", None),  # "A" / "A1" / "B" / "C3"
         "section_type":  s.section_type,
         "days":          s.days,
         "start_time":    s.start_time,
@@ -77,6 +80,10 @@ def _section_record_to_dict(s: SectionRecord) -> dict:
         "status":        s.status,
         "is_cancelled":  s.is_cancelled,
         "ge_categories": list(s.ge_categories),
+        "restrictions":  getattr(s, "restrictions", None),
+        # CSV loader doesn't carry finalExam — None is fine, frontend
+        # gracefully shows "TBA" in that case.
+        "final_exam":    getattr(s, "final_exam", None),
     }
 
 
@@ -100,6 +107,7 @@ def _api_section_to_dict(sec: dict) -> dict:
                   else None)
     return {
         "section_code":  sec.get("sectionCode"),
+        "section_num":   sec.get("sectionNum"),       # "A" / "A1" / "B" / "C3" — the group letter is the prefix
         "section_type":  sec.get("sectionType"),
         "days":          days,
         "start_time":    st,
@@ -114,6 +122,14 @@ def _api_section_to_dict(sec: dict) -> dict:
         "status":        sec.get("status"),
         "is_cancelled":  False,
         "ge_categories": [],
+        # Anteater returns `restrictions` as a concatenated string like
+        # "A" or "AB" or "EJL" — the SOC Rstr column. Surface as-is
+        # so the dispatcher can decode against RESTRICTION_CODES.
+        "restrictions":  sec.get("restrictions"),
+        # finalExam: dict with examStatus + (if scheduled) dayOfWeek,
+        # month, day, startTime/endTime {hour, minute}, bldg.
+        # Pass through verbatim so the frontend can format.
+        "final_exam":    sec.get("finalExam"),
     }
 
 

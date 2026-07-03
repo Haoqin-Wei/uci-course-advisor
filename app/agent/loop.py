@@ -22,6 +22,13 @@ Event protocol (yielded to the caller, then forwarded to SSE):
         Surround each tool dispatch. The frontend renders these as
         status chips ("查询 CS122A sections...").
 
+    {"type": "cards_proposed",   "cards": [...]}
+        Emitted right after a propose_recommendation tool dispatch
+        succeeds. Carries the enriched course-card payload the
+        frontend renders as click-to-add tiles. Caller is expected
+        to accumulate the latest batch into the final SSE meta event
+        (last call wins).
+
     {"type": "final",            "text":..., "iterations":N, "tool_calls":M,
                                  "truncated": bool (optional)}
         Clean termination. text is the full accumulated assistant
@@ -62,6 +69,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import secrets
 import time
 from typing import AsyncIterator, Optional
@@ -71,7 +79,12 @@ from app.agent import tools as agent_tools
 logger = logging.getLogger(__name__)
 
 MAX_ITERATIONS = 6
-MAX_TOTAL_TOOLS = 12
+# Bumped 12 → 16 after Phase E1 landed. A typical recommendation flow
+# is 1 enumeration call (search_courses) + propose_recommendation +
+# ~3 enrichment calls per recommended course (grades / prereq /
+# professor) → ~13-15 tools. 12 was too tight; the LLM would burn the
+# budget on enrichment and never reach propose_recommendation.
+MAX_TOTAL_TOOLS = 16
 
 # When a budget limit is hit we stash the in-progress conversation so
 # the user can click "Continue" to resume with a fresh budget. State
@@ -348,6 +361,9 @@ async def _run_loop(
                 args = {}
 
             label = agent_tools.humanize_tool_call(tc["name"], args)
+            logger.info("[agent] iter=%d tool[%d/%d] %s args=%s",
+                        iteration, total_tool_calls + 1, MAX_TOTAL_TOOLS,
+                        tc["name"], {k: args.get(k) for k in list(args)[:4]})
             yield {"type": "tool_call_start",
                    "name": tc["name"], "args": args, "label": label}
 
@@ -375,6 +391,16 @@ async def _run_loop(
                    "name": tc["name"],
                    "ok": "error" not in result,
                    "label": label}
+
+            # Side-channel: propose_recommendation stages structured
+            # cards on the tool_context dict (the LLM-visible return is
+            # a short ack). Pop them here and emit a cards_proposed
+            # event so the SSE consumer can ship them in the meta
+            # event without round-tripping kilobytes through the
+            # model's context window.
+            staged = tool_context.pop("_proposed_cards", None)
+            if staged:
+                yield {"type": "cards_proposed", "cards": staged}
 
     # Iteration cap exhausted without a final answer.
     logger.warning("[agent] exceeded MAX_ITERATIONS=%d, %d tool calls used",
@@ -432,21 +458,34 @@ async def _emit_limit_reached_and_fallback(
         "role": "user",
         "content": (
             "[System notice: the tool-call budget for this turn has "
-            "been reached. Please give your best answer NOW using "
-            "only the information already gathered in the tool "
-            "results above. Do not request more tool calls. If you "
-            "couldn't fully answer the question, briefly say which "
-            "specific piece is missing — the user has a 'Continue' "
-            "button to extend the budget if they want more depth."
+            "been reached. Write your best final answer NOW using only "
+            "the information already gathered above. "
+            "ONE exception: if this is a course-recommendation turn and "
+            "you have not yet called `propose_recommendation`, you may "
+            "(and SHOULD) call it once now to stage the card list — "
+            "all other tools are disabled. Otherwise, write a clean "
+            "prose answer. Do NOT emit XML, DSML, `<invoke>`, or any "
+            "raw tool-call markup — you have at most ONE legitimate "
+            "tool available, use it via the normal tool_calls channel."
         ),
     }]
+
+    # Allow ONE last propose_recommendation call so the LLM has a way
+    # to stage cards even on the fallback path. Everything else stays
+    # disabled — otherwise the loop could spin forever.
+    fallback_tools = [
+        s for s in agent_tools.TOOL_SCHEMAS
+        if s["function"]["name"] == "propose_recommendation"
+    ]
+    tool_context: dict = {"user_id": user_id, "term": term}
 
     try:
         response = await client.chat.completions.create(
             model=model,
             messages=fallback_messages,
+            tools=fallback_tools,
+            tool_choice="auto",
             stream=True,
-            # Crucially: no tools= here. The model can ONLY write text.
         )
     except asyncio.CancelledError:
         raise
@@ -458,6 +497,7 @@ async def _emit_limit_reached_and_fallback(
         return
 
     accumulated = ""
+    fallback_tool_calls: dict[int, dict] = {}
     try:
         async for chunk in response:
             if not chunk.choices:
@@ -466,14 +506,116 @@ async def _emit_limit_reached_and_fallback(
             if delta.content:
                 accumulated += delta.content
                 yield {"type": "token", "text": delta.content}
+            if delta.tool_calls:
+                for tc_delta in delta.tool_calls:
+                    idx = tc_delta.index
+                    slot = fallback_tool_calls.setdefault(
+                        idx, {"id": "", "name": "", "arguments": ""}
+                    )
+                    if tc_delta.id:
+                        slot["id"] = tc_delta.id
+                    fn = tc_delta.function
+                    if fn:
+                        if fn.name:
+                            slot["name"] = fn.name
+                        if fn.arguments:
+                            slot["arguments"] += fn.arguments
     except asyncio.CancelledError:
         logger.info("[agent] cancelled during fallback finalize")
         raise
 
+    # Dispatch any propose_recommendation the LLM staged in the
+    # fallback. We don't loop again — this is the last call. No
+    # tool_call_start/done chips: by this point the message body has
+    # already streamed, and a trailing "staging cards…" chip would
+    # render out of order. Cards arrive silently via cards_proposed.
+    for tc in fallback_tool_calls.values():
+        if tc["name"] != "propose_recommendation":
+            continue
+        try:
+            args = json.loads(tc["arguments"] or "{}")
+        except json.JSONDecodeError as e:
+            logger.warning("[agent fallback] bad propose_recommendation args: %s", e)
+            continue
+        logger.info("[agent fallback] late propose_recommendation: items=%d term=%r",
+                    len(args.get("items") or []), args.get("term"))
+        result = agent_tools.dispatch(tc["name"], args, context=tool_context)
+        if "error" in result:
+            logger.warning("[agent fallback] propose_recommendation dispatch failed: %s",
+                           result.get("error"))
+            continue
+        staged = tool_context.pop("_proposed_cards", None)
+        if staged:
+            logger.info("[agent fallback] staged %d cards", len(staged))
+            # from_fallback=True signals to the caller that this batch
+            # was synthesized late under truncation pressure; the LLM
+            # may only have full data for a subset of the original
+            # picks. The caller should MERGE these into any earlier
+            # batch rather than overwrite — otherwise we silently
+            # shrink the user's recommendation.
+            yield {"type": "cards_proposed", "cards": staged, "from_fallback": True}
+
+    # Safety net: if the LLM bypassed the tool channel and dumped raw
+    # XML / DSML markup as text (a known DeepSeek failure mode when it
+    # *thinks* it has tools but the API rejected them), scrub it from
+    # the final saved text. Tokens already streamed live; the frontend
+    # re-renders from `final.text` so the saved/displayed history is
+    # clean even if the user saw a flash of markup during streaming.
+    cleaned = _scrub_tool_markup(accumulated)
+    if cleaned != accumulated:
+        logger.warning("[agent fallback] scrubbed %d chars of leaked tool markup",
+                       len(accumulated) - len(cleaned))
+
     yield {
         "type": "final",
-        "text": accumulated,
+        "text": cleaned,
         "iterations": iterations_used,
         "tool_calls": tool_calls_used,
         "truncated": True,
     }
+
+
+# DeepSeek (thinking mode) occasionally emits its internal "DSML"
+# tool-call serialization as visible text when tools aren't available
+# the way it expects. Strip any of these blocks so the saved final
+# answer is clean prose, not pseudo-XML.
+#
+# The leaked block looks like:
+#   < | | DSML | | tool_calls>
+#   < | | DSML | | invoke name="propose_recommendation">
+#   < | | DSML | | parameter name="items" string="false">[...]</| | DSML | | parameter>
+#   < | | DSML | | parameter name="term" string="true">Fall 2026</| | DSML | | parameter>
+#   </| | DSML | | invoke>
+#   </| | DSML | | tool_calls>
+#
+# Strategy: kill the whole tool_calls span first (everything between
+# opener and closer, inclusive, including parameter contents). Then
+# scrub any orphan DSML tags left from mid-stream truncations.
+_DSML_BLOCK = re.compile(
+    r"<\s*\|?\s*\|?\s*DSML\b[^>]*\btool_calls\b[^>]*>"   # opener
+    r"[\s\S]*?"                                          # contents
+    r"</\s*\|?\s*\|?\s*DSML\b[^>]*\btool_calls\b[^>]*>", # closer
+    re.IGNORECASE,
+)
+# Fallback: opener with no matching closer (mid-stream truncation) —
+# strip from the first opener to end of string.
+_DSML_OPEN_NO_CLOSE = re.compile(
+    r"<\s*\|?\s*\|?\s*DSML\b[\s\S]*\Z",
+    re.IGNORECASE,
+)
+# Catch-all for orphan tags that survived (e.g. </| | DSML | | parameter>
+# alone, no opener) — just delete each tag.
+_DSML_INLINE = re.compile(
+    r"</?\s*\|?\s*\|?\s*DSML[^>]*>",
+    re.IGNORECASE,
+)
+
+
+def _scrub_tool_markup(text: str) -> str:
+    if not text:
+        return text
+    out = _DSML_BLOCK.sub("", text)
+    out = _DSML_OPEN_NO_CLOSE.sub("", out)
+    out = _DSML_INLINE.sub("", out)
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out.strip()

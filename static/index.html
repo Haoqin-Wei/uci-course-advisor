@@ -4,71 +4,125 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ZotAdvisor — Academic Planning Console</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..24,300..500,0..1,0&display=swap" rel="stylesheet">
 <style>
 /* ═══════════════════════════════════════════════════════
    DESIGN TOKENS
    ═══════════════════════════════════════════════════════ */
 
 :root {
-  /* ── Neutral scale ───────────────────────────────── */
-  --gray-50:  #f5f5f5;
-  --gray-100: #ececec;
-  --gray-150: #e8e8e8;
-  --gray-200: #d9d9d9;
-  --gray-300: #b5b5b5;
-  --gray-500: #7b7b7b;
-  --gray-700: #404040;
-  --gray-800: #2a2a2a;
-  --gray-850: #222222;
-  --gray-900: #161616;
-  --gray-950: #0f0f0f;
+  /* ── Stitch palette (Material-style surface scale) ──
+     Pulled directly from the Stitch tailwind config the user
+     shared: warm-neutral grays (NOT slate). Sidebars now sit
+     on `surface-container` so they're noticeably tinted vs
+     the main chat canvas. Cards inside chat stay pure white
+     (surface-container-lowest) so they pop. */
+  --gray-50:  #f9f9f9;
+  --gray-100: #f2f4f4;
+  --gray-150: #ebeeef;
+  --gray-200: #e4e9ea;
+  --gray-300: #dde4e5;
+  --gray-500: #adb3b4;
+  --gray-700: #757c7d;
+  --gray-800: #5a6061;
+  --gray-850: #2d3435;
+  --gray-900: #1a1f20;
+  --gray-950: #0c0f0f;
 
-  /* ── Color: light gray app background, dark surfaces ── */
-  --bg-app:       #3f3f3f;     /* main page foundation */
-  --bg-shell:     #161616;     /* top bar / side panels */
-  --bg-panel:     #1f1f1f;     /* cards / AI message surfaces */
-  --bg-panel-2:   #262626;     /* user message / secondary surfaces */
-  --bg-elevated:  #2e2e2e;     /* tags / avatars / raised elements */
-  --bg-hover:     #383838;
+  /* ── Surfaces (Stitch surface scale, mapped 1:1) ──────
+     The three-layer scale is intentional and load-bearing:
+       bg-shell  (chrome)  is the most-tinted   — sidebars stand apart
+       bg-app    (canvas)  is mildly-tinted     — chat backdrop
+       bg-panel  (cards)   is pure white        — cards pop against canvas
+     Don't collapse layers — that's what made E0-v1 look flat. */
+  --bg-app:       #f9f9f9;     /* surface — chat canvas (warm off-white) */
+  --bg-shell:     #ebeeef;     /* surface-container — sidebars / topbar */
+  --bg-panel:     #ffffff;     /* surface-container-lowest — AI msg / cards */
+  --bg-panel-2:   #f2f4f4;     /* surface-container-low — user msg */
+  --bg-elevated:  #e4e9ea;     /* surface-container-high — chips */
+  --bg-hover:     #f2f4f4;
 
-  /* ── Borders: black / very dark gray ─────────────── */
-  --border-subtle:  rgba(0, 0, 0, 0.12);
-  --border-default: rgba(0, 0, 0, 0.22);
-  --border-strong:  rgba(0, 0, 0, 0.38);
+  /* ── Borders: subtle warm-gray hairlines ─────────── */
+  --border-subtle:  rgba(45, 52, 53, 0.05);
+  --border-default: rgba(45, 52, 53, 0.10);
+  --border-strong:  rgba(45, 52, 53, 0.20);
 
-  /* ── Text: white on dark surfaces ────────────────── */
-  --text-primary:   #ffffff;
-  --text-secondary: rgba(255, 255, 255, 0.78);
-  --text-tertiary:  rgba(255, 255, 255, 0.58);
-  --text-muted:     rgba(255, 255, 255, 0.42);
-  --text-disabled:  rgba(255, 255, 255, 0.25);
+  /* ── Text: darker than Stitch defaults so prose / labels / chips
+        all read with stronger contrast against the warm-white
+        surfaces. Each step roughly doubles the contrast against
+        --bg-app vs the original Stitch palette. */
+  --text-primary:   #14191a;   /* near-black warm-gray */
+  --text-secondary: #2d3435;   /* old --text-primary — now used for body prose */
+  --text-tertiary:  #4a5051;   /* darker outline */
+  --text-muted:     #6d7374;   /* secondary labels / icons */
+  --text-disabled:  #8a9091;   /* placeholder / TBA */
 
-  /* ── Accent: restrained blue ─────────────────────── */
-  /* Primary accent — muted smoky teal. Replaces the previous sky-blue
-     (#6ea8ff) which read as "generic SaaS". This sage-teal reads as
-     editorial / scholarly, doesn't clash with the amber warning palette
-     (--limit-reached) or the brighter --success green. */
-  --accent:        #5a8a7e;
-  --accent-soft:   rgba(90, 138, 126, 0.13);
-  --accent-medium: rgba(90, 138, 126, 0.24);
-  --accent-strong: #487368;
+  /* ── Overlay tints (warm-gray tinted) ─────────────
+     Reusable "wash" alpha values for hover backgrounds / faint
+     fills, all derived from on-surface so they blend with the
+     warm Stitch palette instead of looking cold-blue. */
+  --overlay-soft:    rgba(45, 52, 53, 0.04);
+  --overlay-medium:  rgba(45, 52, 53, 0.08);
+  --overlay-strong:  rgba(45, 52, 53, 0.14);
 
-  /* ── Status ──────────────────────────────────────── */
-  --success:      #6bc594;
-  --success-soft: rgba(107, 197, 148, 0.12);
-  --warning:      #e0b26a;
-  --warning-soft: rgba(224, 178, 106, 0.12);
-  --danger:       #e07a82;
-  --danger-soft:  rgba(224, 122, 130, 0.14);
+  /* ── Accent: Stitch primary slate-blue ───────────── */
+  --accent:        #456085;
+  --accent-soft:   rgba(69, 96, 133, 0.10);
+  --accent-medium: rgba(69, 96, 133, 0.20);
+  --accent-strong: #395478;
+  /* Stitch primary-container — used for "tag highlight" / soft
+     bg badges where we want the accent flavor + more saturation
+     than --accent-soft. */
+  --accent-container:     #d4e3ff;
+  --on-accent-container:  #385377;
 
-  /* ── Course block colors (schedule) ──────────────── */
-  --course-1: #7e8aa8;  --course-1s: rgba(126, 138, 168, 0.14);
-  --course-2: #6bc594;  --course-2s: rgba(107, 197, 148, 0.14);
-  --course-3: #b88fde;  --course-3s: rgba(184, 143, 222, 0.14);
-  --course-4: #e07a94;  --course-4s: rgba(224, 122, 148, 0.14);
-  --course-5: #e0b26a;  --course-5s: rgba(224, 178, 106, 0.14);
-  --course-6: #78c7c1;  --course-6s: rgba(120, 199, 193, 0.14);
+  /* ── Status (Stitch's error palette, plus tuned success/
+        warning to match the warm-gray surface palette) ── */
+  --success:      #2e7d52;
+  --success-soft: rgba(46, 125, 82, 0.10);
+  --warning:      #b45309;
+  --warning-soft: rgba(180, 83, 9, 0.10);
+  --danger:       #9f403d;
+  --danger-soft:  rgba(159, 64, 61, 0.10);
+
+  /* ── RMP rating tier (vivid traffic-light palette) ────
+     The status tokens above are intentionally muted to fit the
+     overall Stitch warm-gray surface. But for the prof-rating
+     chip the user needs to discriminate red / yellow / green
+     at a glance, which means saturated fills + white text (or
+     dark text on the yellow band where white wouldn't pass
+     AA contrast). These are used ONLY by .cc-sg-rmp-*. */
+  --rmp-positive:    #16a34a;   /* green — Tailwind green-600 (≥ 4.5:1 vs white) */
+  --rmp-mixed:       #eab308;   /* yellow — Tailwind yellow-500 (paired w/ dark text) */
+  --rmp-mixed-text:  #1a1300;   /* near-black for contrast on yellow */
+  --rmp-negative:    #dc2626;   /* red — Tailwind red-600 (≥ 4.5:1 vs white) */
+
+  /* ── Recommendation card categories (Phase E2) ───
+     Retuned for white-surface contrast. Saturation bumped vs
+     the dark-theme values; -soft alpha lowered to 10% so the
+     badge backgrounds don't look muddy against white. */
+  --cat-core:           #3b82f6;   /* blue-500 */
+  --cat-core-soft:      rgba(59, 130, 246, 0.10);
+  --cat-practical:      #10b981;   /* emerald-500 */
+  --cat-practical-soft: rgba(16, 185, 129, 0.10);
+  --cat-career:         #f59e0b;   /* amber-500 */
+  --cat-career-soft:    rgba(245, 158, 11, 0.12);
+  --cat-advanced:       #8b5cf6;   /* violet-500 */
+  --cat-advanced-soft:  rgba(139, 92, 246, 0.10);
+  --cat-elective:       #6b7280;   /* gray-500 */
+  --cat-elective-soft:  rgba(107, 114, 128, 0.10);
+
+  /* ── Course block colors (schedule) ───────────────
+     Darker / more saturated than the dark-theme versions so
+     each course block remains legible against the white-ish
+     schedule rail. */
+  --course-1: #4f5d80;  --course-1s: rgba(79, 93, 128, 0.12);
+  --course-2: #10a37f;  --course-2s: rgba(16, 163, 127, 0.12);
+  --course-3: #8b5cf6;  --course-3s: rgba(139, 92, 246, 0.12);
+  --course-4: #db2777;  --course-4s: rgba(219, 39, 119, 0.12);
+  --course-5: #d97706;  --course-5s: rgba(217, 119, 6, 0.12);
+  --course-6: #0891b2;  --course-6s: rgba(8, 145, 178, 0.12);
 
   /* ── Spacing: 4px system ─────────────────────────── */
   --space-1:  4px;
@@ -82,16 +136,22 @@
   --space-12: 48px;
 
   /* ── Typography ──────────────────────────────────── */
+  /* Stitch uses Inter for every role (display / body / label).
+     Mono kept for code blocks only — falls through to the OS
+     monospace stack since we no longer ship JetBrains Mono. */
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
-  --text-title:    28px;
-  --text-h1:       16px;
-  --text-h2:       14px;
-  --text-body:     14px;
-  --text-secondary-size: 12px;
-  --text-label:    11px;
-  --text-micro:    10px;
+  /* Type sizes bumped one step across the board. Body is now 16px
+     (browser default), labels 13px, micro 12px — better readability
+     and matches what the user asked for ("更大一些"). */
+  --text-title:    32px;       /* hero (Step 0 intro / page titles) */
+  --text-h1:       18px;
+  --text-h2:       16px;
+  --text-body:     16px;
+  --text-secondary-size: 14px; /* card titles, reasons, deadline footer */
+  --text-label:    13px;       /* chips, badges */
+  --text-micro:    12px;       /* smallest UI text — must still be legible */
 
   --weight-regular:  400;
   --weight-medium:   500;
@@ -108,8 +168,8 @@
   --radius-lg: 10px;
 
   /* ── Shadows ─────────────────────────────────────── */
-  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.18);
-  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.24);
+  --shadow-soft:  0 1px 2px rgba(45, 52, 53, 0.05);
+  --shadow-panel: 0 8px 24px rgba(45, 52, 53, 0.12);
 
   /* ── Motion ──────────────────────────────────────── */
   --transition: 160ms ease;
@@ -359,7 +419,7 @@ input { font-family: inherit; }
 .session-item:hover .session-item-delete { display: inline-flex; }
 .session-item-delete:hover {
   color: var(--text-primary);
-  background: rgba(255,255,255,0.06);
+  background: var(--overlay-medium);
 }
 .sessions-empty {
   font-size: var(--text-secondary-size);
@@ -525,9 +585,18 @@ input { font-family: inherit; }
 }
 
 /* ── Messages ──────────────────────────────────────── */
+/* Default (schedule rail closed): chat bubbles get the full
+   reading width — wider so course cards / sub-cards have room
+   to lay out side-by-side. When the schedule rail opens
+   (body.schedule-open), bubbles shrink back to the narrower
+   form so cards don't fight for space with the day grid. */
 .msg {
-  max-width: 760px;
+  max-width: 880px;
   animation: fadeIn 240ms ease;
+  transition: max-width var(--transition);
+}
+body.schedule-open .msg {
+  max-width: 680px;
 }
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
@@ -545,7 +614,17 @@ input { font-family: inherit; }
   line-height: var(--leading-normal);
 }
 
-.msg-ai { align-self: flex-start; width: 100%; max-width: 760px; }
+.msg-ai {
+  /* Centered in the chat column so wide screens leave breathing
+     room on both sides — feels like a reading column, not a wall
+     of text. User messages stay right-aligned (.msg-user keeps
+     flex-end) so the speaker direction still reads correctly. */
+  align-self: center;
+  width: 100%;
+  max-width: 880px;          /* widened with .msg above */
+  transition: max-width var(--transition);
+}
+body.schedule-open .msg-ai { max-width: 680px; }
 .msg-ai-label {
   font-size: var(--text-label);
   font-weight: var(--weight-medium);
@@ -568,148 +647,921 @@ input { font-family: inherit; }
   font-weight: var(--weight-semibold);
 }
 
-/* ── Course cards ──────────────────────────────────── */
+/* ── Markdown blocks (tables, code, headings, lists) ─
+   Scoped to .msg-ai-body so the advisor reply is the
+   only place they apply — keeps the rest of the UI
+   styling untouched. */
+.msg-ai-body .md-table-wrap {
+  overflow-x: auto;
+  margin: var(--space-3) 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--overlay-soft);
+}
+.msg-ai-body .md-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--text-secondary-size);
+  color: var(--text-secondary);
+  line-height: var(--leading-normal);
+}
+.msg-ai-body .md-table th,
+.msg-ai-body .md-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+.msg-ai-body .md-table th {
+  background: var(--overlay-soft);
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.msg-ai-body .md-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.msg-ai-body .md-table tbody tr:hover {
+  background: var(--overlay-soft);
+}
+.msg-ai-body .md-table strong {
+  color: var(--text-primary);
+}
+
+.msg-ai-body .md-h1,
+.msg-ai-body .md-h2,
+.msg-ai-body .md-h3 {
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+  margin: var(--space-3) 0 var(--space-2);
+  line-height: var(--leading-snug);
+}
+.msg-ai-body .md-h1 { font-size: 18px; }
+.msg-ai-body .md-h2 { font-size: 16px; }
+.msg-ai-body .md-h3 { font-size: 14px; letter-spacing: 0.02em; }
+.msg-ai-body .md-h1:first-child,
+.msg-ai-body .md-h2:first-child,
+.msg-ai-body .md-h3:first-child { margin-top: 0; }
+
+.msg-ai-body .md-pre {
+  background: var(--overlay-soft);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3) var(--space-4);
+  overflow-x: auto;
+  margin: var(--space-3) 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-secondary-size);
+  color: var(--text-secondary);
+  line-height: 1.55;
+  white-space: pre;
+}
+.msg-ai-body .md-pre code {
+  background: none;
+  padding: 0;
+  border: none;
+  font-family: inherit;
+  color: inherit;
+}
+.msg-ai-body .md-code {
+  background: var(--overlay-medium);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--text-primary);
+}
+
+.msg-ai-body .md-ul,
+.msg-ai-body .md-ol {
+  padding-left: 22px;
+  margin: var(--space-2) 0;
+}
+.msg-ai-body .md-ul li,
+.msg-ai-body .md-ol li {
+  margin: 2px 0;
+}
+
+.msg-ai-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: rgba(69, 96, 133, 0.45);
+}
+.msg-ai-body a:hover {
+  text-decoration-color: var(--accent);
+}
+
+.msg-ai-body hr.md-hr {
+  border: none;
+  border-top: 1px solid var(--border-default);
+  margin: var(--space-4) 0;
+}
+
+/* ── Course cards (Phase E2: Stitch-style geometry) ──
+   Strictly token-only — no hardcoded colors in this block.
+   Only the 5 --cat-* tokens (defined in :root) carry the
+   intentional category palette. Everything else uses
+   semantic tokens so the E0 theme swap is a one-file edit.
+*/
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
 .cards-row {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   margin-top: var(--space-4);
 }
+
+/* Header strip above the cards: "6 INTELLIGENCE MODULES"
+   on the left, color legend on the right. */
+.cards-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-3) var(--space-2);
+}
+.cards-header-title {
+  font-size: var(--text-label);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.cards-legend {
+  display: flex;
+  gap: var(--space-4);
+  font-size: var(--text-label);
+  color: var(--text-muted);
+}
+.cards-legend-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cards-legend-dot::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--legend-color, var(--text-muted));
+}
+
+/* Card shell + 12-col grid (id / body / prereqs / units) */
 .course-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-6) var(--space-5) calc(var(--space-6) + 4px);
   background: var(--bg-panel);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  padding: var(--space-4) var(--space-5);
-  transition: all var(--transition);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: transform var(--transition), border-color var(--transition), background var(--transition);
 }
 .course-card:hover {
+  transform: translateX(4px);
   border-color: var(--border-strong);
   background: var(--bg-panel-2);
 }
-.course-card.added {
-  border-color: rgba(95, 184, 138, 0.4);
-  background: var(--bg-panel);
-}
-.course-card.added::before {
-  content: '';
-  display: block;
-  width: 3px;
-  height: calc(100% - 24px);
-  background: var(--success);
-  position: absolute;
-  left: -1px;
-  top: 12px;
-  border-radius: 2px;
-}
-.course-card { position: relative; }
 
-.cc-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-  margin-bottom: var(--space-3);
+/* Left category color stripe — 4px ribbon */
+.course-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--card-stripe, var(--text-muted));
+  transition: background var(--transition);
 }
-.cc-id-row {
+.course-card.cat-core      { --card-stripe: var(--cat-core); }
+.course-card.cat-practical { --card-stripe: var(--cat-practical); }
+.course-card.cat-career    { --card-stripe: var(--cat-career); }
+.course-card.cat-advanced  { --card-stripe: var(--cat-advanced); }
+.course-card.cat-elective  { --card-stripe: var(--cat-elective); }
+.course-card.added         { --card-stripe: var(--success); }
+.course-card.added         { border-color: var(--success-soft); }
+
+/* col-3 — module ID block */
+.cc-id-block {
+  grid-column: span 3;
   display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
 }
 .cc-id {
-  font-size: var(--text-h2);
+  font-size: 22px;
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
-  letter-spacing: -0.01em;
-}
-.cc-units {
-  font-size: var(--text-label);
-  font-weight: var(--weight-medium);
-  color: var(--text-muted);
-  font-family: var(--font-mono);
+  letter-spacing: -0.02em;
+  line-height: var(--leading-tight);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .cc-title {
   font-size: var(--text-secondary-size);
-  color: var(--text-tertiary);
-  margin-top: var(--space-1);
-}
-.cc-actions { display: flex; gap: var(--space-2); flex-shrink: 0; }
-.cc-btn {
-  font-size: var(--text-label);
-  font-weight: var(--weight-medium);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  border: 1px solid;
-  transition: all var(--transition);
-  white-space: nowrap;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.cc-btn-add {
-  background: var(--accent-soft);
-  border-color: var(--accent-medium);
-  color: var(--accent);
-}
-.cc-btn-add:hover {
-  background: var(--accent-medium);
-  border-color: var(--accent);
-}
-.cc-btn-remove {
-  background: var(--danger-soft);
-  border-color: rgba(217, 112, 120, 0.25);
-  color: var(--danger);
-}
-.cc-btn-remove:hover {
-  background: rgba(217, 112, 120, 0.18);
-  border-color: var(--danger);
+  color: var(--text-muted);
+  margin-top: 4px;
+  line-height: var(--leading-normal);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
-.cc-meta {
+/* Single primary enrollment code chip — the 5-digit WebSoc
+   number for the headline Lecture section in the selected term.
+   Multi-section courses (writing, large lectures) carry the rest
+   on card.enrollment_codes for the eventual section-picker UI,
+   but only this one chip renders inline. */
+.cc-codes {
+  display: flex;
+  align-items: center;
+  margin-top: var(--space-2);
+}
+.cc-code,
+.cc-code-primary {                 /* both class names render the same chip now */
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: var(--weight-semibold);
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  letter-spacing: 0.04em;
+  cursor: default;
+}
+/* "+ Dis required" / "+ Lab required" reminder pill.
+   Warning-tinted so it reads as a constraint, not as a clickable
+   option. Sits next to the primary Lec code with a small gap. */
+.cc-codes {
+  gap: 6px;
+}
+
+/* Enrollment restriction pills (SOC 'Rstr' codes decoded into
+   one-line labels). Sit between the reason and the deadline row.
+   Style sits between "+ Dis required" (warning-tinted) and "Avg GPA"
+   (success-tinted) — restriction-tinted (warning + dashed border) so
+   the user reads them as constraints to satisfy, not features. */
+.cc-rstr {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--space-2);
+}
+.cc-rstr-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 8px 2px 4px;
+  border-radius: 4px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  cursor: help;
+  white-space: nowrap;
+}
+.cc-rstr-code {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--warning);
+  color: var(--bg-panel);     /* contrast against the saturated warning */
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0;
+}
+
+/* Per-term deadline footer — reads under the reason as a quiet
+   monospace line: "Free add/drop · Oct 9 · Drop w/o W · Nov 6".
+   Hover any piece for the full explanation. Designed to be calm —
+   not action-required, just a reference so the user doesn't have
+   to open the academic calendar in a new tab. */
+.cc-deadlines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: var(--space-2);
+  font-size: var(--text-micro);
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+.cc-deadlines b {
+  color: var(--text-tertiary);
+  font-weight: var(--weight-semibold);
+}
+.cc-deadlines-sep {
+  color: var(--text-disabled);
+}
+
+/* "Show sections ▾" toggle — a tiny inline-button that sits at the
+   bottom of cc-body. Reveals the section-groups sub-table below the
+   card. Restrained styling so it reads as "more detail available"
+   rather than a primary action. */
+.cc-sg-toggle {
+  align-self: flex-start;
+  margin-top: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px 2px 10px;
+  color: var(--text-tertiary);
+  font-family: var(--font-sans);
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+.cc-sg-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+.cc-sg-toggle .material-symbols-outlined {
+  font-size: 18px;
+}
+
+/* Section-groups panel — wraps a horizontal row of sub-cards
+   (one per Lec letter group). Spans all 12 grid columns so the
+   parent card's layout above doesn't squeeze it.
+
+   Collapsed by default. The `.open` modifier (added by
+   `toggleSectionGroups()` / `cardClickHandler()`) animates the
+   panel in with a max-height + opacity + padding tween. We avoid
+   `display: none` so the transition can actually run — `display`
+   isn't animatable. The collapsed `max-height: 0` collapses the
+   panel to nothing visually while still letting CSS interpolate.
+
+   The `--cc-sg-max` token lets the JS bump the upper bound at
+   open-time if a particular card has many groups; otherwise the
+   default 2400px comfortably fits 3-4 sub-cards stacked or wrapped. */
+.cc-sg-wrap {
+  grid-column: 1 / -1;
+  --cc-sg-max: 2400px;
+  background: var(--bg-app);            /* tinted off-white so the white sub-cards inside pop */
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  /* Collapsed state */
+  max-height: 0;
+  opacity: 0;
+  margin-top: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: var(--space-3);
+  padding-right: var(--space-3);
+  overflow: hidden;
+  pointer-events: none;                  /* prevent stray hover on collapsed panel */
+  border-color: transparent;
+  transition:
+    max-height       320ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity          200ms ease 60ms,    /* fade catches up after height starts */
+    margin-top       240ms ease,
+    padding-top      240ms ease,
+    padding-bottom   240ms ease,
+    border-color     200ms ease;
+}
+.cc-sg-wrap.open {
+  max-height: var(--cc-sg-max);
+  opacity: 1;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-color: var(--border-default);
+  pointer-events: auto;
+}
+.cc-sg-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+
+/* Pointer affordance on the parent card — clicking the body
+   toggles the section panel. Interactive children (add button,
+   chips, etc.) stop the click via cardClickHandler's `.closest`
+   filter, so this doesn't fight schedule-add etc. */
+.course-card {
+  cursor: pointer;
+}
+.course-card .cc-add-btn,
+.course-card .cc-sg-toggle,
+.course-card .cc-sg-wrap {
+  cursor: auto;                          /* nested interactive surfaces keep their own cursor */
+}
+
+/* Individual Lec sub-card — pure white panel with subtle border,
+   matching the same "surface-container-lowest" feel as the
+   recommendation cards themselves. */
+.cc-sg-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  min-width: 0;
+}
+.cc-sg-card.cc-sg-orphan {
+  border-style: dashed;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.cc-sg-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  flex-wrap: wrap;
+}
+.cc-sg-spacer { flex: 1; }                /* pushes the + button to the head row's right edge */
+
+/* The row-add cell gives the + button a fixed-width landing pad so
+   the table doesn't reflow when the hover-only button appears. */
+.cc-sg-row-add {
+  width: 36px;
+  text-align: right;
+  padding-right: 2px !important;
+}
+.cc-sg-letter {
+  font-family: var(--font-sans);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  text-transform: uppercase;
+}
+.cc-sg-code {
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+/* Professor + RMP rating row */
+.cc-sg-profs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cc-sg-prof {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-secondary-size);
+  color: var(--text-secondary);
+}
+.cc-sg-prof-name {
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* RMP rating chip — color is driven by the prof's tier slug
+   (mostly_positive / mixed / mostly_negative / insufficient_data /
+   unrated). Default color is overridden by the tier modifier classes
+   so the base block here just defines geometry + typography. */
+.cc-sg-rmp {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: var(--weight-semibold);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--overlay-medium);
+  color: var(--text-tertiary);          /* neutral if no tier class is applied */
+  white-space: nowrap;
+}
+.cc-sg-rmp .material-symbols-outlined { font-size: 14px; }
+.cc-sg-rmp-n {
+  font-family: var(--font-sans);
+  font-weight: var(--weight-regular);
+  font-size: var(--text-micro);
+  opacity: 0.7;
+}
+
+/* Tier modifiers — vivid traffic-light fills so red / yellow /
+   green pop apart at a glance (the previous soft-tint version was
+   too washed-out on a warm-gray surface, with red and yellow
+   nearly indistinguishable). The star icon inherits the chip's
+   color so it's automatically white on red/green, dark on yellow. */
+.cc-sg-rmp-positive {
+  background: var(--rmp-positive);
+  color: #ffffff;
+}
+.cc-sg-rmp-mixed {
+  background: var(--rmp-mixed);
+  color: var(--rmp-mixed-text);
+}
+.cc-sg-rmp-negative {
+  background: var(--rmp-negative);
+  color: #ffffff;
+}
+.cc-sg-rmp-insufficient {
+  background: var(--text-muted);
+  color: #ffffff;
+}
+/* The "(N reviews)" subscript needs a tweak too: on a saturated
+   fill, the previous opacity:0.7 reads as muddy. Bump to 0.85 +
+   keep currentColor so it adapts to whichever text color the
+   tier picked. */
+.cc-sg-rmp-positive .cc-sg-rmp-n,
+.cc-sg-rmp-negative .cc-sg-rmp-n,
+.cc-sg-rmp-insufficient .cc-sg-rmp-n {
+  opacity: 0.85;
+}
+.cc-sg-rmp-mixed .cc-sg-rmp-n {
+  opacity: 0.7;     /* on yellow, dark text + lower opacity reads as supporting text */
+}
+.cc-sg-rmp-na {
+  background: var(--overlay-medium);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+}
+
+/* Facts list: time / room / final exam */
+.cc-sg-facts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cc-sg-fact {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: var(--text-label);
+  color: var(--text-secondary);
+  line-height: var(--leading-normal);
+}
+.cc-sg-fact .material-symbols-outlined {
+  font-size: 16px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.cc-sg-fact dd {
+  margin: 0;
+  min-width: 0;
+  word-break: break-word;
+}
+
+/* Secondary (Dis/Lab) chips block at the bottom of each sub-card */
+.cc-sg-secs-block {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+.cc-sg-secs-label {
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+}
+/* Secondary (Dis/Lab) compact data-table.
+   Each row carries num · code · instructor (+RMP) · time · room ·
+   status. Rendered as a real <table> so the columns line up across
+   Dis sections (A1, A2, A3 align by column even when times differ).
+   On narrow screens (<480px the parent card itself collapses) we let
+   the table go horizontal-scroll so info isn't lost. */
+.cc-sg-sec-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-label);
+  color: var(--text-secondary);
+  line-height: var(--leading-normal);
+}
+.cc-sg-sec-table td {
+  padding: 4px 6px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.cc-sg-sec-table tr.cc-sg-row {
+  border-top: 1px solid var(--border-subtle);
+}
+.cc-sg-sec-table tr.cc-sg-row:first-child {
+  border-top: none;
+}
+.cc-sg-rownum {
+  display: inline-block;
+  font-family: var(--font-sans);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  text-transform: uppercase;
+}
+.cc-sg-row-code {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+.cc-sg-row-instcell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.cc-sg-row-inst {
+  color: var(--text-primary);
+  font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cc-sg-row-staff {
+  font-family: var(--font-sans);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--overlay-medium);
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.cc-sg-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+}
+.cc-sg-row-meta .material-symbols-outlined {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.cc-sg-row-status {
+  text-align: right;
+}
+
+/* Status / availability badges — reused everywhere a section is shown */
+.cc-sg-badge {
+  font-family: var(--font-sans);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.cc-sg-badge.danger  { background: var(--danger-soft);  color: var(--danger); }
+.cc-sg-badge.warning { background: var(--warning-soft); color: var(--warning); }
+.cc-sg-badge.muted   { background: var(--overlay-medium); color: var(--text-muted); }
+
+.cc-code-secondary {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-sans);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: help;
+  white-space: nowrap;
+}
+
+/* col-5 — badges + reason */
+.cc-body {
+  grid-column: span 5;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  justify-content: center;
+  min-width: 0;
+}
+.cc-badges {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
-  margin-top: var(--space-3);
 }
-.cc-tag {
-  font-size: var(--text-label);
-  font-weight: var(--weight-medium);
-  padding: var(--space-1) var(--space-2);
+.cc-badge {
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  padding: 3px 8px;
   border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   background: var(--bg-elevated);
   color: var(--text-tertiary);
-  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
-.cc-tag-prereq-warn {
-  background: var(--warning-soft);
-  color: var(--warning);
-}
-.cc-tag-seats-0 {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-.cc-tag-conflict-all {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-.cc-tag-conflict-some {
-  background: var(--warning-soft);
-  color: var(--warning);
-}
+.cc-badge-cat-core      { background: var(--cat-core-soft);      color: var(--cat-core); }
+.cc-badge-cat-practical { background: var(--cat-practical-soft); color: var(--cat-practical); }
+.cc-badge-cat-career    { background: var(--cat-career-soft);    color: var(--cat-career); }
+.cc-badge-cat-advanced  { background: var(--cat-advanced-soft);  color: var(--cat-advanced); }
+.cc-badge-cat-elective  { background: var(--cat-elective-soft);  color: var(--cat-elective); }
+.cc-badge-priority-high { background: var(--accent-soft);        color: var(--accent); }
+.cc-badge-warning       { background: var(--warning-soft);       color: var(--warning); }
+.cc-badge-danger        { background: var(--danger-soft);        color: var(--danger); }
+.cc-badge-success       { background: var(--success-soft);       color: var(--success); }
 .cc-reason {
-  font-size: var(--text-secondary-size);
-  color: var(--text-tertiary);
-  margin-top: var(--space-3);
+  font-size: var(--text-body);
+  color: var(--text-secondary);
   line-height: var(--leading-normal);
+  font-weight: var(--weight-medium);
 }
-.cc-section-row {
+
+/* col-3 — prereq chips with lock icons */
+.cc-prereqs {
+  grid-column: span 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  align-content: center;
+}
+.cc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  padding: 4px 10px 4px 8px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.cc-chip-met { color: var(--success); background: var(--success-soft); }
+.cc-chip .material-symbols-outlined {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.cc-chip-met .material-symbols-outlined { color: var(--success); }
+
+/* col-1 — units */
+.cc-units-block {
+  grid-column: span 1;
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  font-size: var(--text-secondary-size);
+  justify-content: flex-end;
+}
+.cc-units {
+  font-size: 18px;
+  font-weight: var(--weight-semibold);
   color: var(--text-tertiary);
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
+  letter-spacing: -0.02em;
+  /* Stitch shows units in Inter (matching the module ID). */
+}
+
+/* Apple Store–style + → ✓ button. Lives on each Lec sub-card head
+   (always visible) and on each Dis/Lab row (revealed on row hover).
+
+   Mechanic: two Material Symbols stacked at the same position;
+   default state shows `add`, the `.added` modifier crossfades to
+   `check` with a small bounce and the background flips from accent
+   to success-green — mimicking the App Store "Buy → ✓" beat.
+
+   `.cc-sg-add-hover` is the hover-only variant for Dis rows; the
+   row's :hover reveals it. */
+.cc-sg-add {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  background: var(--bg-panel);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition:
+    background    260ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-color  260ms ease,
+    color         260ms ease,
+    transform     180ms ease;
+}
+.cc-sg-add:hover {
+  background: var(--accent-soft);
+  transform: scale(1.06);
+}
+.cc-sg-add:active {
+  transform: scale(0.94);
+}
+.cc-sg-add .material-symbols-outlined {
+  position: absolute;
+  font-size: 18px;
+  line-height: 1;
+  /* Spring-curve so the swap feels alive, not just a fade. */
+  transition:
+    opacity    220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform  280ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.cc-sg-add .icon-add   { opacity: 1; transform: rotate(0)     scale(1); }
+.cc-sg-add .icon-check { opacity: 0; transform: rotate(-90deg) scale(0.3); }
+.cc-sg-add.added {
+  background: var(--success);
+  border-color: var(--success);
+  color: var(--bg-panel);
+  /* On the transition INTO added, give the whole button a small
+     pop via the keyframe so it reads as a confirmation moment. */
+  animation: cc-sg-add-pop 380ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.cc-sg-add.added:hover {
+  background: var(--success);
+  filter: brightness(0.96);
+}
+.cc-sg-add.added .icon-add   { opacity: 0; transform: rotate(90deg) scale(0.3); }
+.cc-sg-add.added .icon-check { opacity: 1; transform: rotate(0)     scale(1); }
+@keyframes cc-sg-add-pop {
+  0%   { transform: scale(1);    }
+  45%  { transform: scale(1.18); }
+  100% { transform: scale(1);    }
+}
+
+/* Hover-only variant: applied to the Dis/Lab row buttons so the
+   page isn't littered with 30 + signs at rest. */
+.cc-sg-add-hover {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease,
+              background 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+tr.cc-sg-row:hover .cc-sg-add-hover,
+tr.cc-sg-row:focus-within .cc-sg-add-hover {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Once added, keep the + visible even when not hovering — otherwise
+   the user can't tell at a glance which Dis they picked. */
+tr.cc-sg-row .cc-sg-add-hover.added {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Stub card for course IDs the catalog didn't recognise. */
+.course-card.not-found {
+  opacity: 0.7;
+  border-style: dashed;
+}
+.course-card.not-found .cc-id { color: var(--text-tertiary); }
+
+/* Mobile: collapse the grid into a single column */
+@media (max-width: 700px) {
+  .course-card {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
+  }
+  .cc-id-block,
+  .cc-body,
+  .cc-prereqs,
+  .cc-units-block { grid-column: span 1; }
+  .cc-units-block { justify-content: flex-start; }
+  .cc-add-btn { display: none; }     /* tap whole card instead */
 }
 
 /* ── Follow-up chips ───────────────────────────────── */
@@ -770,28 +1622,28 @@ input { font-family: inherit; }
   flex-shrink: 0;
 }
 .tool-chip.is-active {
-  border-color: #c79b3a;
-  color: #e0b252;
-  background: rgba(199, 155, 58, 0.08);
+  border-color: var(--warning);
+  color: var(--warning);
+  background: rgba(217, 119, 6, 0.08);
 }
 .tool-chip.is-active .tool-dot {
-  background: #e0b252;
+  background: var(--warning);
   animation: tool-chip-pulse 1.2s ease-in-out infinite;
 }
 .tool-chip.is-done {
   opacity: 0.65;
 }
 .tool-chip.is-done .tool-dot {
-  background: #5fb98c;
+  background: var(--success);
 }
 .tool-chip.is-error {
-  border-color: #b85c4b;
-  color: #d97a68;
-  background: rgba(184, 92, 75, 0.08);
+  border-color: var(--danger);
+  color: var(--danger);
+  background: rgba(220, 38, 38, 0.08);
   opacity: 1;
 }
 .tool-chip.is-error .tool-dot {
-  background: #d97a68;
+  background: var(--danger);
   animation: none;
 }
 @keyframes tool-chip-pulse {
@@ -812,8 +1664,8 @@ input { font-family: inherit; }
   gap: var(--space-3);
   margin-top: var(--space-3);
   padding: var(--space-3) var(--space-4);
-  background: rgba(199, 155, 58, 0.06);
-  border: 1px solid rgba(199, 155, 58, 0.25);
+  background: rgba(217, 119, 6, 0.06);
+  border: 1px solid rgba(217, 119, 6, 0.25);
   border-radius: var(--radius-md);
   font-size: var(--text-secondary-size);
   color: var(--text-secondary);
@@ -869,10 +1721,19 @@ input { font-family: inherit; }
   padding: var(--space-5) var(--space-8);
   background: var(--bg-shell);
 }
+/* Composer width follows the message-bubble max-width pattern:
+   1100px by default so it lines up with the wider chat layout,
+   shrinks to 760px when the schedule rail opens (body.schedule-open
+   gets set by openSchedule / toggleSchedule). The transition keeps
+   it in lockstep with .msg / .msg-ai. */
 .input-row {
   display: flex;
   gap: var(--space-3);
-  max-width: 760px;
+  max-width: 880px;
+  transition: max-width var(--transition);
+}
+body.schedule-open .input-row {
+  max-width: 680px;
 }
 .input-field {
   flex: 1;
@@ -980,7 +1841,6 @@ input { font-family: inherit; }
   letter-spacing: 0.02em;
 }
 .schedule-close {
-  margin-left: auto;
   background: transparent;
   border: none;
   color: var(--text-muted);
@@ -996,6 +1856,34 @@ input { font-family: inherit; }
   background: var(--bg-panel-2);
 }
 
+/* Clear button — escape hatch for sessions stuck in legacy state.
+   Pushed against the close button on the right, but visually less
+   prominent (ghost style) so users don't fat-finger a wipe. */
+.schedule-clear {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  line-height: 1;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: all var(--transition);
+}
+.schedule-clear:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.schedule-clear:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 .schedule-body {
   flex: 1;
   overflow: auto;
@@ -1004,7 +1892,12 @@ input { font-family: inherit; }
 .schedule-grid {
   display: grid;
   grid-template-columns: 56px repeat(5, 1fr);
-  min-height: 100%;
+  /* DO NOT set min-height: 100% here — it stretches the grid rows
+     to fill the body, breaking the JS topOffset math (which assumes
+     a fixed ROW_HEIGHT) and putting events in the wrong row. The
+     grid's natural height is HEADER_HEIGHT + N × ROW_HEIGHT; if
+     content exceeds .schedule-body's height, the body's overflow:
+     auto handles the scroll. */
   position: relative;
 }
 .sg-corner {
@@ -1019,10 +1912,15 @@ input { font-family: inherit; }
   color: var(--text-tertiary);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: var(--space-3) 0;
+  /* Locked height: must match the JS HEADER_HEIGHT constant so
+     absolute-positioned event tiles land in the right row. */
+  height: 40px;            /* 40 + 1px border = 41 visual */
+  line-height: 40px;       /* center text vertically without padding */
+  padding: 0;
   background: var(--bg-shell);
   border-bottom: 1px solid var(--border-default);
   border-right: 1px solid var(--border-subtle);
+  box-sizing: border-box;
 }
 .sg-day-header:last-child { border-right: none; }
 .sg-time-label {
@@ -1043,40 +1941,122 @@ input { font-family: inherit; }
   position: relative;
 }
 .sg-cell:last-child { border-right: none; }
+
+/* Hour-band striping — every other hour row gets a faint overlay
+   tint, matching AntAlmanac's .rbc-timeslot-group:nth-child(odd)
+   pattern. Subtle enough to read as rhythm, not contrast. */
+.sg-time-label.sg-band,
+.sg-cell.sg-band {
+  background: var(--overlay-soft);
+}
+
+/* ── Event tile (AntAlmanac-inspired 2-row layout) ──
+   Row 1: course_id + section_num | section_type badge
+   Row 2: meeting time            | location (when tall enough)
+   Row 3 (footer): 5-digit registrar code  */
 .sg-event {
   position: absolute;
   border-radius: var(--radius-sm);
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--text-secondary-size);
+  padding: 4px 8px 4px 10px;
+  font-size: var(--text-label);
   line-height: var(--leading-snug);
   overflow: hidden;
   z-index: 2;
-  cursor: default;
+  cursor: pointer;
   border-left: 3px solid;
-  transition: all var(--transition);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  transition:
+    transform   180ms ease,
+    box-shadow  220ms ease,
+    filter      var(--transition);
 }
 .sg-event:hover {
-  filter: brightness(1.15);
-  transform: translateX(1px);
+  filter: brightness(1.06);
+  transform: translate(1px, -1px);
+  box-shadow: var(--shadow-panel);
+  z-index: 5;
+}
+.sg-event-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
 }
 .sg-event-id {
   font-weight: var(--weight-semibold);
-  font-size: var(--text-h2);
+  font-size: var(--text-secondary-size);
   color: inherit;
   letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.sg-event-detail {
-  font-size: var(--text-label);
-  color: var(--text-tertiary);
-  margin-top: var(--space-1);
-  font-weight: var(--weight-regular);
+.sg-event-type {
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.78;
+  flex-shrink: 0;
 }
+.sg-event-bot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: var(--text-micro);
+  font-weight: var(--weight-medium);
+  opacity: 0.85;
+}
+.sg-event-time {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.sg-event-room {
+  font-size: var(--text-micro);
+  opacity: 0.78;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sg-event-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  opacity: 0.72;
+  margin-top: auto;
+  letter-spacing: 0.02em;
+}
+
+/* Empty-state polish: centered icon + 2-line message */
 .schedule-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
   text-align: center;
   padding: var(--space-12) var(--space-6);
   color: var(--text-muted);
   font-size: var(--text-secondary-size);
   line-height: var(--leading-relaxed);
+}
+.schedule-empty-icon {
+  font-size: 48px;
+  color: var(--text-disabled);
+}
+.schedule-empty-title {
+  font-size: var(--text-h2);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+.schedule-empty-sub {
+  color: var(--text-muted);
+}
+.schedule-empty-sub b {
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -1201,7 +2181,7 @@ input { font-family: inherit; }
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(45, 52, 53, 0.45);
   z-index: 200;
   align-items: center;
   justify-content: center;
@@ -1216,11 +2196,11 @@ input { font-family: inherit; }
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   width: 100%;
-  max-width: 680px;
+  max-width: 760px;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 24px 60px rgba(45, 52, 53, 0.45);
 }
 .modal-header {
   display: flex;
@@ -1272,7 +2252,7 @@ input { font-family: inherit; }
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.6;
   padding: var(--space-3);
@@ -1285,7 +2265,7 @@ input { font-family: inherit; }
 .modal-meta {
   font-size: 11px;
   color: var(--text-muted);
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 .modal-footer {
   display: flex;
@@ -1318,7 +2298,7 @@ input { font-family: inherit; }
 }
 .modal-btn-primary:hover {
   background: var(--accent);
-  color: #0a1a2e;
+  color: #ffffff;
 }
 .modal-btn-ghost {
   border-color: transparent;
@@ -1354,14 +2334,14 @@ input { font-family: inherit; }
   width: 14px;
   text-align: center;
 }
-.validation-issue-error    .validation-issue-icon { color: #f08080; }
-.validation-issue-warn     .validation-issue-icon { color: #e4b261; }
+.validation-issue-error    .validation-issue-icon { color: var(--danger); }
+.validation-issue-warn     .validation-issue-icon { color: var(--warning); }
 .validation-issue-info     .validation-issue-icon { color: var(--accent); }
 .validation-issue code {
   background: var(--bg-elevated);
   padding: 1px 5px;
   border-radius: 3px;
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-secondary);
 }
@@ -1405,7 +2385,7 @@ input { font-family: inherit; }
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 .user-bar-name {
   flex: 1;
@@ -1430,7 +2410,7 @@ input { font-family: inherit; }
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 24px rgba(45, 52, 53, 0.18);
   padding: var(--space-2);
   display: none;
   z-index: 100;
@@ -1462,7 +2442,7 @@ input { font-family: inherit; }
   padding: var(--space-2) var(--space-3);
   font-size: 11px;
   color: var(--text-tertiary);
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 
 /* ── Memory modal ──────────────────────────────────────── */
@@ -1695,7 +2675,7 @@ input { font-family: inherit; }
   right: 0;
   bottom: -1px;
   height: 2px;
-  background: var(--accent, #5a8a7e);
+  background: var(--accent);
   border-radius: 1px;
 }
 .auth-pane {
@@ -1749,8 +2729,8 @@ input { font-family: inherit; }
   cursor: pointer;
   transition: all var(--transition);
   border: 1px solid var(--border-strong);
-  background: var(--accent, #5a8a7e);
-  color: #fff;
+  background: var(--accent);
+  color: #ffffff;
 }
 .auth-btn:hover:not(:disabled) {
   filter: brightness(1.08);
@@ -1774,10 +2754,10 @@ input { font-family: inherit; }
 }
 .auth-error {
   font-size: var(--text-secondary-size);
-  color: #d97a68;
+  color: var(--danger);
   padding: var(--space-2) var(--space-3);
-  background: rgba(184, 92, 75, 0.08);
-  border: 1px solid rgba(184, 92, 75, 0.25);
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.25);
   border-radius: var(--radius-sm);
   display: none;
 }
@@ -1836,7 +2816,7 @@ input { font-family: inherit; }
   z-index: 300;
   /* Darker than --bg-app so the #262626 cards visibly pop. The
      wizard is its own world; the rest of the app keeps its own bg. */
-  background: #141414;
+  background: var(--bg-app);
   flex-direction: column;
   overflow: hidden;
 }
@@ -1870,10 +2850,10 @@ input { font-family: inherit; }
 .wizard-step-divider {
   height: 1px;
   width: 40px;
-  background: rgba(255,255,255,0.2);
+  background: var(--overlay-strong);
 }
 .wizard-step-name {
-  color: rgba(255,255,255,0.72);
+  color: var(--text-secondary);
   font-weight: 600;
   letter-spacing: 0.12em;
   font-size: 10px;
@@ -1935,8 +2915,8 @@ input { font-family: inherit; }
 .wizard-matrix-clear:hover { color: var(--text-primary); text-decoration: underline; }
 .wizard-matrix {
   min-height: 52px;
-  background: rgba(255,255,255,0.04);
-  border: 1px dashed rgba(255,255,255,0.18);
+  background: var(--overlay-soft);
+  border: 1px dashed var(--border-strong);
   border-radius: var(--radius-md);
   padding: var(--space-2) var(--space-3);
   display: flex;
@@ -1956,8 +2936,8 @@ input { font-family: inherit; }
   align-items: center;
   gap: 6px;
   padding: 4px 8px 4px 10px;
-  background: var(--accent, #5a8a7e);
-  color: #fff;
+  background: var(--accent);
+  color: #ffffff;
   border-radius: var(--radius-sm);
   font-size: 10px;
   font-weight: 700;
@@ -1966,9 +2946,9 @@ input { font-family: inherit; }
   animation: fadeInUp 240ms cubic-bezier(0.4,0,0.2,1);
 }
 .wizard-chip button {
-  background: rgba(255,255,255,0.18);
+  background: var(--overlay-strong);
   border: none;
-  color: #fff;
+  color: #ffffff;
   width: 16px; height: 16px;
   border-radius: 50%;
   cursor: pointer;
@@ -1978,7 +2958,7 @@ input { font-family: inherit; }
   font-size: 12px;
   line-height: 1;
 }
-.wizard-chip button:hover { background: rgba(255,255,255,0.32); }
+.wizard-chip button:hover { background: rgba(45, 52, 53,0.32); }
 
 /* Search bar (step 4) */
 .wizard-search {
@@ -2021,10 +3001,10 @@ input { font-family: inherit; }
 }
 .wizard-card {
   /* Bumped from --bg-panel (#1f1f1f) to --bg-panel-2 (#262626) plus a
-     light hairline border. On the new #141414 wizard bg this gives a
+     light hairline border. On the new var(--bg-app) wizard bg this gives a
      clearly readable card surface without blowing out the contrast. */
   background: var(--bg-panel-2);
-  border: 1px solid rgba(255,255,255,0.10);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   padding: 18px;
   cursor: pointer;
@@ -2037,13 +3017,13 @@ input { font-family: inherit; }
   animation: fadeInUp 400ms cubic-bezier(0.4,0,0.2,1) backwards;
 }
 .wizard-card:hover {
-  border-color: rgba(255,255,255,0.28);
+  border-color: var(--text-muted);
   background: var(--bg-elevated);
   transform: translateY(-2px);
 }
 .wizard-card.selected {
   border-color: var(--accent);
-  background: var(--accent-soft);   /* rgba(110,168,255,0.12) — visible blue wash */
+  background: var(--accent-soft);   /* rgba(69, 96, 133,0.12) — visible blue wash */
   box-shadow: 0 0 0 1px var(--accent) inset;
 }
 .wizard-card .cat {
@@ -2051,7 +3031,7 @@ input { font-family: inherit; }
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.55);   /* up from --text-tertiary (0.58) for context labels */
+  color: var(--text-tertiary);   /* up from --text-tertiary (0.58) for context labels */
 }
 .wizard-card.selected .cat { color: var(--accent); }
 .wizard-card .code {
@@ -2062,7 +3042,7 @@ input { font-family: inherit; }
 }
 .wizard-card .title {
   font-size: 12px;
-  color: rgba(255,255,255,0.78);   /* explicit instead of var so it survives selected-state */
+  color: var(--text-secondary);   /* explicit instead of var so it survives selected-state */
   line-height: 1.45;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -2070,7 +3050,7 @@ input { font-family: inherit; }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.wizard-card.selected .title { color: rgba(255,255,255,0.92); }
+.wizard-card.selected .title { color: var(--text-primary); }
 .wizard-card .check {
   position: absolute;
   top: 14px;
@@ -2078,7 +3058,7 @@ input { font-family: inherit; }
   width: 20px; height: 20px;
   border-radius: 50%;
   background: var(--accent);
-  color: #fff;
+  color: #ffffff;
   display: flex; align-items: center; justify-content: center;
   font-size: 13px;
   font-weight: 700;
@@ -2127,7 +3107,7 @@ input { font-family: inherit; }
 }
 .wizard-footer-info .count {
   font-weight: 700;
-  color: var(--accent, #5a8a7e);
+  color: var(--accent);
 }
 .wizard-actions { display: flex; gap: 10px; }
 .wizard-btn {
@@ -2150,9 +3130,9 @@ input { font-family: inherit; }
   color: var(--text-primary);
 }
 .wizard-btn.primary {
-  background: var(--accent, #5a8a7e);
-  border-color: var(--accent, #5a8a7e);
-  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
 }
 .wizard-btn.primary:hover:not(:disabled) {
   filter: brightness(1.1);
@@ -2205,30 +3185,348 @@ input { font-family: inherit; }
   line-height: 1.45;
 }
 
-/* Alphabetical letter header inside the Step 4 course grid */
-.wizard-letter-header {
+/* Step 0 — intro / welcome screen
+   Shown once on first auto-trigger. The wizard-header (step number +
+   headline) is hidden via .is-intro on the overlay so this hero gets
+   the full vertical real estate. */
+.wizard-overlay.is-intro .wizard-header { display: none; }
+.wizard-overlay.is-intro .wizard-main {
+  padding-top: var(--space-6);
+  position: relative;
+}
+.wizard-overlay.is-intro .wizard-content {
+  overflow-y: auto;
+  position: relative;
+}
+.wizard-overlay.is-intro #wizardStep0 {
+  justify-content: center;       /* vertical-center the hero */
+  min-height: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+/* Ambient mouse-tracking glow behind the hero. JS sets --mx / --my
+   on the overlay; the radial wash follows the cursor at low opacity
+   so it feels like the page is breathing as you move the mouse. */
+.wizard-overlay.is-intro .wizard-main::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(720px circle at var(--mx, 50%) var(--my, 35%),
+                    rgba(69, 96, 133, 0.10), transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+  transition: background 240ms ease-out;
+}
+
+.wizard-intro {
+  max-width: 720px;
+  margin: 0 auto;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-6) 0;
+}
+.wizard-intro-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 6px 14px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+}
+.wizard-intro-eyebrow .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: introPulse 2.4s ease-in-out infinite;
+}
+@keyframes introPulse {
+  0%, 100% { opacity: 1;   box-shadow: 0 0 8px var(--accent); }
+  50%      { opacity: 0.55; box-shadow: 0 0 14px var(--accent); }
+}
+
+/* Decorative 3-line architecture motif between eyebrow and headline.
+   Same idea as the Stitch reference — quiet structural detail that
+   reinforces the "architect" framing without competing with the type. */
+.wizard-intro-architect {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 38px;
+  height: 64px;
+  margin: 0;
+}
+.wizard-intro-architect .line {
+  width: 1px;
+  background: linear-gradient(to top, var(--accent), transparent);
+}
+.wizard-intro-architect .line:nth-child(1) { height: 38px; opacity: 0.45; }
+.wizard-intro-architect .line:nth-child(2) { height: 60px; opacity: 0.70; }
+.wizard-intro-architect .line:nth-child(3) { height: 28px; opacity: 0.45; }
+.wizard-intro-headline {
+  font-size: clamp(36px, 5vw, 56px);
+  line-height: 1.08;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  margin: 0;
+}
+.wizard-intro-accent {
+  color: var(--accent);
+  font-weight: 600;
+}
+.wizard-intro-sub {
+  font-size: 14.5px;
+  line-height: 1.78;
+  letter-spacing: 0.005em;
+  color: var(--text-primary);
+  max-width: 620px;
+  margin: 0 auto;
+  /* Pre-wrap so the JS-typed \n turns into a real line break instead
+     of collapsing into a space. Centered text: each line recenters as
+     characters are added, which gives the typewriter a gentle "settling"
+     motion (existing chars drift left as new ones arrive). */
+  white-space: pre-wrap;
+  text-align: center;
+  /* Reserve vertical space for the typed-out text so the value-blocks
+     below don't reflow upward while typing. ~6 lines covers the
+     trimmed copy + paragraph gap comfortably. */
+  min-height: calc(14.5px * 1.78 * 6);
+  font-family: var(--font-mono, 'JetBrains Mono', ui-monospace, 'SF Mono', monospace);
+}
+
+/* Terminal-style cursor — solid bar that follows the typed text.
+   When typing finishes JS adds .is-blinking and the cursor breathes. */
+.wizard-cursor {
+  display: inline-block;
+  width: 0.55ch;
+  height: 1.05em;
+  background: var(--accent);
+  vertical-align: text-bottom;
+  margin-left: 1px;
+  opacity: 1;
+  border-radius: 1px;
+}
+.wizard-cursor.is-blinking {
+  animation: wizardCursorBlink 1.05s steps(2, jump-none) infinite;
+}
+@keyframes wizardCursorBlink {
+  0%, 50%      { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+.wizard-intro-values {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+  width: 100%;
+  margin-top: var(--space-4);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-default);
+}
+.wizard-intro-value {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0 var(--space-3);
+  text-align: center;
+}
+.wizard-intro-value svg {
+  width: 28px;
+  height: 28px;
+  color: var(--accent);
+  opacity: 0.9;
+  transition: transform 400ms cubic-bezier(0.4,0,0.2,1);
+}
+.wizard-intro-value:hover svg { transform: scale(1.08); }
+.wizard-intro-value h3 {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  margin: 0;
+}
+.wizard-intro-value p {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-tertiary);
+  margin: 0;
+  font-weight: 300;
+}
+@media (max-width: 720px) {
+  .wizard-intro-values { grid-template-columns: 1fr; gap: var(--space-3); }
+  .wizard-intro-values { border-top: none; }
+}
+
+/* ── Cinematic intro entrance ──────────────────────────
+   Each piece fades up with a staggered delay so the hero
+   "assembles" itself. The headline gets a special keyframe
+   that starts with wide letter-spacing and tightens — the
+   text settles into place like a print job aligning. */
+@keyframes introFadeUp {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes introHeadlineSettle {
+  0% {
+    opacity: 0;
+    transform: translateY(28px);
+    letter-spacing: 0.18em;
+    filter: blur(2px);
+  }
+  60% {
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    letter-spacing: -0.02em;
+    filter: blur(0);
+  }
+}
+@keyframes introLineGrow {
+  from { transform: scaleY(0); opacity: 0; }
+  to   { transform: scaleY(1); opacity: 1; }
+}
+
+.wizard-intro-eyebrow,
+.wizard-intro-architect,
+.wizard-intro-headline,
+.wizard-intro-value {
+  opacity: 0;
+  animation-fill-mode: forwards;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+.wizard-intro-eyebrow {
+  animation-name: introFadeUp;
+  animation-duration: 1.4s;
+  animation-delay: 0.10s;
+}
+.wizard-intro-architect {
+  animation-name: introFadeUp;
+  animation-duration: 1.4s;
+  animation-delay: 0.30s;
+}
+.wizard-intro-architect .line {
+  transform-origin: bottom;
+  animation: introLineGrow 1.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.wizard-intro-architect .line:nth-child(1) { animation-delay: 0.45s; }
+.wizard-intro-architect .line:nth-child(2) { animation-delay: 0.55s; }
+.wizard-intro-architect .line:nth-child(3) { animation-delay: 0.65s; }
+
+.wizard-intro-headline {
+  animation-name: introHeadlineSettle;
+  animation-duration: 2.0s;
+  animation-delay: 0.55s;
+}
+/* Subtitle: visible-but-empty so JS can type into it. The typing
+   itself is its entrance. */
+.wizard-intro-sub { opacity: 1; }
+
+/* Value blocks fade up AFTER the typewriter finishes (~5.4s from open). */
+.wizard-intro-value {
+  animation-name: introFadeUp;
+  animation-duration: 1.2s;
+}
+.wizard-intro-value:nth-child(1) { animation-delay: 5.55s; }
+.wizard-intro-value:nth-child(2) { animation-delay: 5.70s; }
+.wizard-intro-value:nth-child(3) { animation-delay: 5.85s; }
+
+/* Bouncy primary CTA when the wizard is in intro mode — draws the eye */
+.wizard-overlay.is-intro .wizard-btn.primary {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.wizard-overlay.is-intro .wizard-btn.primary::before {
+  content: '';
+  position: absolute;
+  inset: 0 -50% 0 -50%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(45, 52, 53,0.18),
+    transparent
+  );
+  transform: translateX(-100%);
+  transition: transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+.wizard-overlay.is-intro .wizard-btn.primary:hover::before {
+  transform: translateX(100%);
+}
+.wizard-overlay.is-intro .wizard-btn.primary:hover {
+  box-shadow: 0 12px 28px -8px rgba(69, 96, 133, 0.45);
+  transform: translateY(-2px);
+}
+
+/* Respect reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .wizard-intro-eyebrow,
+  .wizard-intro-architect,
+  .wizard-intro-headline,
+  .wizard-intro-sub,
+  .wizard-intro-value,
+  .wizard-intro-architect .line,
+  .wizard-intro-eyebrow .dot {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    letter-spacing: -0.02em !important;
+    filter: none !important;
+  }
+}
+
+/* Department-group header (UCI WebSoc index style):
+   CODE · Course Department Name        N COURSES                       */
+.wizard-dept-header {
   grid-column: 1 / -1;
   display: flex;
   align-items: baseline;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  gap: 10px;
   margin: var(--space-5) 0 var(--space-2);
   padding-bottom: var(--space-2);
-  border-bottom: 1px solid rgba(255,255,255,0.14);
-  scroll-margin-top: 8px;   /* so smooth-scrolling doesn't bury the header */
+  border-bottom: 1px solid var(--border-strong);
+  scroll-margin-top: 8px;
 }
-.wizard-letter-header:first-child { margin-top: 0; }
-.wizard-letter-header .letter {
-  font-size: 22px;
+.wizard-dept-header:first-child { margin-top: 0; }
+.wizard-dept-header .dept-code {
+  font-size: 18px;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.04em;
   color: var(--accent);
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
 }
-.wizard-letter-header .count {
+.wizard-dept-header .dept-sep {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.wizard-dept-header .dept-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.wizard-dept-header .count {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.55);
+  color: var(--text-tertiary);
+  margin-left: auto;
 }
 
 /* Step 4 body holds the scrolling card grid on the left and the
@@ -2248,7 +3546,7 @@ input { font-family: inherit; }
   gap: 2px;
   padding: 6px 4px;
   background: var(--bg-panel-2);
-  border: 1px solid rgba(255,255,255,0.12);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   overflow-y: auto;
   flex-shrink: 0;
@@ -2261,7 +3559,7 @@ input { font-family: inherit; }
   height: 26px;
   background: transparent;
   border: none;
-  color: rgba(255,255,255,0.62);
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -2269,8 +3567,8 @@ input { font-family: inherit; }
   transition: background 140ms, color 140ms;
 }
 .wizard-letter-nav button:hover {
-  background: rgba(255,255,255,0.08);
-  color: #fff;
+  background: var(--overlay-medium);
+  color: #ffffff;
 }
 .wizard-letter-nav button.is-active {
   background: var(--accent-medium);
@@ -2278,10 +3576,10 @@ input { font-family: inherit; }
 }
 
 /* Hide-via-class for the search filter: avoid re-rendering 9000 cards
-   on each keystroke. Letter headers + A-Z nav buttons that lose all
+   on each keystroke. Dept headers + A-Z nav buttons that lose all
    their visible children get hidden too. */
 .wizard-card.is-hidden,
-.wizard-letter-header.is-hidden,
+.wizard-dept-header.is-hidden,
 .wizard-letter-nav button.is-hidden { display: none !important; }
 
 </style>
@@ -2428,6 +3726,10 @@ input { font-family: inherit; }
     <div class="schedule-header">
       <div class="schedule-header-title">Weekly Schedule</div>
       <span class="pill" id="scheduleCount">0 courses</span>
+      <button class="schedule-clear"
+              id="scheduleClearBtn"
+              onclick="clearSchedule()"
+              title="Remove every section from the schedule">Clear</button>
       <button class="schedule-close" onclick="toggleSchedule()">&#x2715;</button>
     </div>
     <div class="schedule-body" id="scheduleBody">
@@ -2456,6 +3758,59 @@ input { font-family: inherit; }
 
     <!-- Step content (one of these shows at a time) -->
     <div class="wizard-content">
+
+      <!-- ─ Step 0: intro / welcome ──────────────────── -->
+      <div id="wizardStep0" style="display:none;">
+        <div class="wizard-intro">
+          <div class="wizard-intro-eyebrow">
+            <span class="dot"></span>
+            <span>Welcome to ZotAdvisor · v0.1</span>
+          </div>
+
+          <!-- Decorative architect lines (3 thin verticals with grad-to-accent) -->
+          <div class="wizard-intro-architect" aria-hidden="true">
+            <span class="line"></span>
+            <span class="line"></span>
+            <span class="line"></span>
+          </div>
+
+          <h1 class="wizard-intro-headline">
+            Architect your<br>
+            <span class="wizard-intro-accent">academic path.</span>
+          </h1>
+
+          <p class="wizard-intro-sub" id="wizardIntroTyped" aria-live="polite"></p>
+
+          <div class="wizard-intro-values">
+            <div class="wizard-intro-value">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="12" cy="12" r="9"/>
+                <circle cx="12" cy="12" r="4"/>
+                <circle cx="12" cy="12" r="0.5" fill="currentColor"/>
+              </svg>
+              <h3>Precision matching</h3>
+              <p>The agent matches courses to your progress and skips ones you've already taken or can't enroll in yet.</p>
+            </div>
+            <div class="wizard-intro-value">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z"/>
+                <path d="M9 12l2 2 4-4"/>
+              </svg>
+              <h3>Your data, private</h3>
+              <p>Your profile lives in a local SQLite store. Nothing leaves your machine — only you can read it once logged in.</p>
+            </div>
+            <div class="wizard-intro-value">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M3 21v-4l8-8 4 4-8 8H3z"/>
+                <path d="M14 6l3-3 4 4-3 3z"/>
+                <path d="M3 14h4"/>
+              </svg>
+              <h3>Graduation pathing</h3>
+              <p>Tracks your major requirements and GE progress so the AI can flag exactly what units you still need.</p>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- ─ Step 1: School ───────────────────────────── -->
       <div class="wizard-grid-wrap" id="wizardStep1" style="display:none;">
@@ -2672,6 +4027,12 @@ let USER_ID = 'demo_001';
 let currentAuthUser = null;
 let currentSessionId = null;
 let addedCourses = new Set();
+// Per-section add state for Phase E4's section picker. Keys are
+// "<course_id>:<section_num>" — e.g. "CS161:A" for the Lec, "CS161:A1"
+// for a Discussion. Distinct from addedCourses (course-level) which
+// the schedule rail's counter still uses. A course is in addedCourses
+// as long as ANY of its sections is in addedSectionKeys.
+let addedSectionKeys = new Set();
 let scheduleEvents = [];
 let scheduleOpen = false;
 let colorIndex = 0;
@@ -2682,15 +4043,17 @@ let currentAbortController = null;   // active fetch controller (null when idle)
 let defaultSystemPrompt = '';        // populated by /api/system_prompt
 const PROMPT_STORAGE_KEY = 'zotadvisor.systemPrompt';
 
-// Schedule course-block palette. course-1 swapped from sky-blue to a
-// muted slate-periwinkle to match the new --course-1 token.
+// Schedule course-block palette. Values match the --course-N /
+// --course-Ns tokens in :root so the JS-assigned inline colors stay
+// in sync when the theme palette is retuned. Update both places if
+// you change the schedule palette.
 const COLORS = [
-  ['#7e8aa8', 'rgba(126, 138, 168, 0.14)'],
-  ['#5fb88a', 'rgba(95, 184, 138, 0.12)'],
-  ['#b385d9', 'rgba(179, 133, 217, 0.12)'],
-  ['#d97894', 'rgba(217, 120, 148, 0.12)'],
-  ['#d4a45c', 'rgba(212, 164, 92, 0.12)'],
-  ['#6dbdb8', 'rgba(109, 189, 184, 0.12)'],
+  ['#4f5d80', 'rgba(79, 93, 128, 0.12)'],
+  ['#10a37f', 'rgba(16, 163, 127, 0.12)'],
+  ['#8b5cf6', 'rgba(139, 92, 246, 0.12)'],
+  ['#db2777', 'rgba(219, 39, 119, 0.12)'],
+  ['#d97706', 'rgba(217, 119, 6, 0.12)'],
+  ['#0891b2', 'rgba(8, 145, 178, 0.12)'],
 ];
 
 function getCourseColor(id) {
@@ -3009,12 +4372,9 @@ function finalizeAiMessage(wrap, fullText, meta, stopped) {
 
   // Cards
   if (meta.cards && meta.cards.length > 0) {
-    const cardsDiv = document.createElement('div');
-    cardsDiv.className = 'cards-row';
-    let cardsHtml = '';
-    for (const card of meta.cards) cardsHtml += renderCard(card);
-    cardsDiv.innerHTML = cardsHtml;
-    wrap.appendChild(cardsDiv);
+    const block = document.createElement('div');
+    block.innerHTML = renderCardsBlock(meta.cards);
+    if (block.firstElementChild) wrap.appendChild(block.firstElementChild);
   }
 
   // Followups
@@ -3203,9 +4563,7 @@ function appendAI(data) {
   html += '</div>';
 
   if (data.cards && data.cards.length > 0) {
-    html += '<div class="cards-row">';
-    for (const card of data.cards) html += renderCard(card);
-    html += '</div>';
+    html += renderCardsBlock(data.cards);
   }
 
   if (data.followups && data.followups.length > 0) {
@@ -3246,144 +4604,772 @@ function renderValidationFooter(report) {
   return html;
 }
 
-function renderCard(card) {
-  const isAdded = addedCourses.has(card.course_id);
-  const addedClass = isAdded ? ' added' : '';
+/* Stitch-style recommendation card. Consumes the schema produced by
+   the `propose_recommendation` agent tool (app/agent/tools.py):
+       {course_id, title, units, category, priority, reason,
+        prereq_met, prereq_missing[], prereq_required[],
+        sections: [...], grade_distribution: {avg_gpa, ...},
+        ge_category, found}
+   Falls through gracefully on missing fields — found=false renders
+   a faded stub, missing sections/grade just hide their badges. */
+const CATEGORY_LABELS = {
+  core:      'Core',
+  practical: 'Practical',
+  career:    'Career',
+  advanced:  'Advanced',
+  elective:  'Elective',
+};
 
-  let bestSec = card.sections?.[0] || null;
-  for (const s of (card.sections || [])) {
-    if (s.professor_rating?.overall > (bestSec?.professor_rating?.overall || 0)) bestSec = s;
+function _catSlug(card) {
+  const c = (card?.category || 'elective').toLowerCase();
+  return CATEGORY_LABELS[c] ? c : 'elective';
+}
+
+function _firstSection(card) {
+  // Sections from db.get_sections may include cancelled rows — prefer
+  // the first non-cancelled section with a time, else first overall.
+  const all = card?.sections || [];
+  for (const s of all) {
+    if (!s.is_cancelled && s.days && s.start_time) return s;
+  }
+  return all[0] || null;
+}
+
+function _renderCardBadges(card, cat) {
+  const out = [];
+  out.push(
+    `<span class="cc-badge cc-badge-cat-${cat}">${CATEGORY_LABELS[cat]}</span>`
+  );
+  if ((card?.priority || '').toLowerCase() === 'high') {
+    out.push(`<span class="cc-badge cc-badge-priority-high">High Priority</span>`);
+  }
+  if (card?.ge_category) {
+    out.push(`<span class="cc-badge">${escHTML(card.ge_category)}</span>`);
+  }
+  const gpa = card?.grade_distribution?.avg_gpa;
+  if (typeof gpa === 'number' && gpa > 0) {
+    out.push(`<span class="cc-badge cc-badge-success">Avg GPA ${gpa.toFixed(1)}</span>`);
+  }
+  return out.join('');
+}
+
+/* Section enrollment row: the primary (Lec) code as the headline
+   chip, and — when the course requires a paired Discussion / Lab /
+   Studio — a smaller "+ Dis required" reminder pill. WebReg rejects
+   schedules that have only the Lec without a paired secondary, so
+   this isn't a hint, it's a hard rule (policies.ENROLLMENT_RULES).
+   The pill's tooltip lists the bookable secondary codes. */
+function _renderCodeRow(card) {
+  const codes = card?.enrollment_codes || [];
+  // Primary first (dispatcher orders enrollment_codes[0] = primary).
+  const primary = codes[0] || null;
+  // Legacy non-agent path: fall back to first raw section.
+  const fallback = primary ? null : (card?.sections || [])[0];
+  const code = primary?.code || fallback?.section_code;
+  if (!code) return '';
+  const meta = primary || fallback || {};
+  const tip = [meta.type || meta.section_type,
+               meta.days,
+               meta.time || (meta.start_time && meta.end_time
+                              ? `${meta.start_time}-${meta.end_time}` : null),
+               (meta.instructors || [])[0]]
+              .filter(Boolean).join(' · ');
+
+  let secondaryPill = '';
+  if (card?.requires_secondary) {
+    const secs = card?.secondary_codes || [];
+    const type = card?.secondary_type || 'Dis';
+    // Tooltip lists each bookable secondary so the student can see
+    // their options without rendering 10 chips on the card itself.
+    const secTip = secs.slice(0, 12).map(s => {
+      const inst = (s.instructors || [])[0];
+      return [s.code, s.type, s.days, s.time, inst].filter(Boolean).join(' · ');
+    }).join('\n');
+    const overflow = secs.length > 12 ? `\n…and ${secs.length - 12} more` : '';
+    secondaryPill = `<span class="cc-code-secondary"
+                           title="Must also enroll in a ${escHTML(type)}:\n${escHTML(secTip + overflow)}">
+      + ${escHTML(type)} required
+    </span>`;
   }
 
-  let tags = '';
-  if (card.grade_distribution?.avg_gpa) {
-    const gpa = card.grade_distribution.avg_gpa.toFixed(1);
-    tags += `<span class="cc-tag">Avg GPA ${gpa}</span>`;
-  }
-  if (bestSec?.professor_rating?.overall) {
-    tags += `<span class="cc-tag">${bestSec.instructor.split(',')[0]} · ${bestSec.professor_rating.overall}</span>`;
-  }
-  if (!card.prereq_met) {
-    tags += `<span class="cc-tag cc-tag-prereq-warn">Missing ${card.prereq_missing.join(', ')}</span>`;
-  } else {
-    tags += `<span class="cc-tag">Prereqs met</span>`;
-  }
-  // Conflict badge — red when every section conflicts, yellow when some do.
-  if (card.conflict_status === 'all') {
-    tags += `<span class="cc-tag cc-tag-conflict-all">${escHTML(card.conflict_summary || 'Schedule conflict')}</span>`;
-  } else if (card.conflict_status === 'some') {
-    tags += `<span class="cc-tag cc-tag-conflict-some">${escHTML(card.conflict_summary || 'Some sections conflict')}</span>`;
-  }
-  if (card.ge_category) {
-    tags += `<span class="cc-tag">${card.ge_category}</span>`;
-  }
-
-  let secRow = '';
-  if (bestSec) {
-    const seats = bestSec.seats_open;
-    const seatTag = seats === 0 ? '<span class="cc-tag cc-tag-seats-0">Full</span>' : '';
-    secRow = `<div class="cc-section-row">
-      <span>${bestSec.days} ${bestSec.time}</span>
-      <span>${bestSec.location}</span>
-      <span>Section ${bestSec.section}</span>
-      ${seatTag}
-    </div>`;
-  }
-
-  const btn = isAdded
-    ? `<button class="cc-btn cc-btn-remove" onclick="removeCourse('${card.course_id}',this)">Remove</button>`
-    : `<button class="cc-btn cc-btn-add" onclick="addCourse('${card.course_id}','${bestSec?.section||"A"}',this)">Add</button>`;
-
-  return `<div class="course-card${addedClass}" id="card-${card.course_id}">
-    <div class="cc-top">
-      <div>
-        <div class="cc-id-row">
-          <div class="cc-id">${card.course_id}</div>
-          <div class="cc-units">${card.units} units</div>
-        </div>
-        <div class="cc-title">${escHTML(card.title)}</div>
-      </div>
-      <div class="cc-actions">${btn}</div>
-    </div>
-    <div class="cc-meta">${tags}</div>
-    ${card.reason ? `<div class="cc-reason">${escHTML(card.reason)}</div>` : ''}
-    ${secRow}
+  return `<div class="cc-codes">
+    <span class="cc-code cc-code-primary"
+          title="${escHTML(tip || '')}">${escHTML(code)}</span>
+    ${secondaryPill}
   </div>`;
 }
 
-async function addCourse(courseId, section, btnEl) {
-  try {
-    const res = await fetch(`${API}/api/schedule/add`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        session_id: currentSessionId || 'demo_session',
-        course_id:  courseId,
-        section:    section,
-        // Term selector value — backend uses this to fetch sections
-        // from the correct quarter (term-strict per the new db layer).
-        term:       document.getElementById('termSelect').value || null,
-      }),
-    });
-    const data = await res.json();
-    if (data.ok) {
-      addedCourses.add(courseId);
-      scheduleEvents = data.events || [];
-      updateCardState(courseId, true, section);
-      renderScheduleGrid();
-      if (!scheduleOpen) openSchedule();
-      updateScheduleCount();
-    }
-  } catch (e) { console.error(e); }
+/* Per-term deadline footer.
+   Renders a small monospace strip beneath the badges/reason showing
+   the term's free-window end (last day of WebReg self-service) and
+   the late add/drop end (last day to drop with dean approval — i.e.
+   the practical "drop without W" deadline). Hidden if the card
+   doesn't carry term_deadlines (legacy non-agent path). */
+function _renderDeadlineRow(card) {
+  const d = card?.term_deadlines || null;
+  if (!d) return '';
+  const fmt = (iso) => {
+    if (!iso) return null;
+    // 2026-10-09 → "Oct 9". Plain Date parsing is reliable for
+    // YYYY-MM-DD; just guard against future schema drift.
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    if (!m) return iso;
+    const months = ['Jan','Feb','Mar','Apr','May','Jun',
+                    'Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${months[parseInt(m[2],10)-1]} ${parseInt(m[3],10)}`;
+  };
+  const pieces = [];
+  if (d.free_window_end) {
+    pieces.push(`<span title="Last day to add/drop/change without dean approval (WebReg)">
+      Free add/drop · <b>${escHTML(fmt(d.free_window_end))}</b>
+    </span>`);
+  }
+  if (d.late_add_drop_end) {
+    pieces.push(`<span title="Last day to drop with dean approval (via Enrollment Exceptions in Student Access). After this date a drop becomes a W on the transcript.">
+      Drop w/o W · <b>${escHTML(fmt(d.late_add_drop_end))}</b>
+    </span>`);
+  }
+  if (!pieces.length) return '';
+  return `<div class="cc-deadlines">${pieces.join('<span class="cc-deadlines-sep">·</span>')}</div>`;
 }
 
-async function removeCourse(courseId, btnEl) {
+/* Section-groups sub-cards — one sub-card per Lec letter group,
+   laid out side-by-side (wraps on narrow screens). Hidden by
+   default; toggleable via the "Show sections" chevron on the card.
+
+   Each sub-card carries:
+     · Lec letter badge + 5-digit registrar code
+     · Professor name + RMP rating chip (star + score)
+     · Days + meeting time
+     · Classroom
+     · Final-exam time + room
+     · Paired Dis/Lab chip strip (codes + status badges)
+
+   Each card holds its own collapse state so multiple recommendation
+   cards can be expanded independently. */
+function _renderSectionGroups(card) {
+  const groups = card?.section_groups || [];
+  if (groups.length === 0) return '';
+  // Collapsed by default — `.open` is added by toggleSectionGroups()
+  // or by cardClickHandler() when the user taps the card body.
+  // No `hidden` attribute so CSS can animate the open/close transition.
+  const cid = card?.course_id || '';
+  return `<div class="cc-sg-wrap">
+    <div class="cc-sg-cards">
+      ${groups.map(g => _renderOneSectionGroup(g, cid)).join('')}
+    </div>
+  </div>`;
+}
+
+function _renderOneSectionGroup(g, courseId) {
+  const p = g.primary;
+  if (!p) {
+    return `<div class="cc-sg-card cc-sg-orphan">
+      <div class="cc-sg-card-head">
+        <span class="cc-sg-letter">${escHTML(g.letter || '?')}</span>
+        <em>Lec unavailable</em>
+      </div>
+      <div class="cc-sg-secs-block">
+        ${_renderSecondaryChips(g.secondaries)}
+      </div>
+    </div>`;
+  }
+
+  const code     = escHTML(p.code || '');
+  const letter   = escHTML(p.num || p.type || g.letter);
+  const time     = _fmtSectionDaysTime(p);
+  const room     = p.location ? escHTML(p.location) : '<em>Room TBA</em>';
+  const status   = _renderSeatBadge(p);
+  const profs    = _renderProfRow(p.ratings, p.instructors);
+  const finalExam = _renderFinalExam(p.final_exam);
+
+  const lecNum = p.num || g.letter || '?';
+  const addBtn = courseId ? _renderAddBtn(courseId, lecNum, {}) : '';
+
+  return `<div class="cc-sg-card">
+    <div class="cc-sg-card-head">
+      <span class="cc-sg-letter">${letter}</span>
+      <span class="cc-sg-code">${code}</span>
+      ${status}
+      <span class="cc-sg-spacer"></span>
+      ${addBtn}
+    </div>
+    ${profs}
+    <dl class="cc-sg-facts">
+      <div class="cc-sg-fact">
+        <span class="material-symbols-outlined">schedule</span>
+        <dd>${time}</dd>
+      </div>
+      <div class="cc-sg-fact">
+        <span class="material-symbols-outlined">location_on</span>
+        <dd>${room}</dd>
+      </div>
+      ${finalExam}
+    </dl>
+    ${g.secondaries.length === 0
+      ? ''
+      : `<div class="cc-sg-secs-block">
+           <div class="cc-sg-secs-label">${escHTML(g.secondaries[0]?.type || 'Dis')} sections</div>
+           ${_renderSecondaryChips(g.secondaries, courseId)}
+         </div>`}
+  </div>`;
+}
+
+/* Helpers — kept private to the section-group renderer. */
+function _fmtSectionDaysTime(s) {
+  // Prefer the pre-formatted time_display; otherwise build "MWF 10-10:50".
+  if (s.time) return escHTML(s.time);
+  const bits = [s.days, s.start_time && s.end_time
+                  ? `${s.start_time}-${s.end_time}` : s.start_time].filter(Boolean);
+  return bits.length ? escHTML(bits.join(' ')) : 'TBA';
+}
+
+function _renderSeatBadge(s) {
+  if (s.status === 'FULL')    return `<span class="cc-sg-badge danger">FULL</span>`;
+  if (s.status === 'Waitl')   return `<span class="cc-sg-badge warning">Waitlist</span>`;
+  if (s.status === 'NewOnly') return `<span class="cc-sg-badge muted">New only</span>`;
+  if (typeof s.seats_open === 'number' && s.seats_open <= 5 && s.seats_open > 0) {
+    return `<span class="cc-sg-badge warning">${s.seats_open} left</span>`;
+  }
+  return '';
+}
+
+function _renderProfRow(ratings, fallback_instructors) {
+  // ratings: [{instructor, avg_rating, num_ratings, tier, tier_label}]
+  // fallback_instructors: raw strings if ratings array is missing
+  const list = (ratings && ratings.length) ? ratings
+                : (fallback_instructors || []).map(n => ({instructor: n}));
+  if (!list.length) return '';
+  return `<div class="cc-sg-profs">
+    ${list.filter(p => p.instructor && p.instructor.toLowerCase() !== 'staff')
+          .map(p => {
+      const hasScore = typeof p.avg_rating === 'number' && p.avg_rating > 0;
+      const tierClass = _rmpTierClass(p.tier, p.num_ratings);
+      const star = hasScore
+        ? `<span class="cc-sg-rmp ${tierClass}"
+                 title="${escHTML(p.tier_label || 'RMP')} · avg ${p.avg_rating} from ${p.num_ratings || 0} ratings">
+             <span class="material-symbols-outlined">star</span>
+             ${p.avg_rating.toFixed(1)}
+             <span class="cc-sg-rmp-n">(${p.num_ratings || 0})</span>
+           </span>`
+        : `<span class="cc-sg-rmp cc-sg-rmp-na" title="No RateMyProfessor data on file">no rmp</span>`;
+      return `<div class="cc-sg-prof">
+        <span class="cc-sg-prof-name">${escHTML(p.instructor)}</span>
+        ${star}
+      </div>`;
+    }).join('')
+      || `<div class="cc-sg-prof"><span class="cc-sg-prof-name">STAFF</span></div>`}
+  </div>`;
+}
+
+/* Map the prof's RMP tier slug → CSS color class.
+   The slug comes from db.get_professor_rating's `tier.tier` field
+   (mostly_positive / mostly_negative / mixed / insufficient_data /
+   unrated). We treat insufficient sample (< 10 ratings) the same as
+   the explicit insufficient_data tier so a 1-review prof doesn't
+   show as bright green. Order: positive → green; negative → red;
+   mixed → yellow; else gray. */
+function _rmpTierClass(tier, numRatings) {
+  if (numRatings != null && numRatings < 10) return 'cc-sg-rmp-insufficient';
+  switch ((tier || '').toLowerCase()) {
+    case 'mostly_positive': return 'cc-sg-rmp-positive';
+    case 'mostly_negative': return 'cc-sg-rmp-negative';
+    case 'mixed':           return 'cc-sg-rmp-mixed';
+    case 'insufficient_data':
+    case 'unrated':
+                            return 'cc-sg-rmp-insufficient';
+    default:                return 'cc-sg-rmp-mixed';   // fallback when tier missing but score present
+  }
+}
+
+function _renderFinalExam(fx) {
+  if (!fx) return '';
+  if (fx.status === 'none') {
+    return `<div class="cc-sg-fact">
+      <span class="material-symbols-outlined">event_busy</span>
+      <dd>No final exam</dd>
+    </div>`;
+  }
+  if (fx.status === 'tba') {
+    return `<div class="cc-sg-fact">
+      <span class="material-symbols-outlined">event</span>
+      <dd>Final: TBA</dd>
+    </div>`;
+  }
+  const loc = fx.location ? ` · ${escHTML(fx.location)}` : '';
+  return `<div class="cc-sg-fact">
+    <span class="material-symbols-outlined">event</span>
+    <dd>Final: ${escHTML(fx.label || '')}${loc}</dd>
+  </div>`;
+}
+
+/* Secondary (Dis / Lab / Stu) rows below each Lec.
+   Each row carries the full enrollment-decision payload because
+   the student picks a Dis based on time / room / instructor — a
+   bare "A1 36251" doesn't help.
+
+   Columns (mobile collapses to two flex rows):
+     · section num (A1) — small letter badge
+     · 5-digit code — mono
+     · instructor — name only when it isn't STAFF; if the rare
+       Dis-taught-by-prof case applies AND we have an RMP score,
+       a tier-colored star pill rides alongside
+     · meeting time — schedule icon + "F 10:00-10:50"
+     · room — pin icon + location
+     · status badge — FULL / Waitlist / N left when applicable */
+/* Apple Store–style + → ✓ button.
+   Args:
+     courseId    — canonical course_id ("CS161")
+     sectionNum  — section letter ("A") for Lec, letter+digit ("A1") for Dis
+     opts.hoverOnly — true to apply `.cc-sg-add-hover` (Dis rows: shown only on row hover).
+   The button reads its initial added state from addedSectionKeys
+   so re-renders after a render-from-history don't lose the picker
+   state. */
+function _renderAddBtn(courseId, sectionNum, opts) {
+  opts = opts || {};
+  const key = `${courseId}:${sectionNum}`;
+  const isAdded = addedSectionKeys.has(key);
+  const classes = ['cc-sg-add'];
+  if (opts.hoverOnly) classes.push('cc-sg-add-hover');
+  if (isAdded)        classes.push('added');
+  const aria = isAdded ? 'Remove section from schedule' : 'Add section to schedule';
+  return `<button type="button" class="${classes.join(' ')}"
+                  data-cid="${escHTML(courseId)}"
+                  data-sec="${escHTML(sectionNum)}"
+                  onclick="event.stopPropagation(); toggleSectionAdd(this)"
+                  aria-label="${aria}"
+                  aria-pressed="${isAdded ? 'true' : 'false'}">
+    <span class="material-symbols-outlined icon-add">add</span>
+    <span class="material-symbols-outlined icon-check">check</span>
+  </button>`;
+}
+
+function _renderSecondaryChips(secondaries, courseId) {
+  if (!secondaries || secondaries.length === 0) return '';
+  return `<table class="cc-sg-sec-table">
+    <tbody>
+      ${secondaries.map(s => _renderOneSecondaryRow(s, courseId)).join('')}
+    </tbody>
+  </table>`;
+}
+
+function _renderOneSecondaryRow(s, courseId) {
+  const num   = escHTML(s.num || s.type || '?');
+  const code  = escHTML(s.code || '—');
+  const time  = _fmtSectionDaysTime(s);          // already escaped
+  const room  = (s.location && !/^(tba|tbd|on(line|line tba))$/i.test(s.location.trim()))
+                ? escHTML(s.location) : '<em>TBA</em>';
+  const status = _renderSeatBadge(s);
+  // Instructor: drop STAFF / TBA / empty; show the first real name
+  // and a tier-colored RMP pill if we have a rating for them.
+  const real = (s.instructors || []).filter(
+    n => n && !/^(staff|tba)$/i.test(n.trim())
+  );
+  let instCell = '<span class="cc-sg-row-staff">TA</span>';
+  if (real.length > 0) {
+    const ratings = (s.ratings || []).filter(r => r.instructor === real[0]);
+    const rt = ratings[0] || {};
+    const hasScore = typeof rt.avg_rating === 'number' && rt.avg_rating > 0;
+    const star = hasScore
+      ? `<span class="cc-sg-rmp ${_rmpTierClass(rt.tier, rt.num_ratings)}"
+               title="${escHTML(rt.tier_label || 'RMP')} · avg ${rt.avg_rating} from ${rt.num_ratings || 0} ratings">
+           <span class="material-symbols-outlined">star</span>
+           ${rt.avg_rating.toFixed(1)}
+         </span>` : '';
+    instCell = `<span class="cc-sg-row-inst">${escHTML(real[0])}</span>${star}`;
+  }
+  const sNum = s.num || s.type || '?';
+  const addBtn = courseId ? _renderAddBtn(courseId, sNum, {hoverOnly: true}) : '';
+  return `<tr class="cc-sg-row"
+              data-cid="${escHTML(courseId || '')}"
+              data-sec="${escHTML(sNum)}"
+              ondblclick="event.stopPropagation(); _toggleSectionAddByRow(this)">
+    <td><span class="cc-sg-rownum">${num}</span></td>
+    <td class="cc-sg-row-code">${code}</td>
+    <td class="cc-sg-row-instcell">${instCell}</td>
+    <td class="cc-sg-row-meta">
+      <span class="material-symbols-outlined">schedule</span>${time}
+    </td>
+    <td class="cc-sg-row-meta">
+      <span class="material-symbols-outlined">location_on</span>${room}
+    </td>
+    <td class="cc-sg-row-status">${status}</td>
+    <td class="cc-sg-row-add">${addBtn}</td>
+  </tr>`;
+}
+
+/* Toggle the section-groups panel for a card. Accepts either the
+   toggle button (from its inline onclick) or the .course-card
+   element itself (from cardClickHandler). Animates open/close via
+   the .open class; the CSS does the actual transition. */
+function toggleSectionGroups(originEl) {
+  const card = originEl.classList?.contains('course-card')
+               ? originEl
+               : originEl.closest('.course-card');
+  if (!card) return;
+  const panel = card.querySelector('.cc-sg-wrap');
+  if (!panel) return;
+  const willOpen = !panel.classList.contains('open');
+  panel.classList.toggle('open', willOpen);
+  // Sync the explicit toggle button's chevron + aria — the button
+  // may not be the element that triggered this call (could be the
+  // card body), but we still want the chevron in the right state.
+  const btn = card.querySelector('.cc-sg-toggle');
+  if (btn) {
+    btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    const icon = btn.querySelector('.material-symbols-outlined');
+    if (icon) icon.textContent = willOpen ? 'expand_less' : 'expand_more';
+  }
+}
+
+/* Card-body click → toggle the section panel. Skip clicks that
+   land on a control with its own meaning so we don't fight the
+   user's actual intent:
+     · the floating + Add button
+     · the explicit "Show sections" toggle (it routes through the
+       same toggleSectionGroups; clicking either still works)
+     · anything INSIDE the open section panel (selecting a section
+       chip / hovering a Dis row shouldn't collapse the card)
+     · standard interactive elements (button / a / input / select). */
+function cardClickHandler(e) {
+  // closest("...") returns the nearest matching ancestor or null.
+  // If any of these match, we leave the click alone.
+  // .cc-sg-add covers both Lec and Dis +/✓ buttons even though they
+  // also stopPropagation in their own handler — belt and suspenders.
+  const skip = e.target.closest(
+    '.cc-sg-add, .cc-sg-toggle, .cc-sg-wrap, a, button, input, select, textarea'
+  );
+  if (skip) return;
+  toggleSectionGroups(e.currentTarget);
+}
+
+/* Section-level add/remove toggle (Phase E4 picker).
+   Called from each Lec or Dis + button. Optimistically flips the
+   button's `.added` class so the App-Store-style + → ✓ animation
+   fires immediately, then hits the backend. If the backend
+   rejects, we revert the visual change. */
+async function toggleSectionAdd(btn) {
+  const cid = btn.dataset.cid;
+  const sec = btn.dataset.sec;
+  if (!cid || !sec) return;
+  const key = `${cid}:${sec}`;
+  const wasAdded = addedSectionKeys.has(key);
+  // Optimistic flip — animation runs from CSS via the .added class.
+  if (wasAdded) {
+    addedSectionKeys.delete(key);
+    btn.classList.remove('added');
+    btn.setAttribute('aria-pressed', 'false');
+    btn.setAttribute('aria-label', 'Add section to schedule');
+  } else {
+    addedSectionKeys.add(key);
+    btn.classList.add('added');
+    btn.setAttribute('aria-pressed', 'true');
+    btn.setAttribute('aria-label', 'Remove section from schedule');
+  }
+  _syncAddedCourse(cid);
   try {
-    const res = await fetch(`${API}/api/schedule/remove`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        session_id: currentSessionId || 'demo_session',
-        course_id:  courseId,
-        term:       document.getElementById('termSelect').value || null,
-      }),
-    });
-    const data = await res.json();
-    if (data.ok) {
-      addedCourses.delete(courseId);
-      scheduleEvents = data.events || [];
-      updateCardState(courseId, false);
-      renderScheduleGrid();
-      updateScheduleCount();
+    if (wasAdded) {
+      await removeCourse(cid, btn, sec);
+    } else {
+      await addCourse(cid, sec, btn);
     }
-  } catch (e) { console.error(e); }
+  } catch (err) {
+    // Revert visual on failure
+    console.error('section toggle failed:', err);
+    if (wasAdded) addedSectionKeys.add(key); else addedSectionKeys.delete(key);
+    btn.classList.toggle('added', wasAdded);
+    _syncAddedCourse(cid);
+  }
+  // Mirror state on every other button bound to the same key (e.g.
+  // both a Lec head + and a Dis row + can target the same key in
+  // edge cases; or after a remove via the schedule rail we want all
+  // displayed cards to re-sync).
+  document.querySelectorAll(
+    `.cc-sg-add[data-cid="${CSS.escape(cid)}"][data-sec="${CSS.escape(sec)}"]`
+  ).forEach(el => {
+    if (el !== btn) {
+      el.classList.toggle('added', addedSectionKeys.has(key));
+      el.setAttribute('aria-pressed', addedSectionKeys.has(key) ? 'true' : 'false');
+    }
+  });
+}
+
+/* Double-click on a Dis row delegates to the row's own + button so
+   the animation runs in the same place — keeps one source of truth. */
+function _toggleSectionAddByRow(rowEl) {
+  const btn = rowEl.querySelector('.cc-sg-add');
+  if (btn) toggleSectionAdd(btn);
+}
+
+/* Keep `addedCourses` (course-level) in sync with `addedSectionKeys`
+   (section-level). A course counts as added iff ANY of its section
+   keys is present. The schedule rail / count read from addedCourses. */
+function _syncAddedCourse(courseId) {
+  const prefix = courseId + ':';
+  let hasAny = false;
+  for (const k of addedSectionKeys) {
+    if (k.startsWith(prefix)) { hasAny = true; break; }
+  }
+  if (hasAny) addedCourses.add(courseId);
+  else        addedCourses.delete(courseId);
+  updateScheduleCount();
+}
+
+/* Source-of-truth rebuild from the backend's scheduleEvents.
+   Every /schedule/add or /schedule/remove response gives us the
+   full list of materialized events; rebuilding local state from
+   it prevents the count-vs-grid desync the user hit ("0 courses"
+   but Math still appears). Called after every successful add/
+   remove response. */
+function _hydrateScheduleState() {
+  const keys = new Set();
+  const courses = new Set();
+  for (const ev of scheduleEvents) {
+    const sec = ev.section_num || ev.section || '';
+    if (ev.course_id) {
+      courses.add(ev.course_id);
+      if (sec) keys.add(`${ev.course_id}:${sec}`);
+    }
+  }
+  addedSectionKeys = keys;
+  addedCourses = courses;
+  // Reflect the new state on every visible + button so the picker
+  // chevrons match the rail. Done by scanning the DOM rather than
+  // tracking individually so re-renders don't drift.
+  document.querySelectorAll('.cc-sg-add').forEach(el => {
+    const cid = el.dataset.cid;
+    const sec = el.dataset.sec;
+    if (!cid || !sec) return;
+    const isAdded = keys.has(`${cid}:${sec}`);
+    el.classList.toggle('added', isAdded);
+    el.setAttribute('aria-pressed', isAdded ? 'true' : 'false');
+    el.setAttribute('aria-label',
+      isAdded ? 'Remove section from schedule' : 'Add section to schedule');
+  });
+  updateScheduleCount();
+}
+
+/* Enrollment-restriction chips (SOC 'Rstr' column decoded).
+   Class-level restrictions (E/F/G/H/I/J) are NEVER shown here —
+   the dispatcher already hard-drops cards that violate those.
+   What's left is non-blocking: auth code, major restriction, fee,
+   forced grading basis. Hover for the registrar's full explanation. */
+function _renderRestrictionChips(card) {
+  const chips = card?.restriction_chips || [];
+  if (chips.length === 0) return '';
+  return `<div class="cc-rstr">
+    ${chips.map(c => `<span class="cc-rstr-pill"
+                            title="${escHTML(c.tooltip || '')}">
+      <span class="cc-rstr-code">${escHTML(c.code)}</span>
+      ${escHTML(c.label)}
+    </span>`).join('')}
+  </div>`;
+}
+
+function _renderPrereqChips(card) {
+  const missing  = card?.prereq_missing || [];
+  const required = card?.prereq_required || [];
+  // Met → single success "Prereqs met" chip.
+  // Not met → one locked chip per missing prereq.
+  // No prereqs known → empty column.
+  if (card?.prereq_met && required.length > 0) {
+    return `<span class="cc-chip cc-chip-met">
+      <span class="material-symbols-outlined">check_circle</span>
+      Prereqs met
+    </span>`;
+  }
+  if (missing.length === 0) return '';
+  return missing.map(p => `<span class="cc-chip">
+    <span class="material-symbols-outlined">lock</span>
+    ${escHTML(p)}
+  </span>`).join('');
+}
+
+function renderCard(card) {
+  const cid       = card.course_id || '';
+  const isAdded   = addedCourses.has(cid);
+  const cat       = _catSlug(card);
+  const classes   = [
+    'course-card',
+    `cat-${cat}`,
+    isAdded ? 'added' : '',
+    card.found === false ? 'not-found' : '',
+  ].filter(Boolean).join(' ');
+
+  // Pull the registrar enrollment code(s) — these are what the
+  // student actually inputs to register. Per the propose_recommendation
+  // contract the dispatcher only stages cards that HAVE a primary code,
+  // so card.primary_code is reliable here; the older `sections[0]`
+  // fallback stays for the legacy non-agent rec path.
+  const sec        = _firstSection(card);
+  const primaryCode = card.primary_code
+                      || sec?.section_code
+                      || null;
+  const addIcon    = isAdded ? 'check' : 'add';
+  const title      = card.title || (card.found === false
+                       ? 'Not in catalog' : '');
+  const reason     = card.reason || '';
+  const unitsTxt   = card.units != null ? card.units : '—';
+
+  const groupCount = (card.section_groups || []).length;
+  const showSectionsBtn = groupCount > 0 ? `
+    <button class="cc-sg-toggle"
+            type="button"
+            aria-expanded="false"
+            onclick="toggleSectionGroups(this)">
+      <span>${groupCount === 1 ? '1 section' : groupCount + ' Lec groups'}</span>
+      <span class="material-symbols-outlined">expand_more</span>
+    </button>` : '';
+
+  return `<div class="${classes}"
+              id="card-${escHTML(cid)}"
+              onclick="cardClickHandler(event)">
+    <div class="cc-id-block">
+      <div class="cc-id">${escHTML(cid)}</div>
+      ${title ? `<div class="cc-title">${escHTML(title)}</div>` : ''}
+      ${_renderCodeRow(card)}
+    </div>
+    <div class="cc-body">
+      <div class="cc-badges">${_renderCardBadges(card, cat)}</div>
+      ${reason ? `<p class="cc-reason">${escHTML(reason)}</p>` : ''}
+      ${_renderRestrictionChips(card)}
+      ${_renderDeadlineRow(card)}
+      ${showSectionsBtn}
+    </div>
+    <div class="cc-prereqs">${_renderPrereqChips(card)}</div>
+    <div class="cc-units-block">
+      <span class="cc-units">${escHTML(String(unitsTxt))}</span>
+    </div>
+    ${_renderSectionGroups(card)}
+  </div>`;
+}
+
+/* One-button toggle (Stitch UX: the + button stays in place, just
+   changes icon). Routes to existing add/remove endpoints. */
+function toggleCard(courseId, section, btnEl) {
+  if (addedCourses.has(courseId)) {
+    removeCourse(courseId, btnEl);
+  } else {
+    addCourse(courseId, section, btnEl);
+  }
+}
+
+/* Header strip + N cards, returned as one HTML string. The header
+   shows "N INTELLIGENCE MODULES" and the live category legend
+   computed from what's actually present in the batch — no point
+   showing "Practical" if none of the cards are practical. */
+function renderCardsBlock(cards) {
+  if (!cards || cards.length === 0) return '';
+  const cats = new Set(cards.map(_catSlug));
+  const legend = ['core', 'practical', 'career', 'advanced', 'elective']
+    .filter(c => cats.has(c))
+    .map(c => `<span class="cards-legend-dot" style="--legend-color: var(--cat-${c});">${CATEGORY_LABELS[c]}</span>`)
+    .join('');
+  const noun = cards.length === 1 ? 'module' : 'modules';
+  const head = `<div class="cards-header">
+    <span class="cards-header-title">${cards.length} ${noun} recommended</span>
+    <div class="cards-legend">${legend}</div>
+  </div>`;
+  const body = cards.map(renderCard).join('');
+  return `<div class="cards-row">${head}${body}</div>`;
+}
+
+async function addCourse(courseId, section, btnEl) {
+  const res = await fetch(`${API}/api/schedule/add`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      session_id: currentSessionId || 'demo_session',
+      course_id:  courseId,
+      section:    section,
+      term:       document.getElementById('termSelect').value || null,
+    }),
+  });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.reason || 'add failed');
+  scheduleEvents = data.events || [];
+  _hydrateScheduleState();        // rebuild local sets from server-of-truth
+  renderScheduleGrid();
+  if (!scheduleOpen) openSchedule();
+}
+
+async function removeCourse(courseId, btnEl, section) {
+  const res = await fetch(`${API}/api/schedule/remove`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      session_id: currentSessionId || 'demo_session',
+      course_id:  courseId,
+      section:    section || null,   // section-aware remove (Phase E4 picker)
+      term:       document.getElementById('termSelect').value || null,
+    }),
+  });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.reason || 'remove failed');
+  scheduleEvents = data.events || [];
+  _hydrateScheduleState();        // rebuild local sets from server-of-truth
+  renderScheduleGrid();
 }
 
 function updateCardState(courseId, added, section) {
   const card = document.getElementById('card-' + courseId);
   if (!card) return;
-  if (added) {
-    card.classList.add('added');
-    const actions = card.querySelector('.cc-actions');
-    if (actions) actions.innerHTML = `<button class="cc-btn cc-btn-remove" onclick="removeCourse('${courseId}',this)">Remove</button>`;
-  } else {
-    card.classList.remove('added');
-    const actions = card.querySelector('.cc-actions');
-    if (actions) actions.innerHTML = `<button class="cc-btn cc-btn-add" onclick="addCourse('${courseId}','${section||"A"}',this)">Add</button>`;
+  card.classList.toggle('added', !!added);
+  const btn = card.querySelector('.cc-add-btn');
+  if (btn) {
+    const icon = btn.querySelector('.material-symbols-outlined');
+    if (icon) icon.textContent = added ? 'check' : 'add';
+    btn.setAttribute('aria-label', added ? 'Remove from schedule' : 'Add to schedule');
+    if (section) btn.setAttribute('data-section', section);
   }
 }
 
 function updateScheduleCount() {
-  document.getElementById('scheduleCount').textContent = addedCourses.size + ' course' + (addedCourses.size !== 1 ? 's' : '');
+  // Source of truth: distinct course_ids in the backend-resolved
+  // scheduleEvents. Reading from `addedCourses` was brittle — it
+  // could drift out of sync with the rail and show "0 courses"
+  // while events were still rendered.
+  const n = new Set(scheduleEvents.map(e => e.course_id)).size;
+  document.getElementById('scheduleCount').textContent =
+    n + ' course' + (n === 1 ? '' : 's');
 }
 
 function openSchedule() {
   scheduleOpen = true;
   document.getElementById('schedulePanel').classList.add('open');
+  document.body.classList.add('schedule-open');     // chat shrinks to make room
+}
+
+/* Wipe every entry from the session's pending_schedule. Used as an
+   escape hatch when a session got into a bad state (e.g. legacy
+   entries stored with 5-digit registrar codes where the new picker
+   expects section_num). Confirms first so a stray click doesn't
+   destroy work. */
+async function clearSchedule() {
+  if (scheduleEvents.length === 0) return;
+  if (!confirm('Clear ALL sections from this schedule?')) return;
+  try {
+    const res = await fetch(`${API}/api/schedule/clear`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        session_id: currentSessionId || 'demo_session',
+        term: document.getElementById('termSelect').value || null,
+      }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.reason || 'clear failed');
+    scheduleEvents = data.events || [];
+    _hydrateScheduleState();
+    renderScheduleGrid();
+  } catch (err) {
+    console.error('clear schedule failed:', err);
+  }
 }
 function toggleSchedule() {
   scheduleOpen = !scheduleOpen;
   document.getElementById('schedulePanel').classList.toggle('open', scheduleOpen);
+  document.body.classList.toggle('schedule-open', scheduleOpen);
 }
 
 (function initResize() {
@@ -3417,16 +5403,27 @@ function toggleSchedule() {
 })();
 
 const DAYS = ['Mon','Tue','Wed','Thu','Fri'];
-const START_HOUR = 8;
-const END_HOUR = 19;
+// Day grid hours: 7 AM through end of 9 PM (covers 7-22:00).
+// Render rows 7..21 inclusive (so 15 rows × ROW_HEIGHT = 780px of
+// content + HEADER_HEIGHT). schedule-body scrolls vertically when
+// the viewport is shorter — typical case for laptop screens.
+const START_HOUR = 7;
+const END_HOUR = 22;
 const ROW_HEIGHT = 52;
-const HEADER_HEIGHT = 40;
+// Must match the actual `.sg-day-header` height (padding 12+12 +
+// text 16 + 1px border = 41). Keeping it at 41 makes JS topOffset
+// math align pixel-for-pixel with the rendered grid.
+const HEADER_HEIGHT = 41;
 
 function renderScheduleGrid() {
   const body = document.getElementById('scheduleBody');
 
   if (scheduleEvents.length === 0) {
-    body.innerHTML = '<div class="schedule-empty">Add courses from recommendations<br>to build your schedule.</div>';
+    body.innerHTML = `<div class="schedule-empty">
+      <span class="material-symbols-outlined schedule-empty-icon">calendar_month</span>
+      <div class="schedule-empty-title">No sections yet</div>
+      <div class="schedule-empty-sub">Click <b>+</b> on a Lec card to pin it here.</div>
+    </div>`;
     return;
   }
 
@@ -3439,18 +5436,61 @@ function renderScheduleGrid() {
     if (h === 12) label = '12 PM';
     else if (h < 12) label = `${h} AM`;
     else label = `${h-12} PM`;
-    html += `<div class="sg-time-label">${label}</div>`;
+    // Alternating hour bands (odd hours get a faint stripe) — borrows
+    // from AntAlmanac's .rbc-timeslot-group:nth-child(odd) trick to
+    // give vertical rhythm without harsh horizontal lines.
+    const band = (h % 2 === 1) ? ' sg-band' : '';
+    html += `<div class="sg-time-label${band}">${label}</div>`;
     for (let d = 0; d < 5; d++) {
-      html += `<div class="sg-cell" data-day="${DAYS[d]}" data-hour="${h}"></div>`;
+      html += `<div class="sg-cell${band}" data-day="${DAYS[d]}" data-hour="${h}"></div>`;
     }
   }
   html += '</div>';
   body.innerHTML = html;
 
-  for (const ev of scheduleEvents) placeEvent(ev);
+  // Compute side-by-side layout for overlapping events on the same
+  // day so two events at the same time don't stack on top of each
+  // other (the previous renderer placed both at left:0).
+  const layout = _computeOverlapLayout(scheduleEvents);
+  for (const ev of scheduleEvents) {
+    const meta = layout.get(ev) || {col: 0, cols: 1};
+    placeEvent(ev, meta.col, meta.cols);
+  }
 }
 
-function placeEvent(ev) {
+/* Cheap overlap layout: per day, sweep events sorted by start time.
+   For each event, find the lowest column index that doesn't overlap
+   anything still "active" at its start time. Returns a Map<ev, {col, cols}>
+   where `cols` is the max overlap depth in that event's day. */
+function _computeOverlapLayout(events) {
+  const out = new Map();
+  const byDay = {};
+  for (const e of events) {
+    (byDay[e.day] = byDay[e.day] || []).push(e);
+  }
+  for (const day of Object.keys(byDay)) {
+    const list = byDay[day].slice().sort(
+      (a, b) => parseTimeToMinutes(a.start) - parseTimeToMinutes(b.start)
+    );
+    // Assign columns: for each event, find the first column whose
+    // latest end is ≤ this event's start.
+    const colEnds = [];     // colEnds[i] = end-minute of latest event in col i
+    const assigned = [];     // [{ev, col}]
+    for (const ev of list) {
+      const start = parseTimeToMinutes(ev.start);
+      const end   = parseTimeToMinutes(ev.end);
+      let col = colEnds.findIndex(end_ => end_ <= start);
+      if (col === -1) col = colEnds.length;
+      colEnds[col] = end;
+      assigned.push({ev, col});
+    }
+    const cols = colEnds.length;
+    for (const a of assigned) out.set(a.ev, {col: a.col, cols});
+  }
+  return out;
+}
+
+function placeEvent(ev, col, cols) {
   const dayIdx = DAYS.indexOf(ev.day);
   if (dayIdx < 0) return;
 
@@ -3466,23 +5506,73 @@ function placeEvent(ev) {
 
   const [stroke, fill] = getCourseColor(ev.course_id);
 
+  // Column math: each day column is split into `cols` sub-tracks.
+  // 4px outer gap on each side of the day column + 2px between tracks.
+  const dayCol = `((100% - 56px) / 5)`;
+  const trackW = `((${dayCol} - 8px) / ${cols} - ${cols > 1 ? '2px' : '0px'})`;
+  const trackX = `(${col} * (${trackW} + 2px))`;
+
   const evEl = document.createElement('div');
   evEl.className = 'sg-event';
+  evEl.dataset.cid = ev.course_id;
+  evEl.dataset.sec = ev.section_num || '';
   evEl.style.position = 'absolute';
   evEl.style.top = topOffset + 'px';
   evEl.style.height = Math.max(height - 4, 24) + 'px';
-  evEl.style.left = `calc(56px + ${dayIdx} * ((100% - 56px) / 5) + 4px)`;
-  evEl.style.width = `calc((100% - 56px) / 5 - 8px)`;
+  evEl.style.left = `calc(56px + ${dayIdx} * ${dayCol} + 4px + ${trackX})`;
+  evEl.style.width = `calc(${trackW})`;
   evEl.style.background = fill;
   evEl.style.borderLeftColor = stroke;
   evEl.style.color = stroke;
 
-  evEl.innerHTML = `
-    <div class="sg-event-id">${ev.course_id}</div>
-    ${height > 36 ? `<div class="sg-event-detail">${ev.start}–${ev.end}${ev.location ? ' · ' + ev.location : ''}</div>` : ''}
-  `;
+  const tall = height > 40;
+  const sectionTag = ev.section_type ? `<span class="sg-event-type">${ev.section_type}</span>` : '';
+  const top2 = `<div class="sg-event-top">
+    <span class="sg-event-id">${ev.course_id}${ev.section_num ? ' · ' + ev.section_num : ''}</span>
+    ${sectionTag}
+  </div>`;
+  const bottom2 = tall ? `<div class="sg-event-bot">
+    <span class="sg-event-time">${ev.start}-${ev.end}</span>
+    ${ev.location ? `<span class="sg-event-room">${ev.location}</span>` : ''}
+  </div>${ev.section_code ? `<div class="sg-event-code">${ev.section_code}</div>` : ''}` : '';
+  evEl.innerHTML = top2 + bottom2;
+  evEl.title = [
+    `${ev.course_id}${ev.section_num ? ' · ' + ev.section_num : ''}`,
+    ev.title || '',
+    `${ev.day} ${ev.start}-${ev.end}`,
+    ev.location || '',
+    ev.instructor || '',
+    ev.section_code ? `Code ${ev.section_code}` : '',
+    'Click to remove',
+  ].filter(Boolean).join('\n');
+  evEl.addEventListener('click', () => _removeFromCalendar(ev));
 
   gridEl.appendChild(evEl);
+}
+
+/* Clicking an event tile removes that specific (course, section_num)
+   from the schedule. Section-aware now that the backend supports it
+   (Phase E4). Also flips the matching + button on the recommendation
+   card back to the un-added state. */
+function _removeFromCalendar(ev) {
+  const cid = ev.course_id;
+  // Fall back to the legacy `section` field for events that pre-date
+  // the section_num split. Without this, clicking an old tile silently
+  // no-op'd and the user couldn't dismiss the math course they added
+  // before today's changes.
+  const sec = ev.section_num || ev.section;
+  if (!cid) return;
+  // Optimistic: hide the tile immediately so the click feels live —
+  // _hydrateScheduleState (called from removeCourse) will reconcile
+  // any drift.
+  const tileEl = document.querySelector(
+    `.sg-event[data-cid="${CSS.escape(cid)}"][data-sec="${CSS.escape(sec || '')}"]`
+  );
+  if (tileEl) tileEl.style.opacity = '0.4';
+  removeCourse(cid, null, sec || null).catch(err => {
+    console.error('remove failed:', err);
+    if (tileEl) tileEl.style.opacity = '';   // unfade on failure
+  });
 }
 
 function parseTimeToMinutes(t) {
@@ -3491,8 +5581,201 @@ function parseTimeToMinutes(t) {
   return parseInt(parts[0]) * 60 + parseInt(parts[1]);
 }
 
+/* ── Markdown renderer ───────────────────────────────
+   Pipeline (in order, so block-level wins over inline):
+     1. extract fenced code blocks (their content is raw,
+        must escape but not re-interpret)
+     2. escape HTML on everything else
+     3. detect GitHub-flavored tables → <table> blocks
+     4. detect # / ## / ### headers
+     5. detect ---/*** horizontal rules
+     6. detect contiguous - / * / 1. lists
+     7. inline: `code`, **bold**, [text](url)
+     8. \n → <br> for paragraph flow
+     9. restore block placeholders (eating one
+        adjacent <br> so blocks don't get extra gaps)
+
+   The function is called once per animation frame
+   during streaming, so the input is often a partial
+   document. The line-based detectors are tolerant —
+   a header row without its separator falls through
+   as plain text and lights up once the separator
+   arrives in the next chunk.
+*/
 function formatMarkdown(text) {
-  return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+  if (!text) return '';
+
+  const blocks = [];
+  const stash = (html) => {
+    const idx = blocks.length;
+    blocks.push(html);
+    return `BLK${idx}`;
+  };
+
+  // 1. Fenced code blocks ``` first — their content
+  //    must survive escape-then-markdown unchanged.
+  text = text.replace(/```([\w-]*)\n?([\s\S]*?)```/g, (_m, _lang, code) => {
+    const inner = _mdEscape(code.replace(/\n$/, ''));
+    return stash(`<pre class="md-pre"><code>${inner}</code></pre>`);
+  });
+
+  // 2. Escape HTML on the remaining text so any <, >, &
+  //    typed by the LLM render literally.
+  text = _mdEscape(text);
+
+  // 3. Tables (GitHub-flavored: header row, sep row, body rows).
+  text = _mdRenderTables(text, stash);
+
+  // 4. Headers — process longest first so ### doesn't get eaten by #.
+  text = text.replace(/^###\s+(.+)$/gm,
+    (_m, c) => stash(`<h3 class="md-h3">${_mdInline(c)}</h3>`));
+  text = text.replace(/^##\s+(.+)$/gm,
+    (_m, c) => stash(`<h2 class="md-h2">${_mdInline(c)}</h2>`));
+  text = text.replace(/^#\s+(.+)$/gm,
+    (_m, c) => stash(`<h1 class="md-h1">${_mdInline(c)}</h1>`));
+
+  // 5. Horizontal rule (--- or *** on its own line).
+  text = text.replace(/^[\s]*(?:-{3,}|\*{3,}|_{3,})[\s]*$/gm,
+    () => stash('<hr class="md-hr">'));
+
+  // 6. Lists.
+  text = _mdRenderLists(text, stash);
+
+  // 7. Inline formatting.
+  text = _mdInline(text);
+
+  // 8. Remaining newlines → <br>.
+  text = text.replace(/\n/g, '<br>');
+
+  // 9. Restore blocks, eating one adjacent <br> on each
+  //    side so blocks don't carry extra visual padding.
+  text = text.replace(/(?:<br>)?BLK(\d+)(?:<br>)?/g,
+    (_m, idx) => blocks[parseInt(idx, 10)]);
+
+  return text;
+}
+
+function _mdEscape(s) {
+  return s.replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+}
+
+/* Inline pass: code first (so its backtick content isn't
+   mangled), then bold, then links. Italic intentionally
+   omitted — _under_score collides with snake_case names. */
+function _mdInline(s) {
+  s = s.replace(/`([^`\n]+)`/g, '<code class="md-code">$1</code>');
+  s = s.replace(/\*\*([^\n]+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  return s;
+}
+
+/* Table detection. Walks lines; when a header row is
+   immediately followed by a separator row (cells like
+   ---, :--, --:, :--:), grabs subsequent body rows
+   until a non-pipe line appears, and emits one <table>. */
+function _mdRenderTables(text, stash) {
+  const lines = text.split('\n');
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (_mdIsTableRow(lines[i]) && _mdIsTableSep(lines[i + 1])) {
+      const headers = _mdParseRow(lines[i]);
+      const align   = _mdParseAlign(lines[i + 1]);
+      const rows    = [];
+      let j = i + 2;
+      while (j < lines.length && _mdIsTableRow(lines[j]) && !_mdIsTableSep(lines[j])) {
+        rows.push(_mdParseRow(lines[j]));
+        j++;
+      }
+      out.push(stash(_mdTableHTML(headers, align, rows)));
+      i = j;
+    } else {
+      out.push(lines[i]);
+      i++;
+    }
+  }
+  return out.join('\n');
+}
+
+function _mdIsTableRow(line) {
+  if (line == null) return false;
+  const t = line.trim();
+  return t.startsWith('|') && t.endsWith('|') && t.length >= 3 && t.indexOf('|', 1) > 0;
+}
+function _mdIsTableSep(line) {
+  if (!_mdIsTableRow(line)) return false;
+  const cells = _mdParseRow(line);
+  return cells.length > 0 && cells.every(c => /^:?-{2,}:?$/.test(c.trim()));
+}
+function _mdParseRow(line) {
+  let s = line.trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|'))   s = s.slice(0, -1);
+  return s.split('|').map(c => c.trim());
+}
+function _mdParseAlign(line) {
+  return _mdParseRow(line).map(c => {
+    const t = c.trim();
+    const L = t.startsWith(':'), R = t.endsWith(':');
+    if (L && R) return 'center';
+    if (R)      return 'right';
+    if (L)      return 'left';
+    return null;
+  });
+}
+function _mdTableHTML(headers, align, rows) {
+  const alignAttr = (i) => align[i] ? ` style="text-align:${align[i]}"` : '';
+  const th = headers.map((h, i) => `<th${alignAttr(i)}>${_mdInline(h)}</th>`).join('');
+  const trs = rows.map(row => {
+    const tds = row.map((cell, i) => `<td${alignAttr(i)}>${_mdInline(cell)}</td>`).join('');
+    return `<tr>${tds}</tr>`;
+  }).join('');
+  const body = trs ? `<tbody>${trs}</tbody>` : '';
+  return `<div class="md-table-wrap"><table class="md-table"><thead><tr>${th}</tr></thead>${body}</table></div>`;
+}
+
+/* List detection. Groups contiguous lines that all
+   start with "-" / "*" (unordered) or "1." / "2." …
+   (ordered). Sublists / continuation lines not handled —
+   the LLM's lists are flat in practice. */
+function _mdRenderLists(text, stash) {
+  const lines = text.split('\n');
+  const out = [];
+  let i = 0;
+  const UL = /^\s*[-*]\s+(.+)$/;
+  const OL = /^\s*\d+\.\s+(.+)$/;
+  while (i < lines.length) {
+    let m = lines[i].match(UL);
+    if (m) {
+      const items = [];
+      while (i < lines.length) {
+        const mm = lines[i].match(UL);
+        if (!mm) break;
+        items.push(`<li>${_mdInline(mm[1])}</li>`);
+        i++;
+      }
+      out.push(stash(`<ul class="md-ul">${items.join('')}</ul>`));
+      continue;
+    }
+    m = lines[i].match(OL);
+    if (m) {
+      const items = [];
+      while (i < lines.length) {
+        const mm = lines[i].match(OL);
+        if (!mm) break;
+        items.push(`<li>${_mdInline(mm[1])}</li>`);
+        i++;
+      }
+      out.push(stash(`<ol class="md-ol">${items.join('')}</ol>`));
+      continue;
+    }
+    out.push(lines[i]);
+    i++;
+  }
+  return out.join('\n');
 }
 /* ── Followup chips: re-frame advisor-perspective text ───
    Followups SHOULD be authored as user imperatives (see backend
@@ -3799,12 +6082,9 @@ function appendAssistantStatic(text, extras) {
   document.getElementById('chatScroll').appendChild(wrap);
 
   if (extras.cards && extras.cards.length > 0) {
-    const cardsDiv = document.createElement('div');
-    cardsDiv.className = 'cards-row';
-    let cardsHtml = '';
-    for (const card of extras.cards) cardsHtml += renderCard(card);
-    cardsDiv.innerHTML = cardsHtml;
-    wrap.appendChild(cardsDiv);
+    const block = document.createElement('div');
+    block.innerHTML = renderCardsBlock(extras.cards);
+    if (block.firstElementChild) wrap.appendChild(block.firstElementChild);
   }
 
   if (extras.followups && extras.followups.length > 0) {
@@ -4405,15 +6685,133 @@ async function maybeShowWizard() {
   }
 }
 
+// Default entry — first-time auto-trigger. Shows the intro (step 0)
+// first, then transitions to the 4-step picker on "Begin".
 function openWizard() {
-  wizardState.step = 1;
+  wizardState.step = 0;     // intro screen
   wizardState.school = null;
   wizardState.year = null;
   wizardState.major = null;
   wizardState.completed_courses.clear();
   document.getElementById('wizardOverlay').classList.add('open');
+  // Restart entrance animations every time the intro opens. Without
+  // this, re-opening after a Skip would show a static hero (animations
+  // only fire once per element insertion).
+  _wizardReplayIntroAnimations();
   wizardRenderStep();
-  wizardLoadSchools();
+  _wizardInstallParallax();
+  // We DON'T pre-load schools here — that happens when the user
+  // clicks Begin and we enter step 1. Keeps the intro snappy.
+}
+
+// Mouse-tracking glow behind the hero. Sets --mx / --my on the
+// overlay element so a radial-gradient ::before follows the cursor.
+// Throttled by requestAnimationFrame so 60Hz mousemove doesn't trash
+// the CSS transition queue.
+let _wizardMouseRaf = null;
+function _wizardInstallParallax() {
+  if (window._wizardParallaxInstalled) return;
+  window._wizardParallaxInstalled = true;
+  document.addEventListener('mousemove', (e) => {
+    const overlay = document.getElementById('wizardOverlay');
+    if (!overlay || !overlay.classList.contains('is-intro')) return;
+    if (_wizardMouseRaf) return;
+    _wizardMouseRaf = requestAnimationFrame(() => {
+      _wizardMouseRaf = null;
+      const x = (e.clientX / window.innerWidth) * 100;
+      const y = (e.clientY / window.innerHeight) * 100;
+      overlay.style.setProperty('--mx', `${x}%`);
+      overlay.style.setProperty('--my', `${y}%`);
+    });
+  }, {passive: true});
+}
+
+// Force-restart CSS animations on the intro pieces. We do this by
+// removing then re-inserting the wizard-intro element; cloneNode +
+// replaceChild keeps event listeners off (intro has none) but resets
+// every animation-fill-mode to its from-state. Then kick off the
+// JS-driven typewriter for the subtitle paragraph.
+function _wizardReplayIntroAnimations() {
+  const step0 = document.getElementById('wizardStep0');
+  if (!step0) return;
+  const intro = step0.querySelector('.wizard-intro');
+  if (!intro) return;
+  const clone = intro.cloneNode(true);
+  step0.replaceChild(clone, intro);
+  // Cancel any prior typewriter pass before starting a new one
+  if (_wizardTypeTimer) { clearTimeout(_wizardTypeTimer); _wizardTypeTimer = null; }
+  _wizardTypeIntroSubtitle();
+}
+
+const WIZARD_INTRO_SUB =
+  "ZotAdvisor is your course-planning copilot. For accurate recommendations, " +
+  "the AI needs your school, year, major, and the courses you've already taken.\n\n" +
+  "The more honest your profile, the more personal the advice. " +
+  "This intro shows once — you can revise everything later from Profile.";
+
+// Per-char typing speed in ms. Slow enough that you can read characters
+// land, fast enough to keep total under ~5s with the punctuation pauses
+// below. Cursor finishes ~5.4s, then value blocks fade in.
+const WIZARD_TYPE_MS_PER_CHAR = 10;
+const WIZARD_TYPE_START_DELAY = 900;
+
+// Pauses added AFTER specific characters, to mimic the cadence of a
+// human typing rather than a perfectly-metronomic robot. Periods get
+// the longest pause (sentence break); commas a small breath; em-dash
+// a mid-sentence beat; newlines a paragraph reset.
+const WIZARD_TYPE_PAUSE_AFTER = {
+  ',':   90,
+  '.':  230,
+  ';':  160,
+  ':':  140,
+  '—':  170,
+  '\n': 180,
+};
+
+let _wizardTypeTimer = null;
+
+function _wizardTypeIntroSubtitle() {
+  const el = document.getElementById('wizardIntroTyped');
+  if (!el) return;
+
+  // Build the static structure: [text node][cursor span]
+  el.textContent = '';
+  const textNode = document.createTextNode('');
+  const cursor = document.createElement('span');
+  cursor.className = 'wizard-cursor';
+  el.appendChild(textNode);
+  el.appendChild(cursor);
+
+  // Honor user motion preferences — dump the full text immediately
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    textNode.data = WIZARD_INTRO_SUB;
+    cursor.classList.add('is-blinking');
+    return;
+  }
+
+  let i = 0;
+  function tick() {
+    if (i >= WIZARD_INTRO_SUB.length) {
+      cursor.classList.add('is-blinking');
+      _wizardTypeTimer = null;
+      return;
+    }
+    const ch = WIZARD_INTRO_SUB[i++];
+    textNode.data += ch;
+
+    // Base per-character delay
+    let nextDelay = WIZARD_TYPE_MS_PER_CHAR;
+    // Punctuation pause — but only when the next char is a space/newline
+    // or we hit the end. Otherwise a comma inside a token (rare here)
+    // would needlessly slow things down.
+    const nextCh = WIZARD_INTRO_SUB[i] || ' ';
+    const pause = WIZARD_TYPE_PAUSE_AFTER[ch];
+    if (pause && (nextCh === ' ' || nextCh === '\n' || i === WIZARD_INTRO_SUB.length)) {
+      nextDelay += pause;
+    }
+    _wizardTypeTimer = setTimeout(tick, nextDelay);
+  }
+  _wizardTypeTimer = setTimeout(tick, WIZARD_TYPE_START_DELAY);
 }
 
 // Re-opening from the Profile modal: pre-fill state from the saved
@@ -4478,23 +6876,37 @@ function closeWizard() {
 }
 
 function wizardRenderStep() {
-  // Hide all step panels, show the active one
-  for (let i = 1; i <= 4; i++) {
-    document.getElementById(`wizardStep${i}`).style.display = (i === wizardState.step) ? '' : 'none';
+  // Toggle step panels (0 = intro, 1..4 = real steps)
+  for (let i = 0; i <= 4; i++) {
+    const el = document.getElementById(`wizardStep${i}`);
+    if (el) el.style.display = (i === wizardState.step) ? '' : 'none';
   }
-  // Header text
-  const meta = WIZARD_STEP_META[wizardState.step];
-  document.getElementById('wizardStepNum').textContent =
-    `Step 0${wizardState.step} / 04`;
-  document.getElementById('wizardStepName').textContent = meta.name;
-  document.getElementById('wizardHeadline').textContent = meta.headline;
-  document.getElementById('wizardSub').textContent = meta.sub;
+
+  // Intro page uses its own layout — hide the standard header row.
+  const overlay = document.getElementById('wizardOverlay');
+  overlay.classList.toggle('is-intro', wizardState.step === 0);
+
+  // Header text (only matters for steps 1-4)
+  if (wizardState.step >= 1) {
+    const meta = WIZARD_STEP_META[wizardState.step];
+    document.getElementById('wizardStepNum').textContent =
+      `Step 0${wizardState.step} / 04`;
+    document.getElementById('wizardStepName').textContent = meta.name;
+    document.getElementById('wizardHeadline').textContent = meta.headline;
+    document.getElementById('wizardSub').textContent = meta.sub;
+  }
 
   // Footer state
   document.getElementById('wizardBackBtn').style.display =
     (wizardState.step > 1) ? '' : 'none';
   const nextBtn = document.getElementById('wizardNextBtn');
-  nextBtn.textContent = (wizardState.step === 4) ? 'Save & Finish' : 'Continue';
+  if (wizardState.step === 0) {
+    nextBtn.textContent = 'Begin';
+  } else if (wizardState.step === 4) {
+    nextBtn.textContent = 'Save & Finish';
+  } else {
+    nextBtn.textContent = 'Save & Continue';
+  }
   wizardSyncFooterCount();
   wizardSyncNextEnabled();
 }
@@ -4502,7 +6914,10 @@ function wizardRenderStep() {
 function wizardSyncFooterCount() {
   const c = document.getElementById('wizardCount');
   const label = document.getElementById('wizardCountLabel');
-  if (wizardState.step === 4) {
+  if (wizardState.step === 0) {
+    c.textContent = '·';
+    label.textContent = 'about 2 minutes';
+  } else if (wizardState.step === 4) {
     c.textContent = wizardState.completed_courses.size;
     label.textContent = (wizardState.completed_courses.size === 1)
       ? 'course marked complete' : 'courses marked complete';
@@ -4514,23 +6929,83 @@ function wizardSyncFooterCount() {
 
 function wizardSyncNextEnabled() {
   const ok = (
+    (wizardState.step === 0) ||   // intro CTA always enabled
     (wizardState.step === 1 && wizardState.school) ||
     (wizardState.step === 2 && wizardState.year) ||
     (wizardState.step === 3 && wizardState.major) ||
-    (wizardState.step === 4)   // Step 4 is always submittable (empty = "no courses yet")
+    (wizardState.step === 4)
   );
   document.getElementById('wizardNextBtn').disabled = !ok;
 }
 
-function wizardBack() {
+// Persist whatever fields are currently populated in wizardState to
+// the profile endpoint. Called on every step transition (Continue /
+// Back / Skip) so the user never loses their picks even if they back
+// out mid-wizard. The endpoint is a merge-write — empty fields don't
+// overwrite anything.
+async function wizardSavePartial() {
+  const payload = {};
+  if (wizardState.school) {
+    payload.college = wizardState.school.name;
+    payload.school_slug = wizardState.school.slug;
+  }
+  if (wizardState.year) payload.year = wizardState.year;
+  if (wizardState.major) {
+    payload.major = wizardState.major.name?.replace(/^Major in\s+/i, '') || wizardState.major.id;
+    payload.program_id = wizardState.major.id;
+  }
+  if (wizardState.completed_courses.size > 0) {
+    payload.completed_courses = Array.from(wizardState.completed_courses);
+  }
+  if (Object.keys(payload).length === 0) return;   // nothing to save yet
+
+  try {
+    await fetch(`${API}/api/memory/${USER_ID}/profile`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    // Refresh sidebar so the partial profile shows up immediately
+    loadSidebar();
+  } catch (err) {
+    // Non-blocking — the user can still proceed even if persistence
+    // hiccups. Their in-memory wizardState is intact for this session.
+    console.warn('wizardSavePartial failed:', err);
+  }
+}
+
+async function wizardBack() {
   if (wizardState.step <= 1) return;
+  await wizardSavePartial();   // save whatever we picked at this step before retreating
   wizardState.step -= 1;
   wizardRenderStep();
-  // Re-load step 3's grid in case the school changed back at step 1
   if (wizardState.step === 3 && wizardState.school) wizardLoadMajors();
 }
 
 async function wizardNext() {
+  // Intro CTA → enter Step 1 (no partial save — nothing picked yet)
+  if (wizardState.step === 0) {
+    wizardState.step = 1;
+    wizardRenderStep();
+    wizardLoadSchools();
+    return;
+  }
+  if (wizardState.step === 4) {
+    await wizardSave();   // final save + close + refresh
+    return;
+  }
+  // Save partial before advancing so a future Skip / close doesn't lose this step
+  const btn = document.getElementById('wizardNextBtn');
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try {
+    await wizardSavePartial();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+  }
+
   if (wizardState.step === 1) {
     wizardState.step = 2;
     wizardRenderStep();
@@ -4543,12 +7018,14 @@ async function wizardNext() {
     wizardState.step = 4;
     wizardRenderStep();
     wizardLoadCourses();
-  } else if (wizardState.step === 4) {
-    await wizardSave();
   }
 }
 
-function wizardSkip() {
+async function wizardSkip() {
+  // Save whatever the user already picked before closing — that's
+  // the whole point of this change. A skipped wizard with school+year
+  // chosen still leaves school+year persisted in the profile.
+  await wizardSavePartial();
   sessionStorage.setItem(WIZARD_SKIPPED_KEY, '1');
   closeWizard();
 }
@@ -4694,21 +7171,36 @@ async function wizardLoadCourses() {
   const empty = document.getElementById('wizardSearchEmpty');
   if (empty) empty.style.display = 'none';
 
-  if (wizardState._allCourses) {
+  if (wizardState._allCourses && wizardState._deptNameMap) {
     wizardRenderCourses(wizardState._allCourses);
     return;
   }
   const grid = document.getElementById('wizardCourseGrid');
   try {
-    const r = await fetch(`${API}/api/onboarding/courses/all`);
-    const data = await r.json();
-    wizardState._allCourses = data.courses || [];
+    // Parallel fetch — both endpoints are cheap once warm
+    const [coursesRes, deptsRes] = await Promise.all([
+      fetch(`${API}/api/onboarding/courses/all`),
+      fetch(`${API}/api/onboarding/departments`),
+    ]);
+    const coursesData = await coursesRes.json();
+    const deptsData = await deptsRes.json();
+    wizardState._allCourses = coursesData.courses || [];
+    wizardState._deptNameMap = {};
+    for (const d of (deptsData.departments || [])) {
+      wizardState._deptNameMap[d.deptCode] = d.deptName;
+    }
     wizardRenderCourses(wizardState._allCourses);
   } catch (err) {
     grid.innerHTML = `<div class="wizard-empty">Couldn't load courses — ${err}</div>`;
   }
 }
 
+// Group courses by department (matches UCI's WebSoc index style). Each
+// dept becomes a section with its own header showing CODE · Name (N
+// courses). The right-side A-Z strip remains useful as a coarse
+// navigator: click "C" → jump to the first dept whose code starts
+// with C. Scrolling auto-highlights the letter of the topmost visible
+// dept header.
 function wizardRenderCourses(courses) {
   const grid = document.getElementById('wizardCourseGrid');
   const nav  = document.getElementById('wizardLetterNav');
@@ -4721,45 +7213,65 @@ function wizardRenderCourses(courses) {
     return;
   }
 
-  // Sort by course id (server already sorts, defensive re-sort)
-  const sorted = [...courses].sort((a, b) => (a.id || '').localeCompare(b.id || ''));
-  const groups = new Map();
-  for (const c of sorted) {
-    const letter = (c.id?.[0] || '#').toUpperCase();
-    if (!groups.has(letter)) groups.set(letter, []);
-    groups.get(letter).push(c);
+  // Group by department code (already lower-cased in payload — preserve
+  // original case for display). Within a dept, sort by courseNumeric
+  // then by id so ICS 6B < ICS 31 < ICS 122A reads naturally.
+  const groups = new Map();   // deptCode → courses[]
+  for (const c of courses) {
+    const dept = c.department || '???';
+    if (!groups.has(dept)) groups.set(dept, []);
+    groups.get(dept).push(c);
+  }
+  // Sort dept codes alphabetically (the UCI index way)
+  const deptCodes = [...groups.keys()].sort((a, b) => a.localeCompare(b));
+  for (const code of deptCodes) {
+    groups.get(code).sort((a, b) => {
+      const na = a.courseNumeric || 0, nb = b.courseNumeric || 0;
+      if (na !== nb) return na - nb;
+      return (a.id || '').localeCompare(b.id || '');
+    });
   }
 
-  // Build grid in a DocumentFragment so the browser only repaints once.
-  // For ~9000 cards this is the difference between 2s and 200ms.
-  const frag = document.createDocumentFragment();
+  // Letter → first-dept-header-element map, for A-Z nav click-jump
+  const letterFirstHeader = new Map();
   const headerEls = [];
+
+  // Build in a DocumentFragment so we only repaint once
+  const frag = document.createDocumentFragment();
+  const deptNameMap = wizardState._deptNameMap || {};
   let cardIndex = 0;
-  for (const [letter, items] of groups) {
+
+  for (const deptCode of deptCodes) {
+    const items = groups.get(deptCode);
+    const firstLetter = (deptCode[0] || '#').toUpperCase();
+    const deptName = deptNameMap[deptCode] || '';
+
     const header = document.createElement('div');
-    header.className = 'wizard-letter-header';
-    header.setAttribute('data-letter-anchor', letter);
+    header.className = 'wizard-dept-header';
+    header.setAttribute('data-letter-anchor', firstLetter);
+    header.setAttribute('data-dept-anchor', deptCode);
     header.innerHTML = `
-      <span class="letter">${escHTML(letter)}</span>
+      <span class="dept-code">${escHTML(deptCode)}</span>
+      ${deptName ? `<span class="dept-sep">·</span><span class="dept-name">${escHTML(deptName)}</span>` : ''}
       <span class="count">${items.length} course${items.length === 1 ? '' : 's'}</span>
     `;
     frag.appendChild(header);
     headerEls.push(header);
+    if (!letterFirstHeader.has(firstLetter)) letterFirstHeader.set(firstLetter, header);
 
     for (const c of items) {
       const card = document.createElement('div');
       const sel = wizardState.completed_courses.has(c.id);
       card.className = 'wizard-card' + (sel ? ' selected' : '');
-      // Cap the stagger after the first ~20 cards — 9000 simultaneous
-      // fade-ins would tank the browser.
       card.style.animationDelay = `${Math.min(cardIndex++, 20) * 10}ms`;
       card.setAttribute('data-cid', c.id);
+      card.setAttribute('data-dept', deptCode);
       const levelTag = (c.courseLevel || '').replace(/Division/g, '').trim();
       const units = (c.minUnits != null)
         ? `${c.minUnits}${c.maxUnits && c.maxUnits !== c.minUnits ? `–${c.maxUnits}` : ''} units`
         : '';
       card.innerHTML = `
-        <div class="cat">${escHTML(c.department || levelTag || 'Course')}${units ? ' · ' + escHTML(units) : ''}</div>
+        <div class="cat">${escHTML(levelTag || 'Course')}${units ? ' · ' + escHTML(units) : ''}</div>
         <div class="code">${escHTML(c.id)}</div>
         <div class="title">${escHTML(c.title || c.id)}</div>
         <div class="check">✓</div>
@@ -4779,20 +7291,21 @@ function wizardRenderCourses(courses) {
   }
   grid.appendChild(frag);
 
-  // A-Z navigation strip
-  for (const letter of groups.keys()) {
+  // A-Z navigation strip — one button per letter that appears
+  for (const letter of letterFirstHeader.keys()) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = letter;
     btn.setAttribute('data-letter-target', letter);
     btn.onclick = () => {
-      const target = grid.querySelector(`[data-letter-anchor="${CSS.escape(letter)}"]`);
+      const target = letterFirstHeader.get(letter);
       if (target) target.scrollIntoView({behavior: 'smooth', block: 'start'});
     };
     nav.appendChild(btn);
   }
 
-  // Highlight whichever letter group is currently in view as user scrolls.
+  // Active-letter highlighting: when scrolling, mark the letter button
+  // whose first-dept-header is the topmost visible one.
   const scrollRoot = document.getElementById('wizardCourseGridWrap');
   _wizardLetterObserver = new IntersectionObserver((entries) => {
     let topVisible = null;
@@ -4823,14 +7336,46 @@ function wizardRenderCourses(courses) {
   wizardRenderMatrix();
 }
 
-// Tight match — course ID only (NOT title or category). Two tiers:
-//   1. raw substring (case-insensitive) on the id
-//   2. normalized substring (strip & spaces punctuation) on the id
-// No subsequence matching: "ics" must not match BIOSCI.
+// Split a normalized course code into its letter-prefix and its
+// number-part. The number-part starts at the first digit and includes
+// any trailing letters (suffix like "A" in "MATH2A" or "W" in
+// "WRITING39W"). Examples:
+//   "icsci33"   → ["icsci", "33"]
+//   "math2a"    → ["math",  "2a"]
+//   "writing39b" → ["writing", "39b"]
+//   "stats"     → ["stats", ""]      (no number)
+//   "33"        → ["",      "33"]
+function _wizardSplitCode(s) {
+  const m = (s || '').match(/^([^0-9]*)(.*)$/);
+  return m ? [m[1], m[2]] : [s, ''];
+}
+
+// Tight match — course ID only (NOT title or category). Three tiers,
+// cheapest first; ordered so each tier only catches what the previous
+// didn't and so BIOSCI is never matched by a query of "ics":
+//   1. raw substring on the id (handles exact paste of a real id)
+//   2. normalized substring on the id (handles I&CSCI ↔ ICS by
+//      stripping & / space / punctuation)
+//   3. split match — query's letter-prefix must be a substring of the
+//      id's letter-prefix AND query's digit-prefix must start the
+//      id's number-part. This catches "ICS33" → "I&CSCI33" where the
+//      contiguous normalized form ("icsci33") does NOT contain the
+//      contiguous query ("ics33") because of the extra "ci" between.
+//      Tier 3 only activates when the query actually has BOTH letter
+//      and digit parts so plain text queries (no digits) keep behaving
+//      exactly like tier 2.
 function _wizardMatchesQuery(card, qRaw, qNorm) {
   const cid = (card.getAttribute('data-cid') || '').toLowerCase();
   if (cid.includes(qRaw)) return true;
-  return _wizardNorm(cid).includes(qNorm);
+  const cidNorm = _wizardNorm(cid);
+  if (cidNorm.includes(qNorm)) return true;
+
+  const [qLetters, qDigits] = _wizardSplitCode(qNorm);
+  // Tier 3 needs both halves — a pure-letter query would otherwise
+  // match too broadly via the empty-digits short-circuit below.
+  if (!qLetters || !qDigits) return false;
+  const [cLetters, cDigits] = _wizardSplitCode(cidNorm);
+  return cLetters.includes(qLetters) && cDigits.startsWith(qDigits);
 }
 
 function wizardFilterCourses() {
@@ -4848,6 +7393,8 @@ function wizardFilterCourses() {
     return;
   }
 
+  // Track which depts still have visible cards
+  const visibleDepts = new Set();
   const visibleLetters = new Set();
   let matchCount = 0;
   grid.querySelectorAll('.wizard-card').forEach(card => {
@@ -4855,18 +7402,24 @@ function wizardFilterCourses() {
     card.classList.toggle('is-hidden', !hit);
     if (hit) {
       matchCount++;
+      visibleDepts.add(card.getAttribute('data-dept') || '');
       const cid = card.getAttribute('data-cid') || '';
       visibleLetters.add((cid[0] || '').toUpperCase());
     }
   });
 
-  grid.querySelectorAll('.wizard-letter-header').forEach(h => {
-    const letter = h.getAttribute('data-letter-anchor');
-    h.classList.toggle('is-hidden', !visibleLetters.has(letter));
+  // Hide dept headers that have no visible children
+  grid.querySelectorAll('.wizard-dept-header').forEach(h => {
+    const dept = h.getAttribute('data-dept-anchor');
+    h.classList.toggle('is-hidden', !visibleDepts.has(dept));
   });
+
+  // Hide A-Z buttons whose letter has no visible dept
+  const visibleDeptLetters = new Set();
+  visibleDepts.forEach(d => visibleDeptLetters.add((d[0] || '').toUpperCase()));
   document.querySelectorAll('#wizardLetterNav button').forEach(b => {
     const letter = b.getAttribute('data-letter-target');
-    b.classList.toggle('is-hidden', !visibleLetters.has(letter));
+    b.classList.toggle('is-hidden', !visibleDeptLetters.has(letter));
   });
 
   if (empty) {

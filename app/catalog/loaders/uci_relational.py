@@ -50,6 +50,21 @@ def _int_or_none(s):
         return None
 
 
+def _parse_json_field(s):
+    """CSV stores nested objects (finalExam, meetings) as JSON strings.
+    Decode silently — bad rows shouldn't crash the catalog build."""
+    if not s:
+        return None
+    s = s.strip()
+    if not s:
+        return None
+    try:
+        import json as _json
+        return _json.loads(s)
+    except (ValueError, TypeError):
+        return None
+
+
 class UCIRelationalLoader(CatalogLoader):
     def __init__(self, data_dir: str | Path = "data/uci"):
         self.data_dir = Path(data_dir)
@@ -151,6 +166,7 @@ class UCIRelationalLoader(CatalogLoader):
                 ge_categories=tuple(sorted(set(ge_by_section.get(sid, [])))),
                 # Schedule + capacity (all optional; empty strings → None)
                 section_type=    _str_or_none(r.get("sectionType")),
+                section_num=     _str_or_none(r.get("sectionNum")),
                 days=            _str_or_none(r.get("days")),
                 start_time=      _str_or_none(r.get("start_time")),
                 end_time=        _str_or_none(r.get("end_time")),
@@ -160,6 +176,8 @@ class UCIRelationalLoader(CatalogLoader):
                 num_on_waitlist= _int_or_none(r.get("num_on_waitlist")),
                 status=          _str_or_none(r.get("status")),
                 is_cancelled=    (r.get("is_cancelled") or "").strip().lower() == "true",
+                restrictions=    _str_or_none(r.get("restrictions")),
+                final_exam=      _parse_json_field(r.get("final_exam_json")),
                 provenance=provenance,
             ))
 
