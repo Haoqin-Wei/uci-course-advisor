@@ -136,7 +136,7 @@
 
 ### M2.1 修复立即存在的状态错误
 
-- [ ] 修复 `load_student_into_session()` 对 `get_student_profile()` envelope 的错误读取。
+- [x] 修复 `load_student_into_session()` 对 `get_student_profile()` envelope 的错误读取。
 - [ ] 新会话创建 `sess_xxx` 后，当前请求立即切换到该 ID；禁止使用空字符串保存第一轮状态。
 - [ ] `ChatRequest.student_id` 不再参与身份判断，身份只来自签名 Cookie。
 - [ ] Pydantic list/dict 默认值改用 `Field(default_factory=...)`。

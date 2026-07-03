@@ -85,7 +85,20 @@ def test_seeded_profile_can_build_memory_prompt_block(seeded_user):
     assert "Prefers morning classes" in block
 
 
-def test_stream_chat_passes_seeded_profile_in_memory_context(
+def test_load_student_into_session_unwraps_profile_envelope(seeded_user):
+    from app.modules.state import get_known_fields, load_student_into_session
+
+    loaded = load_student_into_session("profile_envelope_session", seeded_user.user_id)
+    state = get_known_fields("profile_envelope_session")
+
+    assert loaded is True
+    assert state["major"] == "Computer Science"
+    assert state["year"] == "Sophomore"
+    assert state["completed_courses"] == ["ACENG20A"]
+    assert state["selected_courses"] == ["ICS33", "STATS67"]
+
+
+def test_stream_chat_passes_seeded_profile_in_memory_context_and_state(
     seeded_user,
     captured_stream_agent_context,
 ):
@@ -114,20 +127,11 @@ def test_stream_chat_passes_seeded_profile_in_memory_context(
     assert "selected_courses: ['ICS33', 'STATS67']" in prompt_block
     assert "Prefers morning classes" in prompt_block
 
-    # Characterization of the current M1 behavior: profile reaches the
-    # agent as memory prompt context, but not as structured session state.
-    assert state["major"] is None
-    assert state["completed_courses"] == []
-    assert state["selected_courses"] == []
+    assert state["major"] == "Computer Science"
+    assert state["completed_courses"] == ["ACENG20A"]
+    assert state["selected_courses"] == ["ICS33", "STATS67"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "M2.3 should unwrap the get_student_profile envelope so durable "
-        "profile fields also hydrate structured chat state."
-    ),
-)
 def test_stream_chat_should_hydrate_agent_state_from_seeded_profile(
     seeded_user,
     captured_stream_agent_context,

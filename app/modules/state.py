@@ -51,8 +51,20 @@ def load_student_into_session(session_id: str, student_id: str) -> bool:
 
     TODO: Call real student_profile_tool here.
     """
-    profile = get_student_profile(student_id)
-    if not profile:
+    response = get_student_profile(student_id)
+    if not response:
+        return False
+
+    if isinstance(response, dict) and "profile" in response:
+        if response.get("found") is False:
+            return False
+        profile = response.get("profile") or {}
+    else:
+        # Backward compatibility for tests or older adapters that return
+        # the raw profile dict directly instead of the db.py envelope.
+        profile = response
+
+    if not isinstance(profile, dict) or not profile:
         return False
     update_session(session_id, {
         "major": profile.get("major"),

@@ -108,12 +108,15 @@ def test_new_empty_session_persists_turns_but_currently_splits_state_by_id(
 
     assert second_meta["session_id"] == persistent_sid
     assert second_meta["session_state"]["term"] == "Spring 2025"
-    # Characterization of the current M0/M1 behavior:
-    # the persistent session hydrates history, but first-turn extracted
-    # state still lives under the legacy empty-string session key.
-    assert second_meta["session_state"]["major"] is None
+    # Characterization after M2.1a: the persistent session can hydrate
+    # identity from the durable profile written on the first turn, but
+    # first-turn session-only fields still live under the legacy
+    # empty-string session key.
+    assert second_meta["session_state"]["major"] == "Computer Science"
     assert second_meta["session_state"]["selected_courses"] == []
+    assert second_meta["session_state"]["difficulty_preference"] is None
     assert state_module._sessions[""]["selected_courses"] == ["ICS33"]
+    assert state_module._sessions[""]["difficulty_preference"] == "easy"
     assert [turn["role"] for turn in sessions_data.read_turns(
         "demo_001",
         persistent_sid,
@@ -154,3 +157,4 @@ def test_new_session_second_turn_should_see_first_turn_state(
 
     assert second_state["major"] == "Computer Science"
     assert second_state["selected_courses"] == ["ICS33"]
+    assert second_state["difficulty_preference"] == "easy"
