@@ -160,19 +160,10 @@ def check_schedule_conflict(
     student_id: str,
     term: str,
 ) -> dict:
-    """
-    Check if adding a course would conflict with the student's current schedule.
-    TODO: Implement real time-overlap detection.
-    """
-    student_schedule = db.get_schedule_for_student(student_id, term)
-    new_sections = db.get_sections(course_id, term)
-
-    # Placeholder — always returns no conflict in demo
-    return {
-        "has_conflict": False,
-        "conflicting_with": None,
-        "message": "No conflicts detected (demo mode).",
-    }
+    raise NotImplementedError(
+        "Schedule conflict checks must use app.scheduling service with an "
+        "explicit pending schedule; the old demo placeholder was removed."
+    )
 
 
 # ── Internal helpers ─────────────────────────────────────

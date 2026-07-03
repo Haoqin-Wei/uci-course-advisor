@@ -52,6 +52,7 @@ from app.modules.answer import (
 )
 from app.modules.followup import generate_followups, generate_single_query_followups
 from app.memory import get_memory_manager
+from app.scheduling import calendar_day_names
 
 # ── Phase 3.3 / 3.5 — session storage + decision detection ──
 from app.data import sessions as sessions_data
@@ -1529,19 +1530,6 @@ async def end_session(
     return {"ok": True, "messages_archived": 0}
 
 
-DAY_MAP = {"M": "Mon", "Tu": "Tue", "W": "Wed", "Th": "Thu", "F": "Fri"}
-
-def _parse_days(s):
-    result, i = [], 0
-    while i < len(s):
-        if i+1 < len(s) and s[i:i+2] in DAY_MAP:
-            result.append(DAY_MAP[s[i:i+2]]); i += 2
-        elif s[i] in DAY_MAP:
-            result.append(DAY_MAP[s[i]]); i += 1
-        else:
-            i += 1
-    return result
-
 def _build_schedule_events(session, term: Optional[str] = None):
     """
     Materialize the session's pending_schedule into calendar events.
@@ -1605,7 +1593,7 @@ def _build_schedule_events(session, term: Optional[str] = None):
         instructors = sec.get("instructors") or []
         primary_instructor = instructors[0] if instructors else ""
 
-        for day in _parse_days(days_str):
+        for day in calendar_day_names(days_str):
             events.append({
                 "course_id":   cid,
                 "title":       title,

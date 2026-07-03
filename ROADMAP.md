@@ -173,12 +173,12 @@
 
 ### M3.1 合并重复实现
 
-- [ ] 以 `app/modules/conflict.py` 或新建 `app/scheduling/` 作为唯一 scheduling domain service。
-- [ ] Agent tool、推荐卡片和 Schedule API 全部调用同一个日期/时间解析器。
-- [ ] 删除 `app/agent/tools.py` 中重复的 `_parse_days/_parse_time/_section_overlap`。
-- [ ] 删除 `chat.py` 中重复的 `_parse_days`。
-- [ ] 删除 `modules/query.py` 中永远返回“无冲突”的 placeholder。
-- [ ] 统一 Mon–Sun 编码，明确 TBA 的 unknown 状态。
+- [x] 以 `app/modules/conflict.py` 或新建 `app/scheduling/` 作为唯一 scheduling domain service。
+- [x] Agent tool、推荐卡片和 Schedule API 全部调用同一个日期/时间解析器。
+- [x] 删除 `app/agent/tools.py` 中重复的 `_parse_days/_parse_time/_section_overlap`。
+- [x] 删除 `chat.py` 中重复的 `_parse_days`。
+- [x] 删除 `modules/query.py` 中永远返回“无冲突”的 placeholder。
+- [x] 统一 Mon–Sun 编码，明确 TBA 的 unknown 状态。
 
 ### M3.2 实现 Schedule Bundle Validation
 

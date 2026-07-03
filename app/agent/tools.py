@@ -25,6 +25,7 @@ import logging
 from typing import Any, Callable, Optional
 
 from app.data import db
+from app.scheduling import sections_overlap
 
 logger = logging.getLogger(__name__)
 
@@ -658,47 +659,6 @@ def _tool_search_courses(
 
 # ── Section conflict: real time-overlap detection ────────
 
-def _parse_days(s: str) -> set[str]:
-    """'MWF' → {M,W,F}; 'TuTh' → {Tu,Th}; 'MTuWThF' → all five."""
-    out: set[str] = set()
-    i = 0
-    while i < len(s):
-        if s[i : i + 2] in ("Tu", "Th"):
-            out.add(s[i : i + 2])
-            i += 2
-        elif s[i] in ("M", "W", "F", "S", "U"):
-            out.add(s[i])
-            i += 1
-        else:
-            i += 1
-    return out
-
-
-def _parse_time(s: str) -> tuple[int, int]:
-    """'11:00' or '11:00-12:20' → (start_min, end_min). For single
-    times pass both halves separately and call this twice."""
-    h, m = s.strip().split(":")
-    return int(h), int(m)
-
-
-def _section_overlap(a: dict, b: dict) -> bool:
-    """True iff the two section dicts (from db._section_record_to_dict
-    or db._api_section_to_dict) share a meeting day AND time window."""
-    days_a = _parse_days(a.get("days") or "")
-    days_b = _parse_days(b.get("days") or "")
-    if not (days_a & days_b):
-        return False
-    try:
-        sah, sam = _parse_time(a.get("start_time") or "")
-        eah, eam = _parse_time(a.get("end_time") or "")
-        sbh, sbm = _parse_time(b.get("start_time") or "")
-        ebh, ebm = _parse_time(b.get("end_time") or "")
-    except (ValueError, AttributeError):
-        return False
-    sa, ea = sah * 60 + sam, eah * 60 + eam
-    sb, eb = sbh * 60 + sbm, ebh * 60 + ebm
-    return sa < eb and sb < ea
-
 
 def _tool_check_section_conflict(
     course_a: str,
@@ -725,7 +685,7 @@ def _tool_check_section_conflict(
     any_compatible = False
     for sa in a["sections"]:
         for sb in b["sections"]:
-            overlap = _section_overlap(sa, sb)
+            overlap = sections_overlap(sa, sb)
             if not overlap:
                 any_compatible = True
             pairs.append({
