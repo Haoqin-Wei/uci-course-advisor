@@ -56,7 +56,6 @@ from app.memory import get_memory_manager
 # ── Phase 3.3 / 3.5 — session storage + decision detection ──
 from app.data import sessions as sessions_data
 from app.modules import decision_detector
-from app.modules import state as state_module
 # ─────────────────────────────────────────────────────────────
 
 # ── Validation Phase 1 ───────────────────────────────────
@@ -71,6 +70,14 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 router = APIRouter()
+
+# Temporary legacy-id alias cache.
+#
+# The frontend can still send stable non-persistent keys such as
+# "demo_session". Until the next M2.2 step removes that compatibility
+# path, keep the alias mapping local to this router instead of storing it
+# in app.modules.state.
+_LEGACY_SESSION_ALIASES: dict[tuple[str, str], str] = {}
 
 # Scan for course IDs anywhere in a string.
 #
@@ -150,9 +157,9 @@ def _resolve_session_id(
             )
 
     # Case 2: legacy request (e.g. old "demo_session" key) — check
-    # in-memory mapping first
-    in_mem = state_module._sessions.get(req_session_id, {})
-    cached = in_mem.get("persistent_session_id")
+    # temporary router-local alias mapping first.
+    alias_key = (user_id, req_session_id)
+    cached = _LEGACY_SESSION_ALIASES.get(alias_key)
     if cached:
         try:
             sessions_data.get_session_meta(user_id, cached)
@@ -161,15 +168,13 @@ def _resolve_session_id(
             # Session was deleted externally — fall through to recreate
             pass
 
-    # Case 3: no usable session — create a new one and cache the mapping
+    # Case 3: no usable session — create a new one and cache the alias
     new_sid = sessions_data.create_session(
         user_id,
         title="New conversation",
         term_scope=term_str,
     )
-    if req_session_id not in state_module._sessions:
-        state_module._sessions[req_session_id] = state_module._make_empty_session(req_session_id)
-    state_module._sessions[req_session_id]["persistent_session_id"] = new_sid
+    _LEGACY_SESSION_ALIASES[alias_key] = new_sid
     logger.info(
         "[stream] auto-created persistent session %s (legacy key=%r)",
         new_sid, req_session_id,
@@ -510,10 +515,10 @@ async def chat(
 
     mem.initialize_session(active_session_id, user_id)
 
-    session = get_or_create_session(active_session_id)
+    session = get_or_create_session(active_session_id, user_id=user_id)
     if not session.get("major"):
-        load_student_into_session(active_session_id, user_id)
-        session = get_or_create_session(active_session_id)
+        load_student_into_session(active_session_id, user_id, user_id=user_id)
+        session = get_or_create_session(active_session_id, user_id=user_id)
 
     mem.on_turn_start(active_session_id, user_id)
     logger.info(
@@ -526,8 +531,9 @@ async def chat(
     if extracted:
         logger.info("[Channel A] extracted from message: %s", extracted)
         _capture_hard_facts(session, extracted, user_id, mem)
+        session = update_session(active_session_id, session, user_id=user_id)
         if extracted:
-            session = update_session(active_session_id, extracted)
+            session = update_session(active_session_id, extracted, user_id=user_id)
     else:
         logger.info("[Channel A] nothing extracted from message")
 
@@ -542,7 +548,7 @@ async def chat(
             if llm_entities.get(f):
                 eu[f] = llm_entities[f]
         if eu:
-            session = update_session(active_session_id, eu)
+            session = update_session(active_session_id, eu, user_id=user_id)
 
     memory_context = {
         "system_prompt_block": mem.system_prompt_block(user_id),
@@ -569,17 +575,17 @@ async def chat(
         _detect_and_pin_decisions(user_id, persistent_sid, req.message, new_turn_index)
         _maybe_schedule_reflection(background_tasks, mem, active_session_id, user_id)
         return ChatResponse(reply=reply, intent=intent,
-                            session_state=get_known_fields(active_session_id))
+                            session_state=get_known_fields(active_session_id, user_id=user_id))
 
-    state = get_known_fields(active_session_id)
+    state = get_known_fields(active_session_id, user_id=user_id)
 
     # ── Sync frontend's term to session state ──
     # The dropdown is authoritative for THIS turn — without this, the
     # downstream query falls back to state["term"] (often empty or stale)
     # and retrieves nothing, causing the LLM to hallucinate courses.
     if req.term and req.term != state.get("term"):
-        update_session(active_session_id, {"term": req.term})
-        state = get_known_fields(active_session_id)
+        update_session(active_session_id, {"term": req.term}, user_id=user_id)
+        state = get_known_fields(active_session_id, user_id=user_id)
         logger.info("[term-sync] frontend term %r written to session %s",
                     req.term, active_session_id)
 
@@ -1134,10 +1140,10 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
             persistent_sid = _resolve_session_id(req.session_id, user_id, req.term)
             active_session_id = persistent_sid
 
-            session = get_or_create_session(active_session_id)
+            session = get_or_create_session(active_session_id, user_id=user_id)
             if not session.get("major"):
-                load_student_into_session(active_session_id, user_id)
-                session = get_or_create_session(active_session_id)
+                load_student_into_session(active_session_id, user_id, user_id=user_id)
+                session = get_or_create_session(active_session_id, user_id=user_id)
 
             mem.on_turn_start(active_session_id, user_id)
             logger.info("[stream turn %d] user=%s session=%s msg=%r",
@@ -1148,8 +1154,9 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
             extracted = await extract_info_from_message(req.message)
             if extracted:
                 _capture_hard_facts(session, extracted, user_id, mem)
+                session = update_session(active_session_id, session, user_id=user_id)
                 if extracted:
-                    session = update_session(active_session_id, extracted)
+                    session = update_session(active_session_id, extracted, user_id=user_id)
 
             intent_result = await classify_intent(req.message)
             intent = intent_result["intent"]
@@ -1161,7 +1168,7 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
                       for f in ("term", "major", "difficulty_preference", "recommendation_goal")
                       if llm_entities.get(f)}
                 if eu:
-                    session = update_session(active_session_id, eu)
+                    session = update_session(active_session_id, eu, user_id=user_id)
 
             memory_context = {
                 "system_prompt_block": mem.system_prompt_block(user_id),
@@ -1202,10 +1209,10 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
             # gaps, and asks its own clarifying questions in the user's
             # language if any are truly needed.
 
-            state = get_known_fields(active_session_id)
+            state = get_known_fields(active_session_id, user_id=user_id)
             if req.term and req.term != state.get("term"):
-                update_session(active_session_id, {"term": req.term})
-                state = get_known_fields(active_session_id)
+                update_session(active_session_id, {"term": req.term}, user_id=user_id)
+                state = get_known_fields(active_session_id, user_id=user_id)
                 logger.info("[stream term-sync] %r written", req.term)
 
             # ── Stream the LLM answer through on_token ──
@@ -1455,7 +1462,10 @@ def _entries_match(entry: dict, course_id: str, req_section: Optional[str],
 
 
 @router.post("/schedule/add")
-async def add_to_schedule(req: ScheduleRequest):
+async def add_to_schedule(
+    req: ScheduleRequest,
+    user: dict = Depends(current_user_optional),
+):
     """Phase E4: each (course_id, section) pair is a separate schedule
     entry. Adding Lec A and Dis A1 of the same course produces TWO
     entries (and downstream, two calendar events) so the user sees
@@ -1464,7 +1474,9 @@ async def add_to_schedule(req: ScheduleRequest):
     Stores the normalized section_num so subsequent compares hit the
     fast path instead of going through _resolve_section_num every
     time."""
-    session = get_or_create_session(req.session_id)
+    user_id = user["id"]
+    active_session_id = _resolve_session_id(req.session_id, user_id, req.term)
+    session = get_or_create_session(active_session_id, user_id=user_id)
     sec_norm = _resolve_section_num(req.course_id, req.section, req.term)
     sec_canon = sec_norm or req.section
     entry = {"course_id": req.course_id, "section": sec_canon, "status": "pending"}
@@ -1476,17 +1488,27 @@ async def add_to_schedule(req: ScheduleRequest):
     )
     if not is_dup:
         session.setdefault("pending_schedule", []).append(entry)
+        session = update_session(
+            active_session_id,
+            {"pending_schedule": session["pending_schedule"]},
+            user_id=user_id,
+        )
     events = _build_schedule_events(session, req.term)
     return {"ok": True, "pending_schedule": session["pending_schedule"], "events": events}
 
 
 @router.post("/schedule/remove")
-async def remove_from_schedule(req: ScheduleRequest):
+async def remove_from_schedule(
+    req: ScheduleRequest,
+    user: dict = Depends(current_user_optional),
+):
     """If `section` is provided, remove only that specific (course, section).
     Section-equivalence aware so legacy entries (5-digit codes stored
     where section_num is now expected) get matched and removed.
     If omitted, remove every entry for the course."""
-    session = get_or_create_session(req.session_id)
+    user_id = user["id"]
+    active_session_id = _resolve_session_id(req.session_id, user_id, req.term)
+    session = get_or_create_session(active_session_id, user_id=user_id)
     if req.section:
         session["pending_schedule"] = [
             e for e in session.get("pending_schedule", [])
@@ -1496,6 +1518,11 @@ async def remove_from_schedule(req: ScheduleRequest):
         session["pending_schedule"] = [
             e for e in session.get("pending_schedule", []) if e["course_id"] != req.course_id
         ]
+    session = update_session(
+        active_session_id,
+        {"pending_schedule": session["pending_schedule"]},
+        user_id=user_id,
+    )
     events = _build_schedule_events(session, req.term)
     return {"ok": True, "pending_schedule": session["pending_schedule"], "events": events}
 
@@ -1506,12 +1533,16 @@ class ScheduleClearRequest(BaseModel):
 
 
 @router.post("/schedule/clear")
-async def clear_schedule(req: ScheduleClearRequest):
+async def clear_schedule(
+    req: ScheduleClearRequest,
+    user: dict = Depends(current_user_optional),
+):
     """Wipe every entry in this session's pending_schedule. Escape hatch
     when the user accumulates stuck entries (e.g. from legacy format
     that the section-equivalence fix can't auto-resolve)."""
-    session = get_or_create_session(req.session_id)
-    session["pending_schedule"] = []
+    user_id = user["id"]
+    active_session_id = _resolve_session_id(req.session_id, user_id, req.term)
+    update_session(active_session_id, {"pending_schedule": []}, user_id=user_id)
     return {"ok": True, "pending_schedule": [], "events": []}
 
 

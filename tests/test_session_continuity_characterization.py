@@ -89,10 +89,10 @@ def test_new_empty_session_persists_turns_without_splitting_state_by_id(
     assert first_meta["session_state"]["major"] == "Computer Science"
     assert first_meta["session_state"]["selected_courses"] == ["ICS33"]
     assert first_meta["session_state"]["difficulty_preference"] == "easy"
-    assert "" not in state_module._sessions
-    assert state_module._sessions[persistent_sid]["selected_courses"] == ["ICS33"]
-    assert state_module._sessions[persistent_sid]["difficulty_preference"] == "easy"
-    assert state_module._sessions[persistent_sid]["history"] == []
+    assert not hasattr(state_module, "_sessions")
+    persisted_state = sessions_data.get_session_state("demo_001", persistent_sid)
+    assert persisted_state["selected_courses"] == ["ICS33"]
+    assert persisted_state["difficulty_preference"] == "easy"
     assert [turn["role"] for turn in sessions_data.read_turns(
         "demo_001",
         persistent_sid,
@@ -114,8 +114,9 @@ def test_new_empty_session_persists_turns_without_splitting_state_by_id(
     assert second_meta["session_state"]["major"] == "Computer Science"
     assert second_meta["session_state"]["selected_courses"] == ["ICS33"]
     assert second_meta["session_state"]["difficulty_preference"] == "easy"
-    assert "" not in state_module._sessions
-    assert state_module._sessions[persistent_sid]["history"] == []
+    persisted_state = sessions_data.get_session_state("demo_001", persistent_sid)
+    assert persisted_state["selected_courses"] == ["ICS33"]
+    assert persisted_state["difficulty_preference"] == "easy"
     assert [turn["role"] for turn in sessions_data.read_turns(
         "demo_001",
         persistent_sid,

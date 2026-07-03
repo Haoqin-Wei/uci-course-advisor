@@ -86,10 +86,21 @@ def test_seeded_profile_can_build_memory_prompt_block(seeded_user):
 
 
 def test_load_student_into_session_unwraps_profile_envelope(seeded_user):
+    from app.data import sessions as sessions_data
     from app.modules.state import get_known_fields, load_student_into_session
 
-    loaded = load_student_into_session("profile_envelope_session", seeded_user.user_id)
-    state = get_known_fields("profile_envelope_session")
+    session_id = sessions_data.create_session(
+        seeded_user.user_id,
+        title="Profile envelope fixture",
+        term_scope="Spring 2025",
+    )
+
+    loaded = load_student_into_session(
+        session_id,
+        seeded_user.user_id,
+        user_id=seeded_user.user_id,
+    )
+    state = get_known_fields(session_id, user_id=seeded_user.user_id)
 
     assert loaded is True
     assert state["major"] == "Computer Science"

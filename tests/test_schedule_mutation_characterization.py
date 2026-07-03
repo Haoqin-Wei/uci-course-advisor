@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.modules import state as state_module
+from app.data import sessions as sessions_data
 
 
 @pytest.fixture
@@ -73,7 +73,11 @@ def test_schedule_add_normalizes_section_codes_dedupes_and_builds_events(
     app_client,
     fake_schedule_catalog,
 ):
-    session_id = "schedule_add_case"
+    session_id = sessions_data.create_session(
+        "demo_001",
+        title="Schedule add fixture",
+        term_scope="Spring 2025",
+    )
 
     first = app_client.post(
         "/api/schedule/add",
@@ -129,7 +133,7 @@ def test_schedule_add_normalizes_section_codes_dedupes_and_builds_events(
     ]
     assert payload["events"][0]["title"] == "Design and Analysis of Algorithms"
     assert payload["events"][0]["section"] == "20000"
-    assert state_module._sessions[session_id]["pending_schedule"] == payload[
+    assert sessions_data.get_session_state("demo_001", session_id)["pending_schedule"] == payload[
         "pending_schedule"
     ]
 
@@ -138,7 +142,11 @@ def test_schedule_remove_specific_section_then_whole_course_with_null_section(
     app_client,
     fake_schedule_catalog,
 ):
-    session_id = "schedule_remove_case"
+    session_id = sessions_data.create_session(
+        "demo_001",
+        title="Schedule remove fixture",
+        term_scope="Spring 2025",
+    )
     for course_id, section in (
         ("COMPSCI161", "A"),
         ("COMPSCI161", "A1"),
@@ -206,8 +214,16 @@ def test_schedule_clear_wipes_only_requested_session(
     app_client,
     fake_schedule_catalog,
 ):
-    first_session = "schedule_clear_first"
-    second_session = "schedule_clear_second"
+    first_session = sessions_data.create_session(
+        "demo_001",
+        title="Schedule clear first fixture",
+        term_scope="Spring 2025",
+    )
+    second_session = sessions_data.create_session(
+        "demo_001",
+        title="Schedule clear second fixture",
+        term_scope="Spring 2025",
+    )
 
     for session_id in (first_session, second_session):
         response = app_client.post(
@@ -228,7 +244,7 @@ def test_schedule_clear_wipes_only_requested_session(
 
     assert cleared.status_code == 200
     assert cleared.json() == {"ok": True, "pending_schedule": [], "events": []}
-    assert state_module._sessions[first_session]["pending_schedule"] == []
-    assert state_module._sessions[second_session]["pending_schedule"] == [
+    assert sessions_data.get_session_state("demo_001", first_session)["pending_schedule"] == []
+    assert sessions_data.get_session_state("demo_001", second_session)["pending_schedule"] == [
         {"course_id": "COMPSCI161", "section": "A", "status": "pending"}
     ]

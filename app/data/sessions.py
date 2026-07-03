@@ -160,6 +160,10 @@ def _read_jsonl(path: Path) -> list[dict]:
 def _default_session_state(term: Optional[str] = None) -> dict:
     return {
         "term": term,
+        "major": None,
+        "year": None,
+        "selected_courses": [],
+        "completed_courses": [],
         "preferred_time": None,
         "difficulty_preference": None,
         "recommendation_goal": None,
@@ -173,8 +177,9 @@ def _normalize_session_state(raw: Any, *, term: Optional[str] = None) -> dict:
         state.update(raw)
     if state.get("term") is None and term is not None:
         state["term"] = term
-    if not isinstance(state.get("pending_schedule"), list):
-        state["pending_schedule"] = []
+    for field in ("selected_courses", "completed_courses", "pending_schedule"):
+        if not isinstance(state.get(field), list):
+            state[field] = []
     return state
 
 
@@ -271,7 +276,7 @@ def update_session_state(
     Patch state.json with structured per-session state fields.
 
     This is intentionally separate from meta.json so planner/chat state
-    can migrate out of app.modules.state._sessions without mixing UI
+    can live outside the legacy app.modules.state compatibility layer without mixing UI
     state into listing metadata.
     """
     if not isinstance(updates, dict):

@@ -214,9 +214,9 @@ def isolated_test_environment(
     from app.agent import loop as agent_loop
     from app.data import anteater
     from app.data.uci_general import anteater_programs
-    from app.modules import state as state_module
+    from app.routers import chat as chat_router
 
-    state_module._sessions.clear()
+    chat_router._LEGACY_SESSION_ALIASES.clear()
     agent_loop._continuation_store.clear()
     anteater._course_cache.clear()
     anteater._sections_cache.clear()
@@ -231,7 +231,7 @@ def isolated_test_environment(
     yield runtime_paths
 
     fresh_memory_manager.shutdown()
-    state_module._sessions.clear()
+    chat_router._LEGACY_SESSION_ALIASES.clear()
     agent_loop._continuation_store.clear()
 
 

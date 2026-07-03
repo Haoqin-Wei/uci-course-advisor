@@ -290,7 +290,7 @@ def test_stream_continue_resumes_once_and_persists_assistant_text(monkeypatch):
     assert [event["type"] for event in resumed_events] == ["token", "final", "done"]
     assert resumed_events[0]["text"] == "Resumed answer."
     assert resumed_events[1]["text"] == "Resumed answer."
-    assert state_module._sessions.get(session_id, {}).get("history", []) == []
+    assert not hasattr(state_module, "_sessions")
     assert [turn["role"] for turn in sessions_data.read_turns("demo_001", session_id)] == [
         "assistant"
     ]

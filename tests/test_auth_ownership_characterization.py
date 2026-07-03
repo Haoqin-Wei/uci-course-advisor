@@ -176,15 +176,26 @@ def test_authenticated_chat_ignores_body_student_id_and_uses_cookie_user(
 
 def test_end_session_uses_cookie_user_without_archiving_duplicate_history(
     app_client,
+    monkeypatch,
     runtime_paths,
 ):
-    from app.modules import state as state_module
+    from app.routers import chat as chat_router
+
+    captured = []
+
+    class FakeMemoryManager:
+        def on_session_end(self, user_id: str, session_id: str) -> None:
+            captured.append((user_id, session_id))
 
     alice = _create_user("alice-end-session@example.edu")
     bob = _create_user("bob-end-session@example.edu")
-    session_id = "end_body_spoof"
-    state_module.add_message(session_id, "user", "Alice private question")
-    state_module.add_message(session_id, "assistant", "Alice private answer")
+    session_id = "sess_endb0dy"
+
+    monkeypatch.setattr(
+        chat_router,
+        "get_memory_manager",
+        lambda: FakeMemoryManager(),
+    )
 
     _login_as(app_client, alice["id"])
     response = app_client.post(
@@ -197,6 +208,7 @@ def test_end_session_uses_cookie_user_without_archiving_duplicate_history(
 
     assert response.status_code == 200
     assert response.json() == {"ok": True, "messages_archived": 0}
+    assert captured == [(alice["id"], session_id)]
     assert not (
         runtime_paths.memory_root
         / alice["id"]
