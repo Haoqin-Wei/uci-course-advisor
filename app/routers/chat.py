@@ -1122,17 +1122,18 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
 
             # ── Phase 3.3: resolve the request's session_id to a persistent one ──
             persistent_sid = _resolve_session_id(req.session_id, user_id, req.term)
+            active_session_id = persistent_sid
 
-            session = get_or_create_session(req.session_id)
+            session = get_or_create_session(active_session_id)
             _hydrate_state_from_session(user_id, persistent_sid, session)
             if not session.get("major"):
-                load_student_into_session(req.session_id, user_id)
-                session = get_or_create_session(req.session_id)
+                load_student_into_session(active_session_id, user_id)
+                session = get_or_create_session(active_session_id)
 
-            add_message(req.session_id, "user", req.message)
-            mem.on_turn_start(req.session_id, user_id)
+            add_message(active_session_id, "user", req.message)
+            mem.on_turn_start(active_session_id, user_id)
             logger.info("[stream turn %d] user=%s session=%s msg=%r",
-                        mem.turn_count(req.session_id), user_id,
+                        mem.turn_count(active_session_id), user_id,
                         persistent_sid, req.message[:120])
 
             # Channel A
@@ -1140,7 +1141,7 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
             if extracted:
                 _capture_hard_facts(session, extracted, user_id, mem)
                 if extracted:
-                    session = update_session(req.session_id, extracted)
+                    session = update_session(active_session_id, extracted)
 
             intent_result = await classify_intent(req.message)
             intent = intent_result["intent"]
@@ -1152,7 +1153,7 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
                       for f in ("term", "major", "difficulty_preference", "recommendation_goal")
                       if llm_entities.get(f)}
                 if eu:
-                    session = update_session(req.session_id, eu)
+                    session = update_session(active_session_id, eu)
 
             memory_context = {
                 "system_prompt_block": mem.system_prompt_block(user_id),
@@ -1193,10 +1194,10 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
             # gaps, and asks its own clarifying questions in the user's
             # language if any are truly needed.
 
-            state = get_known_fields(req.session_id)
+            state = get_known_fields(active_session_id)
             if req.term and req.term != state.get("term"):
-                update_session(req.session_id, {"term": req.term})
-                state = get_known_fields(req.session_id)
+                update_session(active_session_id, {"term": req.term})
+                state = get_known_fields(active_session_id)
                 logger.info("[stream term-sync] %r written", req.term)
 
             # ── Stream the LLM answer through on_token ──
@@ -1235,7 +1236,7 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
                 logger.info("[stream] agent fallback → _handle_recommendation")
                 reply, cards, followups, validation_dict = await _handle_recommendation(
                     req.message, state, memory_context,
-                    session_id=req.session_id, term_str=req.term,
+                    session_id=active_session_id, term_str=req.term,
                     system_prompt=req.system_prompt,
                     on_token=on_token,
                     recent_turns=recent_turns,
@@ -1243,8 +1244,8 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
                     summary=summary,
                 )
 
-            add_message(req.session_id, "assistant", reply)
-            mem.sync_turn(user_id, req.message, reply, req.session_id)
+            add_message(active_session_id, "assistant", reply)
+            mem.sync_turn(user_id, req.message, reply, active_session_id)
 
             # ── Phase 3.3 + 3.5 + Round 4: persist turn, schedule auto-title,
             #    then detect decisions ──
@@ -1258,7 +1259,7 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
             )
             _detect_and_pin_decisions(user_id, persistent_sid, req.message, new_turn_index)
 
-            _maybe_schedule_reflection(background_tasks, mem, req.session_id, user_id, session)
+            _maybe_schedule_reflection(background_tasks, mem, active_session_id, user_id, session)
 
             await queue.put({
                 "type": "meta",

@@ -69,7 +69,7 @@ def deterministic_chat_pipeline(monkeypatch):
     monkeypatch.setattr(chat_router, "_handle_agent", fake_handle_agent)
 
 
-def test_new_empty_session_persists_turns_but_currently_splits_state_by_id(
+def test_new_empty_session_persists_turns_without_splitting_state_by_id(
     deterministic_chat_pipeline,
 ):
     first_events = asyncio.run(
@@ -88,8 +88,10 @@ def test_new_empty_session_persists_turns_but_currently_splits_state_by_id(
     assert first_meta["session_state"]["term"] == "Spring 2025"
     assert first_meta["session_state"]["major"] == "Computer Science"
     assert first_meta["session_state"]["selected_courses"] == ["ICS33"]
-    assert state_module._sessions[""]["selected_courses"] == ["ICS33"]
-    assert persistent_sid not in state_module._sessions
+    assert first_meta["session_state"]["difficulty_preference"] == "easy"
+    assert "" not in state_module._sessions
+    assert state_module._sessions[persistent_sid]["selected_courses"] == ["ICS33"]
+    assert state_module._sessions[persistent_sid]["difficulty_preference"] == "easy"
     assert [turn["role"] for turn in sessions_data.read_turns(
         "demo_001",
         persistent_sid,
@@ -108,28 +110,16 @@ def test_new_empty_session_persists_turns_but_currently_splits_state_by_id(
 
     assert second_meta["session_id"] == persistent_sid
     assert second_meta["session_state"]["term"] == "Spring 2025"
-    # Characterization after M2.1a: the persistent session can hydrate
-    # identity from the durable profile written on the first turn, but
-    # first-turn session-only fields still live under the legacy
-    # empty-string session key.
     assert second_meta["session_state"]["major"] == "Computer Science"
-    assert second_meta["session_state"]["selected_courses"] == []
-    assert second_meta["session_state"]["difficulty_preference"] is None
-    assert state_module._sessions[""]["selected_courses"] == ["ICS33"]
-    assert state_module._sessions[""]["difficulty_preference"] == "easy"
+    assert second_meta["session_state"]["selected_courses"] == ["ICS33"]
+    assert second_meta["session_state"]["difficulty_preference"] == "easy"
+    assert "" not in state_module._sessions
     assert [turn["role"] for turn in sessions_data.read_turns(
         "demo_001",
         persistent_sid,
     )] == ["user", "assistant", "user", "assistant"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "M2.1 should switch the current request to the created sess_xxx "
-        "so first-turn state is visible on the second turn."
-    ),
-)
 def test_new_session_second_turn_should_see_first_turn_state(
     deterministic_chat_pipeline,
 ):
