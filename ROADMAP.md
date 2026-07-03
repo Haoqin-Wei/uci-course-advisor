@@ -1,6 +1,6 @@
 # UCI Course Advisor Roadmap
 
-> 更新日期：2026-07-02
+> 更新日期：2026-07-03
 >
 > 当前目标：把功能丰富的本地 Demo 收敛成可验证、可持续开发的私测版本。
 >
@@ -84,18 +84,20 @@
 
 ### 任务
 
-- [ ] 将运行生成的数据与源码改动分开：用户 memory、turn log、auth DB、grade cache、教授 summary。
-- [ ] 把可复用 demo fixture 移到明确的 `tests/fixtures/` 或 `data/demo/`。
-- [ ] 检查 `.gitignore`，确保真实用户运行数据不会进入提交。
-- [ ] 保存当前代码 checkpoint，不在同一个提交中混入后续重构。
-- [ ] 记录当前可演示流程：注册、onboarding、发送消息、生成卡片、加课、继续生成、恢复会话。
-- [ ] 记录当前已知失败场景，作为 M1 characterization tests 的输入。
+- [x] 将运行生成的数据与源码改动分开：用户 memory、turn log、auth DB、grade cache、教授 summary。
+- [x] 把可复用 demo fixture 移到明确的 `tests/fixtures/` 或 `data/demo/`。
+- [x] 检查 `.gitignore`，确保真实用户运行数据不会进入提交。
+- [x] 保存当前代码 checkpoint，不在同一个提交中混入后续重构。
+- [x] 记录当前可演示流程：注册、onboarding、发送消息、生成卡片、加课、继续生成、恢复会话。
+- [x] 记录当前已知失败场景，作为 M1 characterization tests 的输入。
 
 ### 验收
 
-- `git status` 中不再混有真实用户运行数据。
-- 当前功能有可回退的代码 checkpoint。
-- 后续每个重构阶段可以独立提交和回滚。
+- [x] `git status` 中不再混有真实用户运行数据。
+- [x] 当前功能有可回退的代码 checkpoint。
+- [x] 后续每个重构阶段可以独立提交和回滚。
+
+基线记录见 [`docs/m0-baseline.md`](docs/m0-baseline.md)。
 
 ## 5. M1 — 建立自动化安全网
 
