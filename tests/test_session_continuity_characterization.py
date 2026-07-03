@@ -151,3 +151,16 @@ def test_new_session_second_turn_should_see_first_turn_state(
     assert second_state["major"] == "Computer Science"
     assert second_state["selected_courses"] == ["ICS33"]
     assert second_state["difficulty_preference"] == "easy"
+
+
+def test_legacy_non_persistent_session_id_is_rejected():
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc_info:
+        chat_router._resolve_session_id(
+            "demo_session",
+            "demo_001",
+            "Spring 2025",
+        )
+
+    assert exc_info.value.status_code == 400

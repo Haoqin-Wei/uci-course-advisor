@@ -161,7 +161,7 @@ def test_authenticated_chat_ignores_body_student_id_and_uses_cookie_user(
         "/api/chat",
         json={
             "message": "What should I take?",
-            "session_id": "body_spoof_chat",
+            "session_id": "",
             "student_id": bob["id"],
             "term": "Spring 2025",
         },
@@ -189,7 +189,13 @@ def test_end_session_uses_cookie_user_without_archiving_duplicate_history(
 
     alice = _create_user("alice-end-session@example.edu")
     bob = _create_user("bob-end-session@example.edu")
-    session_id = "sess_endb0dy"
+    from app.data import sessions
+
+    session_id = sessions.create_session(
+        alice["id"],
+        title="End session fixture",
+        term_scope="Spring 2025",
+    )
 
     monkeypatch.setattr(
         chat_router,

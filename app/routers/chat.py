@@ -30,7 +30,7 @@ import asyncio
 import logging
 import re
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
 
@@ -71,14 +71,6 @@ logging.basicConfig(level=logging.INFO)
 
 router = APIRouter()
 
-# Temporary legacy-id alias cache.
-#
-# The frontend can still send stable non-persistent keys such as
-# "demo_session". Until the next M2.2 step removes that compatibility
-# path, keep the alias mapping local to this router instead of storing it
-# in app.modules.state.
-_LEGACY_SESSION_ALIASES: dict[tuple[str, str], str] = {}
-
 # Scan for course IDs anywhere in a string.
 #
 # We use explicit ASCII look-arounds instead of \b because Python's
@@ -97,7 +89,7 @@ _COURSE_ID_SCAN = re.compile(
 
 class ChatRequest(BaseModel):
     message: str
-    session_id: str = "demo_session"
+    session_id: str = ""
     term: Optional[str] = None                          # 新增
     system_prompt: Optional[str] = None                 # 新增：前端自定义 LLM system prompt
 
@@ -112,16 +104,7 @@ class ChatResponse(BaseModel):
     validation_report: Optional[dict] = None            # 新增
 
 
-# ── Phase 3.3 — session_id resolution ────────────────────
-#
-# The frontend still sends "demo_session" (legacy hardcoded) until
-# Round 3 lands. We translate that into a real persistent session_id
-# (sess_XXXXXX) by either reusing the in-memory mapping or auto-creating
-# one. The persistent_session_id is cached on the in-memory session
-# dict so subsequent requests in the same server lifetime reuse it.
-#
-# After Round 3, the frontend sends real session_ids directly and this
-# resolution becomes a no-op (the real id is used as-is).
+# ── Session ID resolution ─────────────────────────────────
 
 def _resolve_session_id(
     req_session_id: str,
@@ -129,13 +112,13 @@ def _resolve_session_id(
     term_str: Optional[str] = None,
 ) -> str:
     """
-    Translate the request's session_id into a persistent session_id
-    on disk. Returns a session_id starting with 'sess_'.
+    Resolve the request's session_id.
+
+    Contract:
+      - empty session_id creates a new persistent session
+      - existing sess_* continues that session
+      - legacy/non-persistent keys such as "demo_session" are rejected
     """
-    # Case 0 (Phase 3 R3): empty / null session_id is an explicit
-    # "create a new session" signal from the frontend. Skip caching —
-    # we want a brand-new session_id every time the user clicks
-    # "+ New chat" and sends their first message.
     if not req_session_id:
         new_sid = sessions_data.create_session(
             user_id,
@@ -145,41 +128,28 @@ def _resolve_session_id(
         logger.info("[stream] new session %s created (frontend signalled new)", new_sid)
         return new_sid
 
-    # Case 1: frontend already sent a real session_id and it exists
     if req_session_id.startswith("sess_"):
         try:
             sessions_data.get_session_meta(user_id, req_session_id)
             return req_session_id
-        except (sessions_data.SessionNotFound, sessions_data.InvalidId):
-            logger.warning(
-                "[stream] requested session_id %r not found; falling back to auto-create",
-                req_session_id,
-            )
+        except sessions_data.InvalidId as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="session_id must be empty or a valid persistent sess_* id",
+            ) from exc
+        except sessions_data.SessionNotFound as exc:
+            raise HTTPException(
+                status_code=404,
+                detail="Session not found",
+            ) from exc
 
-    # Case 2: legacy request (e.g. old "demo_session" key) — check
-    # temporary router-local alias mapping first.
-    alias_key = (user_id, req_session_id)
-    cached = _LEGACY_SESSION_ALIASES.get(alias_key)
-    if cached:
-        try:
-            sessions_data.get_session_meta(user_id, cached)
-            return cached
-        except sessions_data.SessionNotFound:
-            # Session was deleted externally — fall through to recreate
-            pass
-
-    # Case 3: no usable session — create a new one and cache the alias
-    new_sid = sessions_data.create_session(
-        user_id,
-        title="New conversation",
-        term_scope=term_str,
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "Legacy session_id values are no longer supported; "
+            "send an empty session_id to create a session or an existing sess_* id"
+        ),
     )
-    _LEGACY_SESSION_ALIASES[alias_key] = new_sid
-    logger.info(
-        "[stream] auto-created persistent session %s (legacy key=%r)",
-        new_sid, req_session_id,
-    )
-    return new_sid
 
 
 def _history_from_session_turns(
@@ -1320,7 +1290,7 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
 # ── Continue endpoint (resume after limit_reached) ───────
 
 class ContinueRequest(BaseModel):
-    session_id: str = "demo_session"
+    session_id: str = ""
     continuation_id: str
 
 
@@ -1409,7 +1379,7 @@ async def _stream_continue(req: ContinueRequest, user_id: str):
 # ── Schedule endpoints ───────────────────────────────────
 
 class ScheduleRequest(BaseModel):
-    session_id: str = "demo_session"
+    session_id: str = ""
     course_id: str
     # section is the section_num ("A", "A1", "B3") — NOT the 5-digit
     # registrar code. For E4-style picks the frontend sends "A" for Lec,
@@ -1528,7 +1498,7 @@ async def remove_from_schedule(
 
 
 class ScheduleClearRequest(BaseModel):
-    session_id: str = "demo_session"
+    session_id: str = ""
     term: Optional[str] = None
 
 
@@ -1547,7 +1517,7 @@ async def clear_schedule(
 
 
 class EndSessionRequest(BaseModel):
-    session_id: str = "demo_session"
+    session_id: str = ""
 
 
 @router.post("/session/end")

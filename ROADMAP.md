@@ -148,7 +148,7 @@
 - [x] 聊天历史只保存在 `sessions/{session_id}/turns.jsonl`。
 - [x] 移除 Memory 中重复的完整 `turn_log.jsonl` 和 session-end history snapshot。
 - [x] 完成数据迁移后删除 `app/modules/state.py::_sessions`。
-- [ ] 删除 `demo_session` 到 persistent session 的临时映射逻辑。
+- [x] 删除 `demo_session` 到 persistent session 的临时映射逻辑。
 
 ### M2.3 统一 Memory schema
 

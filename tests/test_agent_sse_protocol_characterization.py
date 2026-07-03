@@ -224,7 +224,7 @@ def test_stream_chat_falls_back_when_agent_errors_before_streaming(monkeypatch):
             chat_router._stream_chat(
                 ChatRequest(
                     message="recommend classes",
-                    session_id="agent_error_fallback",
+                    session_id="",
                     term="Spring 2025",
                 ),
                 BackgroundTasks(),
