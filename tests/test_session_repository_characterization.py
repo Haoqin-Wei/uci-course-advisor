@@ -130,3 +130,68 @@ def test_state_module_uses_session_repository_without_in_memory_store(runtime_pa
     assert sessions.get_session_state("demo_001", session_id)["selected_courses"] == [
         "ICS33"
     ]
+
+
+def test_service_restart_keeps_term_profile_history_and_pending_schedule(runtime_paths):
+    from app.data import sessions
+    from app.memory.json_provider import JSONFileMemoryProvider
+    from app.memory.manager import MemoryManager
+
+    user_id = "restart_acceptance"
+    session_id = sessions.create_session(
+        user_id,
+        title="Restart acceptance fixture",
+        term_scope="Spring 2025",
+    )
+
+    manager = MemoryManager()
+    manager.set_provider(JSONFileMemoryProvider(base_dir=str(runtime_paths.memory_root)))
+    try:
+        manager.initialize_session(session_id, user_id)
+        manager.update_profile(
+            user_id,
+            {
+                "major": "Computer Science",
+                "year": "Junior",
+            },
+        )
+    finally:
+        manager.shutdown()
+
+    sessions.update_session_state(
+        user_id,
+        session_id,
+        {
+            "pending_schedule": [
+                {"course_id": "COMPSCI161", "section": "A", "status": "pending"}
+            ],
+        },
+    )
+    sessions.append_turn(user_id, session_id, "user", "Remember this schedule.")
+    sessions.append_turn(user_id, session_id, "assistant", "Schedule saved.")
+
+    fresh_manager = MemoryManager()
+    fresh_manager.set_provider(
+        JSONFileMemoryProvider(base_dir=str(runtime_paths.memory_root))
+    )
+    try:
+        fresh_manager.initialize_session("sess_after_restart", user_id)
+        profile_after_restart = fresh_manager.get_profile(user_id)
+    finally:
+        fresh_manager.shutdown()
+
+    state_after_restart = sessions.get_session_state(user_id, session_id)
+    turns_after_restart = sessions.read_turns(user_id, session_id)
+
+    assert state_after_restart["term"] == "Spring 2025"
+    assert state_after_restart["pending_schedule"] == [
+        {"course_id": "COMPSCI161", "section": "A", "status": "pending"}
+    ]
+    assert profile_after_restart == {
+        "major": "Computer Science",
+        "year": "Junior",
+    }
+    assert [(turn["role"], turn["content"]) for turn in turns_after_restart] == [
+        ("user", "Remember this schedule."),
+        ("assistant", "Schedule saved."),
+    ]

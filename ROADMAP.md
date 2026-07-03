@@ -162,10 +162,10 @@
 
 ### 验收
 
-- 新会话第一轮保存的信息在第二轮仍然存在。
-- 服务重启后 term、profile、history 和 pending schedule 不丢失。
-- 删除 preference 后重启服务不会重新出现。
-- 同一轮对话不再保存三份完整副本。
+- [x] 新会话第一轮保存的信息在第二轮仍然存在。
+- [x] 服务重启后 term、profile、history 和 pending schedule 不丢失。
+- [x] 删除 preference 后重启服务不会重新出现。
+- [x] 同一轮对话不再保存三份完整副本。
 
 ## 7. M3 — 建立可靠的课表约束层
 

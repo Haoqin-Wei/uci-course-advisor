@@ -364,22 +364,43 @@ def test_conflicting_new_time_preference_replaces_old_preference(
     assert json.loads(preferences_path.read_text(encoding="utf-8")) == preferences
 
 
-def test_sync_turn_does_not_write_duplicate_turn_log(runtime_paths):
+def test_completed_turn_has_only_one_full_transcript_copy(runtime_paths):
+    from app.data import sessions as sessions_data
     from app.memory.manager import get_memory_manager
 
     manager = get_memory_manager()
-    session_id = "sess_memory_dedup"
+    user_id = "demo_001"
+    session_id = sessions_data.create_session(
+        user_id,
+        title="Transcript dedupe fixture",
+        term_scope="Spring 2025",
+    )
+    user_message = "Unique acceptance user message about COMPSCI161."
+    assistant_message = "Unique acceptance assistant reply about COMPSCI161."
 
-    manager.initialize_session(session_id, "demo_001")
-    manager.on_turn_start(session_id, "demo_001")
+    manager.initialize_session(session_id, user_id)
+    manager.on_turn_start(session_id, user_id)
     manager.sync_turn(
-        "demo_001",
-        "Which CS course should I take?",
-        "Consider ICS 45C.",
+        user_id,
+        user_message,
+        assistant_message,
         session_id,
     )
+    sessions_data.append_turn(user_id, session_id, "user", user_message)
+    sessions_data.append_turn(user_id, session_id, "assistant", assistant_message)
+    manager.on_session_end(user_id, session_id)
 
-    assert not (runtime_paths.memory_root / "demo_001" / "turn_log.jsonl").exists()
+    user_dir = runtime_paths.memory_root / user_id
+    transcript_paths = []
+    for path in user_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        if user_message in text and assistant_message in text:
+            transcript_paths.append(path.relative_to(user_dir))
+
+    assert transcript_paths == [Path("sessions") / session_id / "turns.jsonl"]
+    assert not (user_dir / "turn_log.jsonl").exists()
 
 
 def test_deleted_preference_updates_loaded_memory_context_and_persists(
