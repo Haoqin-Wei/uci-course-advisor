@@ -163,9 +163,18 @@ def test_added_preference_persists_after_fresh_memory_manager(runtime_paths):
     manager.add_preference("demo_001", "prefers compact schedules")
 
     preferences_path = runtime_paths.memory_root / "demo_001" / "preferences.json"
-    assert json.loads(preferences_path.read_text(encoding="utf-8")) == [
-        "Prefers compact schedules"
-    ]
+    persisted = json.loads(preferences_path.read_text(encoding="utf-8"))
+    assert len(persisted) == 1
+    assert set(persisted[0]) == {
+        "id",
+        "text",
+        "learned_at",
+        "last_confirmed_at",
+    }
+    assert persisted[0]["id"].startswith("pref_")
+    assert persisted[0]["text"] == "Prefers compact schedules"
+    assert persisted[0]["learned_at"]
+    assert persisted[0]["last_confirmed_at"] == persisted[0]["learned_at"]
 
     fresh_manager = _fresh_memory_manager(runtime_paths.memory_root)
     try:
@@ -179,9 +188,55 @@ def test_added_preference_persists_after_fresh_memory_manager(runtime_paths):
     finally:
         fresh_manager.shutdown()
 
-    assert preferences == ["Prefers compact schedules"]
+    assert preferences == persisted
     assert "Prefers compact schedules" in prompt_block
     assert "Prefers compact schedules" in prefetched_context
+
+
+def test_legacy_preferences_are_migrated_to_full_schema(runtime_paths):
+    user_id = "legacy_preferences"
+    user_dir = runtime_paths.memory_root / user_id
+    user_dir.mkdir(parents=True, exist_ok=True)
+    preferences_path = user_dir / "preferences.json"
+    preferences_path.write_text(
+        json.dumps(
+            [
+                "Prefers compact schedules",
+                {
+                    "id": "pref_existing",
+                    "text": "Prefers morning classes",
+                    "learned_at": "2025-01-15T12:00:00+00:00",
+                },
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (user_dir / "profile.json").write_text("{}", encoding="utf-8")
+    (user_dir / "facts.json").write_text("[]", encoding="utf-8")
+
+    manager = _fresh_memory_manager(runtime_paths.memory_root)
+    try:
+        manager.initialize_session("sess_legacy_preferences", user_id)
+        preferences = manager.get_preferences(user_id)
+    finally:
+        manager.shutdown()
+
+    assert len(preferences) == 2
+    assert all(
+        set(pref) == {"id", "text", "learned_at", "last_confirmed_at"}
+        for pref in preferences
+    )
+    assert preferences[0]["id"].startswith("pref_")
+    assert preferences[0]["text"] == "Prefers compact schedules"
+    assert preferences[0]["last_confirmed_at"] == preferences[0]["learned_at"]
+    assert preferences[1] == {
+        "id": "pref_existing",
+        "text": "Prefers morning classes",
+        "learned_at": "2025-01-15T12:00:00+00:00",
+        "last_confirmed_at": "2025-01-15T12:00:00+00:00",
+    }
+    assert json.loads(preferences_path.read_text(encoding="utf-8")) == preferences
 
 
 def test_sync_turn_does_not_write_duplicate_turn_log(runtime_paths):

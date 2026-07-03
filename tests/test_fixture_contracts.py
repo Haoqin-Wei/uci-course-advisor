@@ -66,6 +66,7 @@ def test_seeded_user_fixture_loads_profile_memory_and_session(seeded_user):
             "id": "pref_morning",
             "text": "Prefers morning classes",
             "learned_at": "2025-01-15T12:00:00+00:00",
+            "last_confirmed_at": "2025-01-15T12:00:00+00:00",
         }
     ]
     assert "Prefers morning classes" in manager.system_prompt_block(

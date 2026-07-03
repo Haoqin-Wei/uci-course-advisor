@@ -154,8 +154,8 @@ class MemoryManager:
             logger.warning("get_memory_snapshot failed: %s", e)
             return {"profile": {}, "facts": [], "preferences": []}
 
-    def get_preferences(self, user_id: str) -> list[str]:
-        """Read current preferences (used by the reflection task to dedup)."""
+    def get_preferences(self, user_id: str) -> list[dict]:
+        """Read current preferences as full preference dicts."""
         if not self._provider:
             return []
         try:

@@ -1114,7 +1114,7 @@ async def stream_agent_response(
 
 async def reflect_on_history_llm(
     history: list[dict],
-    existing_preferences: list[str],
+    existing_preferences: list,
 ) -> list[str]:
     """Channel B: extract NEW soft preferences from recent turns."""
     if not LLM_ENABLED:
@@ -1134,8 +1134,17 @@ async def reflect_on_history_llm(
             transcript_lines.append(f"{role.upper()}: {content[:500]}")
         transcript = "\n".join(transcript_lines)
 
+        existing_texts = []
+        for p in existing_preferences:
+            if isinstance(p, dict):
+                text = (p.get("text") or "").strip()
+            else:
+                text = str(p).strip()
+            if text:
+                existing_texts.append(text)
+
         existing_block = (
-            "\n".join(f"- {p}" for p in existing_preferences[-15:])
+            "\n".join(f"- {p}" for p in existing_texts[-15:])
             or "(no existing preferences yet)"
         )
 
@@ -1145,7 +1154,7 @@ async def reflect_on_history_llm(
         )
         logger.info(
             "[Channel B] running reflection (%d messages, %d existing preferences)",
-            len(transcript_lines), len(existing_preferences),
+            len(transcript_lines), len(existing_texts),
         )
         raw = await _call_llm(REFLECTION_SYSTEM_PROMPT, user_content, json_mode=True)
         result = _parse_json_response(raw)

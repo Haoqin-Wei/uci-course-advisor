@@ -115,8 +115,8 @@ class MemoryProvider(ABC):
         """Return stored hard facts for a user as list[str]."""
         return []
 
-    def get_preferences(self, user_id: str) -> list:
-        """Return stored learned preferences for a user."""
+    def get_preferences(self, user_id: str) -> list[dict]:
+        """Return stored learned preferences as full preference dicts."""
         return []
 
     def get_memory_snapshot(self, user_id: str) -> dict:

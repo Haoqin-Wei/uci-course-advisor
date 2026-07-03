@@ -20,9 +20,11 @@ Architecture (post-refactor):
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -41,8 +43,8 @@ def _pref_text(item) -> str:
     Extract searchable text from a memory item.
 
     facts.json is list[str].
-    preferences.json is list[dict] post-Phase-2 schema migration —
-    each entry has {id, text, learned_at}.
+    preferences.json is list[dict] with
+    {id, text, learned_at, last_confirmed_at}.
 
     Returns empty string for anything we can't normalize, so callers can
     safely .lower() / regex without isinstance checks.
@@ -53,6 +55,15 @@ def _pref_text(item) -> str:
         v = item.get("text")
         return v if isinstance(v, str) else ""
     return ""
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _preference_id(text: str) -> str:
+    digest = hashlib.sha1(text.strip().lower().encode("utf-8")).hexdigest()[:12]
+    return f"pref_{digest}"
 
 
 def _fact_text(item) -> str:
@@ -95,12 +106,21 @@ class JSONFileMemoryProvider(MemoryProvider):
         user_dir = self.base_dir / user_id
         user_dir.mkdir(parents=True, exist_ok=True)
         raw_facts = self._read_json(user_dir / "facts.json", [])
+        raw_preferences = self._read_json(user_dir / "preferences.json", [])
+        preferences = (
+            self._normalize_preferences(raw_preferences)
+            if isinstance(raw_preferences, list)
+            else raw_preferences
+        )
         self._loaded[user_id] = {
             "profile": self._read_json(user_dir / "profile.json", {}),
-            "preferences": self._read_json(user_dir / "preferences.json", []),
+            "preferences": preferences,
             "facts": self._normalize_facts(raw_facts),
         }
-        if self._loaded[user_id]["facts"] != raw_facts:
+        if (
+            self._loaded[user_id]["facts"] != raw_facts
+            or self._loaded[user_id]["preferences"] != raw_preferences
+        ):
             self._save_user(user_id, self._loaded[user_id])
         logger.info("Memory loaded for user=%s", user_id)
 
@@ -122,8 +142,6 @@ class JSONFileMemoryProvider(MemoryProvider):
         if preferences:
             lines.append("\nLEARNED PREFERENCES (from past sessions):")
             for p in preferences[-10:]:
-                # Post-Phase-2 migration: preferences are dicts {id, text,
-                # learned_at}. Legacy data may still be bare strings.
                 text = _pref_text(p)
                 if text:
                     lines.append(f"  - {text}")
@@ -142,8 +160,8 @@ class JSONFileMemoryProvider(MemoryProvider):
         keywords = [w.lower() for w in query.split() if len(w) > 3]
         if not keywords:
             return ""
-        # facts is list[str]; preferences may be legacy strings or dicts —
-        # normalize through _pref_text before string matching.
+        # facts is list[str]; preferences are dicts. Normalize both through
+        # _pref_text before string matching.
         matched_texts: list[str] = []
         for item in items:
             text = _pref_text(item)
@@ -206,10 +224,10 @@ class JSONFileMemoryProvider(MemoryProvider):
 
     # ── Read API (used by Channel B reflection task) ────────
 
-    def get_preferences(self, user_id: str) -> list[str]:
+    def get_preferences(self, user_id: str) -> list[dict]:
         """Return a copy of the user's current preference list."""
         prefs = self._preferences(user_id)
-        return list(prefs)
+        return [dict(p) for p in prefs]
 
     def get_profile(self, user_id: str) -> dict:
         """Return a shallow copy of the user's persistent profile dict
@@ -244,12 +262,19 @@ class JSONFileMemoryProvider(MemoryProvider):
         text = text.strip()
         if not text:
             return
-        # Dedup case-insensitively against existing — handle both legacy
-        # string entries and post-migration {id, text, learned_at} dicts.
+        # Dedup case-insensitively against normalized preference dicts.
         existing_lower = {_pref_text(p).lower() for p in prefs}
         if text.lower() in existing_lower:
             return
-        prefs.append(text)
+        now = _now_iso()
+        prefs.append(
+            {
+                "id": _preference_id(text),
+                "text": text,
+                "learned_at": now,
+                "last_confirmed_at": now,
+            }
+        )
         self._enforce_size_limit(user_id, "preferences", USER_PROFILE_MAX_CHARS)
         self._save_user(user_id, self._loaded[user_id])
 
@@ -314,7 +339,47 @@ class JSONFileMemoryProvider(MemoryProvider):
         prefs = self._loaded[user_id]["preferences"]
         if not isinstance(prefs, list):
             raise ValueError("preferences.json is malformed")
+        normalized = self._normalize_preferences(prefs)
+        if normalized != prefs:
+            self._loaded[user_id]["preferences"] = normalized
+            self._save_user(user_id, self._loaded[user_id])
+            prefs = normalized
         return prefs
+
+    def _normalize_preference(self, item) -> dict | None:
+        text = _pref_text(item).strip()
+        if not text:
+            return None
+
+        if isinstance(item, dict):
+            learned_at = item.get("learned_at") or _now_iso()
+            last_confirmed_at = item.get("last_confirmed_at") or learned_at
+            pref_id = item.get("id") or _preference_id(text)
+        else:
+            learned_at = _now_iso()
+            last_confirmed_at = learned_at
+            pref_id = _preference_id(text)
+
+        return {
+            "id": str(pref_id),
+            "text": text,
+            "learned_at": str(learned_at),
+            "last_confirmed_at": str(last_confirmed_at),
+        }
+
+    def _normalize_preferences(self, raw: list) -> list[dict]:
+        normalized: list[dict] = []
+        seen: set[str] = set()
+        for item in raw:
+            pref = self._normalize_preference(item)
+            if not pref:
+                continue
+            key = pref["text"].lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(pref)
+        return normalized
 
     def _normalize_facts(self, raw) -> list[str]:
         """

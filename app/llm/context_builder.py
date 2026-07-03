@@ -51,8 +51,8 @@ def build_memory_snapshot(
     Format the persistent user-level memory as a concise block.
 
     `profile` is a dict like {major, year, completed_courses, ...}.
-    `preferences` is a list — either of strings (legacy) or of
-       {id, text, learned_at} dicts (post Phase 2.x migration).
+    `preferences` is a list of
+       {id, text, learned_at, last_confirmed_at} dicts.
     `facts` is a list of strings.
     """
     if not (profile or preferences or facts):
@@ -97,7 +97,7 @@ def build_memory_snapshot(
 
 
 def _extract_pref_texts(preferences: list) -> list[str]:
-    """Handle both legacy str list and new {id,text,learned_at} list."""
+    """Extract text from preference dicts; tolerate legacy strings defensively."""
     texts = []
     for p in preferences:
         if isinstance(p, str):
