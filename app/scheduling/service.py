@@ -149,6 +149,217 @@ def _format_meeting_window(section: dict) -> str:
     return f"{days} {start}\u2013{end}"
 
 
+def _section_num(section: dict) -> str:
+    return str(section.get("section_num") or section.get("sectionNum") or "")
+
+
+def _course_id(section: dict) -> str:
+    return str(section.get("course_id") or section.get("courseId") or "")
+
+
+def _section_label(section: dict) -> str:
+    course_id = _course_id(section) or "unknown course"
+    section_ref = _section_num(section) or _section_code(section) or "unknown section"
+    return f"{course_id} {section_ref}"
+
+
+def _section_summary(section: dict) -> dict:
+    return {
+        "course_id": _course_id(section),
+        "section_code": _section_code(section),
+        "section_num": _section_num(section),
+        "window": _format_meeting_window(section),
+    }
+
+
+def _section_has_unknown_time(section: dict) -> bool:
+    return section_time_status(section, section) == "unknown"
+
+
+def _with_course_id(section: dict, course_id: str) -> dict:
+    copied = dict(section)
+    if course_id and not _course_id(copied):
+        copied["course_id"] = course_id
+    return copied
+
+
+def _selected_sections_for_item(item: dict) -> list[dict]:
+    """
+    Extract the concrete sections this bundle item proposes.
+
+    Current recommendation cards carry a full ``sections`` list plus a
+    ``primary_code``. Tests and future callers may pass ``selected_sections``
+    directly. If an item itself looks like a section, accept it as one.
+    """
+    if not isinstance(item, dict):
+        return []
+
+    course_id = str(item.get("course_id") or "")
+
+    selected = item.get("selected_sections")
+    if isinstance(selected, list):
+        return [
+            _with_course_id(section, course_id)
+            for section in selected
+            if isinstance(section, dict)
+        ]
+
+    sections = item.get("sections")
+    if isinstance(sections, list):
+        normalized = [
+            _with_course_id(section, course_id)
+            for section in sections
+            if isinstance(section, dict)
+        ]
+        primary_code = str(item.get("primary_code") or "").strip()
+        if primary_code:
+            primary = [
+                section
+                for section in normalized
+                if _section_code(section) == primary_code
+                or _section_num(section) == primary_code
+            ]
+            if primary:
+                return primary
+        return normalized[:1] if len(normalized) == 1 else normalized
+
+    if any(item.get(field) for field in ("days", "start_time", "end_time")):
+        return [_with_course_id(item, course_id)]
+    return []
+
+
+def _missing_section_unknown(course_id: str) -> dict:
+    label = course_id or "Unknown course"
+    return {
+        "type": "missing_sections",
+        "scope": "bundle",
+        "message": f"{label} has no selected section to validate",
+        "sections": [],
+    }
+
+
+def _time_unknown(scope: str, message: str, sections: list[dict]) -> dict:
+    return {
+        "type": "time_unknown",
+        "scope": scope,
+        "message": message,
+        "sections": [_section_summary(section) for section in sections],
+    }
+
+
+def _time_conflict(scope: str, message: str, sections: list[dict]) -> dict:
+    return {
+        "type": "time_conflict",
+        "scope": scope,
+        "message": message,
+        "sections": [_section_summary(section) for section in sections],
+    }
+
+
+def validate_schedule_bundle(
+    recommended_items: Iterable[dict],
+    *,
+    pending_sections: Iterable[dict] = (),
+) -> dict:
+    """
+    Validate a proposed set of course sections against known time rules.
+
+    M3.2a scope:
+      - proposed recommendation sections vs each other
+      - proposed recommendation sections vs already-resolved pending sections
+      - TBA/missing time is reported as ``unknown`` instead of treated as clear
+
+    The function is intentionally pure: callers resolve persisted
+    ``pending_schedule`` entries into concrete section dicts before calling.
+    """
+    warnings: list[dict] = []
+    conflicts: list[dict] = []
+    unknowns: list[dict] = []
+
+    bundle_sections: list[dict] = []
+    for item in recommended_items or []:
+        if not isinstance(item, dict):
+            continue
+        course_id = str(item.get("course_id") or "")
+        selected_sections = _selected_sections_for_item(item)
+        if not selected_sections:
+            unknowns.append(_missing_section_unknown(course_id))
+            continue
+        bundle_sections.extend(selected_sections)
+        for section in selected_sections:
+            if _section_has_unknown_time(section):
+                unknowns.append(
+                    _time_unknown(
+                        "bundle",
+                        f"{_section_label(section)} has unknown meeting time",
+                        [section],
+                    )
+                )
+
+    pending_list = [
+        section for section in pending_sections or []
+        if isinstance(section, dict)
+    ]
+
+    for left_index, left in enumerate(bundle_sections):
+        for right in bundle_sections[left_index + 1:]:
+            if _course_id(left) == _course_id(right):
+                continue
+            status = section_time_status(left, right)
+            if status == "conflict":
+                conflicts.append(
+                    _time_conflict(
+                        "bundle",
+                        f"{_section_label(left)} conflicts with {_section_label(right)}",
+                        [left, right],
+                    )
+                )
+            elif status == "unknown":
+                unknowns.append(
+                    _time_unknown(
+                        "bundle",
+                        (
+                            f"Cannot determine whether {_section_label(left)} "
+                            f"conflicts with {_section_label(right)}"
+                        ),
+                        [left, right],
+                    )
+                )
+
+    for bundle_section in bundle_sections:
+        for pending_section in pending_list:
+            status = section_time_status(bundle_section, pending_section)
+            if status == "conflict":
+                conflicts.append(
+                    _time_conflict(
+                        "pending_schedule",
+                        (
+                            f"{_section_label(bundle_section)} conflicts with "
+                            f"pending {_section_label(pending_section)}"
+                        ),
+                        [bundle_section, pending_section],
+                    )
+                )
+            elif status == "unknown":
+                unknowns.append(
+                    _time_unknown(
+                        "pending_schedule",
+                        (
+                            f"Cannot determine whether {_section_label(bundle_section)} "
+                            f"conflicts with pending {_section_label(pending_section)}"
+                        ),
+                        [bundle_section, pending_section],
+                    )
+                )
+
+    return {
+        "valid": not conflicts and not unknowns,
+        "warnings": warnings,
+        "conflicts": conflicts,
+        "unknowns": unknowns,
+    }
+
+
 def find_conflicts(
     candidate_sections: Iterable[dict],
     student_sections: Iterable[dict],

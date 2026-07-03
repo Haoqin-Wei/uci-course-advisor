@@ -11,6 +11,7 @@ from app.scheduling.service import (
     sections_overlap,
     summarize_for_card,
     time_to_minutes,
+    validate_schedule_bundle,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "sections_overlap",
     "summarize_for_card",
     "time_to_minutes",
+    "validate_schedule_bundle",
 ]

@@ -182,13 +182,13 @@
 
 ### M3.2 实现 Schedule Bundle Validation
 
-- [ ] 新增 `validate_schedule_bundle()`。
-- [ ] 检查推荐课程之间的上课时间冲突。
-- [ ] 检查推荐课程与 pending schedule 的冲突。
+- [x] 新增 `validate_schedule_bundle()`。
+- [x] 检查推荐课程之间的上课时间冲突。
+- [x] 检查推荐课程与 pending schedule 的冲突。
 - [ ] 检查 final exam 冲突。
 - [ ] 检查 Lec/Dis/Lab pairing 是否完整。
 - [ ] 检查 cancelled、FULL、waitlist 和 section restriction。
-- [ ] 返回结构化结果：`valid / warnings / conflicts / unknowns`。
+- [x] 返回结构化结果：`valid / warnings / conflicts / unknowns`。
 - [ ] `propose_recommendation` 和 `/schedule/add` 同时调用该服务。
 
 ### M3.3 持久化与权限

@@ -12,6 +12,7 @@ from app.scheduling import (
     sections_overlap,
     summarize_for_card,
     time_to_minutes,
+    validate_schedule_bundle,
 )
 
 
@@ -140,6 +141,244 @@ def test_scheduling_service_finds_and_summarizes_known_conflicts():
         "conflicting_count": 1,
         "total_sections": 2,
     }
+
+
+def test_validate_schedule_bundle_accepts_clear_recommendations():
+    result = validate_schedule_bundle(
+        [
+            {
+                "course_id": "COMPSCI161",
+                "primary_code": "10000",
+                "sections": [
+                    {
+                        "course_id": "COMPSCI161",
+                        "section_code": "10000",
+                        "section_num": "A",
+                        "days": "MW",
+                        "start_time": "09:00",
+                        "end_time": "10:20",
+                    }
+                ],
+            },
+            {
+                "course_id": "IN4MATX43",
+                "primary_code": "20000",
+                "sections": [
+                    {
+                        "course_id": "IN4MATX43",
+                        "section_code": "20000",
+                        "section_num": "A",
+                        "days": "TuTh",
+                        "start_time": "11:00",
+                        "end_time": "12:20",
+                    }
+                ],
+            },
+        ],
+        pending_sections=[
+            {
+                "course_id": "STATS67",
+                "section_code": "30000",
+                "section_num": "A",
+                "days": "F",
+                "start_time": "09:00",
+                "end_time": "09:50",
+            }
+        ],
+    )
+
+    assert result == {
+        "valid": True,
+        "warnings": [],
+        "conflicts": [],
+        "unknowns": [],
+    }
+
+
+def test_validate_schedule_bundle_reports_recommendation_time_conflicts():
+    result = validate_schedule_bundle(
+        [
+            {
+                "course_id": "COMPSCI161",
+                "primary_code": "10000",
+                "sections": [
+                    {
+                        "course_id": "COMPSCI161",
+                        "section_code": "10000",
+                        "section_num": "A",
+                        "days": "MW",
+                        "start_time": "09:00",
+                        "end_time": "10:20",
+                    }
+                ],
+            },
+            {
+                "course_id": "IN4MATX43",
+                "primary_code": "20000",
+                "sections": [
+                    {
+                        "course_id": "IN4MATX43",
+                        "section_code": "20000",
+                        "section_num": "A",
+                        "days": "M",
+                        "start_time": "10:00",
+                        "end_time": "10:50",
+                    }
+                ],
+            },
+        ]
+    )
+
+    assert result["valid"] is False
+    assert result["unknowns"] == []
+    assert result["conflicts"] == [
+        {
+            "type": "time_conflict",
+            "scope": "bundle",
+            "message": "COMPSCI161 A conflicts with IN4MATX43 A",
+            "sections": [
+                {
+                    "course_id": "COMPSCI161",
+                    "section_code": "10000",
+                    "section_num": "A",
+                    "window": "MW 09:00–10:20",
+                },
+                {
+                    "course_id": "IN4MATX43",
+                    "section_code": "20000",
+                    "section_num": "A",
+                    "window": "M 10:00–10:50",
+                },
+            ],
+        }
+    ]
+
+
+def test_validate_schedule_bundle_reports_pending_schedule_conflicts():
+    result = validate_schedule_bundle(
+        [
+            {
+                "course_id": "COMPSCI161",
+                "primary_code": "10000",
+                "sections": [
+                    {
+                        "course_id": "COMPSCI161",
+                        "section_code": "10000",
+                        "section_num": "A",
+                        "days": "MW",
+                        "start_time": "09:00",
+                        "end_time": "10:20",
+                    }
+                ],
+            }
+        ],
+        pending_sections=[
+            {
+                "course_id": "STATS67",
+                "section_code": "30000",
+                "section_num": "A",
+                "days": "M",
+                "start_time": "09:30",
+                "end_time": "10:50",
+            }
+        ],
+    )
+
+    assert result["valid"] is False
+    assert result["unknowns"] == []
+    assert result["conflicts"] == [
+        {
+            "type": "time_conflict",
+            "scope": "pending_schedule",
+            "message": "COMPSCI161 A conflicts with pending STATS67 A",
+            "sections": [
+                {
+                    "course_id": "COMPSCI161",
+                    "section_code": "10000",
+                    "section_num": "A",
+                    "window": "MW 09:00–10:20",
+                },
+                {
+                    "course_id": "STATS67",
+                    "section_code": "30000",
+                    "section_num": "A",
+                    "window": "M 09:30–10:50",
+                },
+            ],
+        }
+    ]
+
+
+def test_validate_schedule_bundle_reports_tba_as_unknown_not_clear():
+    result = validate_schedule_bundle(
+        [
+            {
+                "course_id": "COMPSCI161",
+                "primary_code": "10000",
+                "sections": [
+                    {
+                        "course_id": "COMPSCI161",
+                        "section_code": "10000",
+                        "section_num": "A",
+                        "days": "TBA",
+                        "start_time": "",
+                        "end_time": "",
+                        "time_is_tba": "true",
+                    }
+                ],
+            }
+        ],
+        pending_sections=[
+            {
+                "course_id": "STATS67",
+                "section_code": "30000",
+                "section_num": "A",
+                "days": "MW",
+                "start_time": "09:00",
+                "end_time": "10:20",
+            }
+        ],
+    )
+
+    assert result["valid"] is False
+    assert result["conflicts"] == []
+    assert result["unknowns"] == [
+        {
+            "type": "time_unknown",
+            "scope": "bundle",
+            "message": "COMPSCI161 A has unknown meeting time",
+            "sections": [
+                {
+                    "course_id": "COMPSCI161",
+                    "section_code": "10000",
+                    "section_num": "A",
+                    "window": "TBA ?–?",
+                }
+            ],
+        },
+        {
+            "type": "time_unknown",
+            "scope": "pending_schedule",
+            "message": (
+                "Cannot determine whether COMPSCI161 A conflicts with "
+                "pending STATS67 A"
+            ),
+            "sections": [
+                {
+                    "course_id": "COMPSCI161",
+                    "section_code": "10000",
+                    "section_num": "A",
+                    "window": "TBA ?–?",
+                },
+                {
+                    "course_id": "STATS67",
+                    "section_code": "30000",
+                    "section_num": "A",
+                    "window": "MW 09:00–10:20",
+                },
+            ],
+        },
+    ]
 
 
 def test_agent_and_chat_do_not_define_private_schedule_parsers():
