@@ -157,8 +157,25 @@ def _read_jsonl(path: Path) -> list[dict]:
     return rows
 
 
-def _empty_session_state() -> dict:
-    return {}
+def _default_session_state(term: Optional[str] = None) -> dict:
+    return {
+        "term": term,
+        "preferred_time": None,
+        "difficulty_preference": None,
+        "recommendation_goal": None,
+        "pending_schedule": [],
+    }
+
+
+def _normalize_session_state(raw: Any, *, term: Optional[str] = None) -> dict:
+    state = _default_session_state(term)
+    if isinstance(raw, dict):
+        state.update(raw)
+    if state.get("term") is None and term is not None:
+        state["term"] = term
+    if not isinstance(state.get("pending_schedule"), list):
+        state["pending_schedule"] = []
+    return state
 
 
 # ── CRUD ─────────────────────────────────────────────────
@@ -194,7 +211,7 @@ def create_session(
         "summary_through_turn":  None,
     }
     _write_json(_meta_path(user_id, session_id), meta)
-    _write_json(_state_path(user_id, session_id), _empty_session_state())
+    _write_json(_state_path(user_id, session_id), _default_session_state(term_scope))
     return session_id
 
 
@@ -240,11 +257,9 @@ def get_session_state(user_id: str, session_id: str) -> dict:
     crashing. Missing or corrupt state files also fall back to an empty
     dict; callers can patch them through update_session_state().
     """
-    get_session_meta(user_id, session_id)
+    meta = get_session_meta(user_id, session_id)
     state = _read_json(_state_path(user_id, session_id), default=None)
-    if not isinstance(state, dict):
-        return _empty_session_state()
-    return state
+    return _normalize_session_state(state, term=meta.get("term_scope"))
 
 
 def update_session_state(
