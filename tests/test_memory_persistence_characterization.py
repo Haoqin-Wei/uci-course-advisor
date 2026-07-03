@@ -174,7 +174,7 @@ def test_added_preference_persists_after_fresh_memory_manager(runtime_paths):
     assert persisted[0]["id"].startswith("pref_")
     assert persisted[0]["text"] == "Prefers compact schedules"
     assert persisted[0]["learned_at"]
-    assert persisted[0]["last_confirmed_at"] == persisted[0]["learned_at"]
+    assert persisted[0]["last_confirmed_at"] >= persisted[0]["learned_at"]
 
     fresh_manager = _fresh_memory_manager(runtime_paths.memory_root)
     try:
@@ -303,6 +303,65 @@ def test_preference_size_limit_counts_text_not_dict_fields(runtime_paths, monkey
     preferences_path = runtime_paths.memory_root / user_id / "preferences.json"
     persisted = json.loads(preferences_path.read_text(encoding="utf-8"))
     assert [pref["text"] for pref in persisted] == ["B" * 30]
+
+
+def test_repeated_preference_updates_last_confirmed_without_duplicate(
+    runtime_paths,
+    monkeypatch,
+):
+    from app.memory import json_provider
+
+    times = iter([
+        "2025-01-01T00:00:00+00:00",
+        "2025-02-01T00:00:00+00:00",
+    ])
+    monkeypatch.setattr(json_provider, "_now_iso", lambda: next(times))
+
+    user_id = "preference_reconfirmed"
+    manager = _fresh_memory_manager(runtime_paths.memory_root)
+    try:
+        manager.add_preference(user_id, "Prefers morning classes")
+        manager.add_preference(user_id, "prefers morning classes")
+        preferences = manager.get_preferences(user_id)
+    finally:
+        manager.shutdown()
+
+    assert len(preferences) == 1
+    assert preferences[0]["text"] == "Prefers morning classes"
+    assert preferences[0]["learned_at"] == "2025-01-01T00:00:00+00:00"
+    assert preferences[0]["last_confirmed_at"] == "2025-02-01T00:00:00+00:00"
+
+
+def test_conflicting_new_time_preference_replaces_old_preference(
+    runtime_paths,
+    monkeypatch,
+):
+    from app.memory import json_provider
+
+    times = iter([
+        "2025-01-01T00:00:00+00:00",
+        "2025-02-01T00:00:00+00:00",
+    ])
+    monkeypatch.setattr(json_provider, "_now_iso", lambda: next(times))
+
+    user_id = "preference_conflict"
+    manager = _fresh_memory_manager(runtime_paths.memory_root)
+    try:
+        manager.add_preference(user_id, "Prefers morning classes")
+        manager.add_preference(user_id, "Prefers afternoon classes")
+        preferences = manager.get_preferences(user_id)
+        prompt_block = manager.system_prompt_block(user_id)
+    finally:
+        manager.shutdown()
+
+    assert [pref["text"] for pref in preferences] == ["Prefers afternoon classes"]
+    assert preferences[0]["learned_at"] == "2025-02-01T00:00:00+00:00"
+    assert preferences[0]["last_confirmed_at"] == "2025-02-01T00:00:00+00:00"
+    assert "Prefers morning classes" not in prompt_block
+    assert "Prefers afternoon classes" in prompt_block
+
+    preferences_path = runtime_paths.memory_root / user_id / "preferences.json"
+    assert json.loads(preferences_path.read_text(encoding="utf-8")) == preferences
 
 
 def test_sync_turn_does_not_write_duplicate_turn_log(runtime_paths):

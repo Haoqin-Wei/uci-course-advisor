@@ -87,6 +87,95 @@ def _memory_item_chars(item) -> int:
     return len(str(item)) if item not in (None, "", []) else 0
 
 
+def _preference_text_key(text: str) -> str:
+    """Canonical text key for exact preference deduplication."""
+    return " ".join(text.strip().lower().split())
+
+
+def _normalized_words(text: str) -> tuple[str, set[str]]:
+    normalized = "".join(
+        ch.lower() if ch.isalnum() else " "
+        for ch in text
+    )
+    words = normalized.split()
+    return " ".join(words), set(words)
+
+
+def _time_preference_signal(text: str) -> tuple[str, str] | None:
+    _, words = _normalized_words(text)
+    slots = [
+        slot for slot in ("morning", "afternoon", "evening", "night")
+        if slot in words
+    ]
+    if not slots:
+        return None
+
+    negative_words = {
+        "avoid", "avoids", "avoiding", "dislike", "dislikes",
+        "no", "not", "never", "without",
+    }
+    polarity = "avoid" if words & negative_words else "prefer"
+    return polarity, slots[0]
+
+
+def _categorical_preference_signals(text: str) -> dict[str, str]:
+    normalized, words = _normalized_words(text)
+    signals: dict[str, str] = {}
+
+    if words & {"online", "remote", "asynchronous", "async", "virtual"}:
+        signals["modality"] = "remote"
+    if (
+        "in person" in normalized
+        or "on campus" in normalized
+        or "face to face" in normalized
+        or "inperson" in words
+    ):
+        signals["modality"] = "in_person"
+
+    if (
+        words & {"compact", "consecutive"}
+        or "back to back" in normalized
+        or "backtoback" in words
+    ):
+        signals["schedule_density"] = "compact"
+    if words & {"spread", "spaced", "gaps", "breaks"}:
+        signals["schedule_density"] = "spread"
+
+    if (
+        words & {"easy", "easier"}
+        or "low workload" in normalized
+        or "light workload" in normalized
+    ):
+        signals["difficulty"] = "easy"
+    if words & {"hard", "challenging", "difficult", "rigorous"}:
+        signals["difficulty"] = "challenging"
+
+    return signals
+
+
+def _preferences_conflict(existing_text: str, new_text: str) -> bool:
+    existing_time = _time_preference_signal(existing_text)
+    new_time = _time_preference_signal(new_text)
+    if existing_time and new_time:
+        existing_polarity, existing_slot = existing_time
+        new_polarity, new_slot = new_time
+        if (
+            existing_polarity == "prefer"
+            and new_polarity == "prefer"
+            and existing_slot != new_slot
+        ):
+            return True
+        if existing_slot == new_slot and existing_polarity != new_polarity:
+            return True
+
+    existing_signals = _categorical_preference_signals(existing_text)
+    new_signals = _categorical_preference_signals(new_text)
+    for topic in set(existing_signals) & set(new_signals):
+        if existing_signals[topic] != new_signals[topic]:
+            return True
+    return False
+
+
 class JSONFileMemoryProvider(MemoryProvider):
     """File-based memory store. Simple, durable, no extra dependencies."""
 
@@ -270,11 +359,25 @@ class JSONFileMemoryProvider(MemoryProvider):
         text = text.strip()
         if not text:
             return
-        # Dedup case-insensitively against normalized preference dicts.
-        existing_lower = {_pref_text(p).lower() for p in prefs}
-        if text.lower() in existing_lower:
-            return
         now = _now_iso()
+        text_key = _preference_text_key(text)
+
+        # Repeated user statements confirm an existing preference instead of
+        # creating duplicates.
+        for pref in prefs:
+            if _preference_text_key(_pref_text(pref)) == text_key:
+                pref["last_confirmed_at"] = now
+                self._save_user(user_id, self._loaded[user_id])
+                return
+
+        kept = [
+            pref for pref in prefs
+            if not _preferences_conflict(_pref_text(pref), text)
+        ]
+        if len(kept) != len(prefs):
+            self._loaded[user_id]["preferences"] = kept
+            prefs = kept
+
         prefs.append(
             {
                 "id": _preference_id(text),
@@ -379,7 +482,7 @@ class JSONFileMemoryProvider(MemoryProvider):
             pref = self._normalize_preference(item)
             if not pref:
                 continue
-            key = pref["text"].lower()
+            key = _preference_text_key(pref["text"])
             if key in seen:
                 continue
             seen.add(key)

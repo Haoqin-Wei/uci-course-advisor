@@ -158,7 +158,7 @@
 - [x] preference 统一为 `{id, text, learned_at, last_confirmed_at}`。
 - [x] `add_preference()` 不再写入裸字符串。
 - [x] 修复 preference 单条删除和 size-limit 计算。
-- [ ] 用户新陈述与旧偏好冲突时，以新陈述为准并更新时间。
+- [x] 用户新陈述与旧偏好冲突时，以新陈述为准并更新时间。
 
 ### 验收
 
