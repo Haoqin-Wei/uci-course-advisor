@@ -1,0 +1,156 @@
+from __future__ import annotations
+
+import asyncio
+import json
+
+import pytest
+from fastapi import BackgroundTasks
+
+from app.data import sessions as sessions_data
+from app.modules import state as state_module
+from app.routers import chat as chat_router
+from app.routers.chat import ChatRequest
+
+
+async def _collect_stream_events(req: ChatRequest) -> list[dict]:
+    events: list[dict] = []
+    async for raw in chat_router._stream_chat(
+        req,
+        BackgroundTasks(),
+        user_id="demo_001",
+    ):
+        assert raw.startswith("data: ")
+        payload = raw.removeprefix("data: ").strip()
+        events.append(json.loads(payload))
+    return events
+
+
+def _meta_event(events: list[dict]) -> dict:
+    return next(event for event in events if event["type"] == "meta")
+
+
+@pytest.fixture
+def deterministic_chat_pipeline(monkeypatch):
+    async def fake_extract_info(message: str) -> dict:
+        if "first turn" not in message:
+            return {}
+        return {
+            "major": "Computer Science",
+            "currently_taking": ["ICS33"],
+            "difficulty_preference": "easy",
+        }
+
+    async def fake_classify_intent(_message: str) -> dict:
+        return {
+            "intent": "course_recommendation",
+            "confidence": 1.0,
+            "entities": {},
+            "source": "test",
+        }
+
+    async def fake_handle_agent(
+        user_message,
+        _state,
+        _memory_context,
+        *,
+        queue,
+        **_kwargs,
+    ):
+        reply = f"offline reply: {user_message}"
+        await queue.put({"type": "token", "text": reply})
+        return reply, [], [], None
+
+    monkeypatch.setattr(
+        chat_router,
+        "extract_info_from_message",
+        fake_extract_info,
+    )
+    monkeypatch.setattr(chat_router, "classify_intent", fake_classify_intent)
+    monkeypatch.setattr(chat_router, "_handle_agent", fake_handle_agent)
+
+
+def test_new_empty_session_persists_turns_but_currently_splits_state_by_id(
+    deterministic_chat_pipeline,
+):
+    first_events = asyncio.run(
+        _collect_stream_events(
+            ChatRequest(
+                message="first turn: I am CS and taking ICS33",
+                session_id="",
+                term="Spring 2025",
+            )
+        )
+    )
+    first_meta = _meta_event(first_events)
+    persistent_sid = first_meta["session_id"]
+
+    assert persistent_sid.startswith("sess_")
+    assert first_meta["session_state"]["term"] == "Spring 2025"
+    assert first_meta["session_state"]["major"] == "Computer Science"
+    assert first_meta["session_state"]["selected_courses"] == ["ICS33"]
+    assert state_module._sessions[""]["selected_courses"] == ["ICS33"]
+    assert persistent_sid not in state_module._sessions
+    assert [turn["role"] for turn in sessions_data.read_turns(
+        "demo_001",
+        persistent_sid,
+    )] == ["user", "assistant"]
+
+    second_events = asyncio.run(
+        _collect_stream_events(
+            ChatRequest(
+                message="second turn: recommend one more non-conflicting course",
+                session_id=persistent_sid,
+                term="Spring 2025",
+            )
+        )
+    )
+    second_meta = _meta_event(second_events)
+
+    assert second_meta["session_id"] == persistent_sid
+    assert second_meta["session_state"]["term"] == "Spring 2025"
+    # Characterization of the current M0/M1 behavior:
+    # the persistent session hydrates history, but first-turn extracted
+    # state still lives under the legacy empty-string session key.
+    assert second_meta["session_state"]["major"] is None
+    assert second_meta["session_state"]["selected_courses"] == []
+    assert state_module._sessions[""]["selected_courses"] == ["ICS33"]
+    assert [turn["role"] for turn in sessions_data.read_turns(
+        "demo_001",
+        persistent_sid,
+    )] == ["user", "assistant", "user", "assistant"]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "M2.1 should switch the current request to the created sess_xxx "
+        "so first-turn state is visible on the second turn."
+    ),
+)
+def test_new_session_second_turn_should_see_first_turn_state(
+    deterministic_chat_pipeline,
+):
+    first_events = asyncio.run(
+        _collect_stream_events(
+            ChatRequest(
+                message="first turn: I am CS and taking ICS33",
+                session_id="",
+                term="Spring 2025",
+            )
+        )
+    )
+    persistent_sid = _meta_event(first_events)["session_id"]
+
+    second_events = asyncio.run(
+        _collect_stream_events(
+            ChatRequest(
+                message="second turn: recommend one more non-conflicting course",
+                session_id=persistent_sid,
+                term="Spring 2025",
+            )
+        )
+    )
+    second_state = _meta_event(second_events)["session_state"]
+
+    assert second_state["major"] == "Computer Science"
+    assert second_state["selected_courses"] == ["ICS33"]
