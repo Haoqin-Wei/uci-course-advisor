@@ -5,9 +5,9 @@ Two-channel memory architecture:
     Channel A (immediate, every turn):
         extract_info_llm() pulls hard facts from the user's message.
         _capture_hard_facts() routes them to the right destinations:
-          • course status → session lists + facts.json
-          • identity → profile.json
-          • stated preferences (difficulty / goal) → facts.json
+          • course status → session lists + MemoryManager facts
+          • identity → MemoryManager profile
+          • stated preferences (difficulty / goal) → MemoryManager facts
 
     Channel B (periodic, background):
         Every REFLECTION_INTERVAL turns, after the response is sent,
@@ -384,10 +384,10 @@ def _merge_into_list(session: dict, field: str, items: list[str]) -> list[str]:
     return newly_added
 
 
-# Identity fields — go to profile.json (long-term identity)
+# Identity fields — go to MemoryManager profile (long-term identity)
 _IDENTITY_FIELDS_FOR_PROFILE = ("major", "year", "target_gpa", "graduation_term")
 
-# Stated-preference fields — go to facts.json as event-style entries
+# Stated-preference fields — go to MemoryManager facts as event-style entries
 _PREFERENCE_FIELDS_AS_FACTS = {
     "difficulty_preference": "Stated difficulty preference: {value}",
     "recommendation_goal":   "Stated goal: {value}",
@@ -400,7 +400,7 @@ def _capture_hard_facts(session: dict, extracted: dict, user_id: str, mem) -> No
     route it to session/profile/facts as appropriate, and emit INFO logs
     so the operator can see what was captured.
     """
-    # ── Course status → session lists + facts.json ──
+    # ── Course status → session lists + MemoryManager facts ──
     currently_taking = extracted.pop("currently_taking", None) or []
     completed = extracted.pop("completed", None) or []
 
@@ -418,7 +418,7 @@ def _capture_hard_facts(session: dict, extracted: dict, user_id: str, mem) -> No
                 mem.add_fact(user_id, f"Completed {c}")
             logger.info("[Channel A] completed captured → %s", new_courses)
 
-    # ── Identity → profile.json ──
+    # ── Identity → MemoryManager profile ──
     profile_updates = {}
     for f in _IDENTITY_FIELDS_FOR_PROFILE:
         v = extracted.get(f) if f in ("major", "year") else extracted.pop(f, None)
@@ -428,7 +428,7 @@ def _capture_hard_facts(session: dict, extracted: dict, user_id: str, mem) -> No
         mem.update_profile(user_id, profile_updates)
         logger.info("[Channel A] profile updated → %s", profile_updates)
 
-    # ── Stated preferences → facts.json ──
+    # ── Stated preferences → MemoryManager facts ──
     for field, template in _PREFERENCE_FIELDS_AS_FACTS.items():
         v = extracted.get(field)
         if v in (None, "", []):

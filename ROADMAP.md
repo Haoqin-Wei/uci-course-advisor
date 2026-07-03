@@ -153,7 +153,7 @@
 ### M2.3 统一 Memory schema
 
 - [x] Profile、facts、preferences 只通过 MemoryRepository 读写。
-- [ ] Router 不再直接读写 JSON 文件，避免绕过 provider cache。
+- [x] Router 不再直接读写 JSON 文件，避免绕过 provider cache。
 - [ ] `facts.json` 统一为一个确定的数据结构，不再同时按 list 和 dict 解释。
 - [ ] preference 统一为 `{id, text, learned_at, last_confirmed_at}`。
 - [ ] `add_preference()` 不再写入裸字符串。

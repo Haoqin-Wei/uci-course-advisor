@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+import inspect
 import json
 from pathlib import Path
 
@@ -11,6 +13,40 @@ def _fresh_memory_manager(memory_root: Path):
     manager = MemoryManager()
     manager.set_provider(JSONFileMemoryProvider(base_dir=str(memory_root)))
     return manager
+
+
+def test_memory_router_does_not_access_memory_json_files_directly():
+    import app.routers.memory as memory_router
+
+    tree = ast.parse(inspect.getsource(memory_router))
+
+    imported_modules = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported_modules.update(alias.name.partition(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported_modules.add(node.module.partition(".")[0])
+
+    names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    call_names = {
+        node.func.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    call_attrs = {
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+
+    assert "json" not in imported_modules
+    assert "pathlib" not in imported_modules
+    assert "MEMORY_ROOT" not in names
+    assert "_read_json" not in names
+    assert "_write_json" not in names
+    assert "open" not in call_names
+    assert not {"read_text", "write_text", "open"} & call_attrs
+    assert "get_memory_manager" in names
 
 
 def test_profile_update_route_persists_after_fresh_memory_manager(
