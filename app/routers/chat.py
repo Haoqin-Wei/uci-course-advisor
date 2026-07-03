@@ -31,7 +31,7 @@ import logging
 import re
 
 from fastapi import APIRouter, BackgroundTasks, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 from app.auth.deps import current_user_optional
@@ -97,11 +97,11 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
-    cards: list[dict] = []
-    followups: list[str] = []
+    cards: list[dict] = Field(default_factory=list)
+    followups: list[str] = Field(default_factory=list)
     intent: str = ""
-    session_state: dict = {}
-    pending_schedule: list[dict] = []
+    session_state: dict = Field(default_factory=dict)
+    pending_schedule: list[dict] = Field(default_factory=list)
     validation_report: Optional[dict] = None            # 新增
 
 
