@@ -120,7 +120,7 @@
 - [x] 记忆新增、删除、进程重启后结果一致。
 - [x] Agent tool call、错误降级、limit reached 和 continue 协议稳定。
 - [x] 推荐卡片能够通过 SSE meta 持久化并在历史会话中恢复。
-- [ ] Schedule add/remove/clear 的当前行为被固定。
+- [x] Schedule add/remove/clear 的当前行为被固定。
 - [ ] Spring 2025 离线 smoke 校验能够识别不存在的课程与教师。
 
 ### 验收
