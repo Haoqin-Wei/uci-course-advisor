@@ -17,13 +17,15 @@ if TYPE_CHECKING:
 
 
 FIXTURES_ROOT = Path(__file__).parent / "fixtures"
+EXTERNAL_ENV_KEYS = ("DEEPSEEK_API_KEY", "ANTEATER_API_KEY", "RESEND_API_KEY")
+_ORIGINAL_EXTERNAL_ENV = {key: os.environ.get(key) for key in EXTERNAL_ENV_KEYS}
 
 
 # These values must be set before tests import application modules.
 # app.llm.adapter loads .env during import, but python-dotenv does not
 # override an environment variable that is already present, even when
 # its value is empty.
-for _key in ("DEEPSEEK_API_KEY", "ANTEATER_API_KEY", "RESEND_API_KEY"):
+for _key in EXTERNAL_ENV_KEYS:
     os.environ[_key] = ""
 os.environ["AUTH_SESSION_SECRET"] = "test-only-session-secret-not-for-production"
 
@@ -144,14 +146,23 @@ def isolated_test_environment(
 ):
     """Keep default tests offline and isolate every mutable runtime path."""
 
-    for key in ("DEEPSEEK_API_KEY", "ANTEATER_API_KEY", "RESEND_API_KEY"):
-        monkeypatch.setenv(key, "")
+    live_test = request.node.get_closest_marker("live") is not None
+
+    if live_test:
+        for key, value in _ORIGINAL_EXTERNAL_ENV.items():
+            if value is None:
+                monkeypatch.delenv(key, raising=False)
+            else:
+                monkeypatch.setenv(key, value)
+    else:
+        for key in EXTERNAL_ENV_KEYS:
+            monkeypatch.setenv(key, "")
     monkeypatch.setenv(
         "AUTH_SESSION_SECRET",
         "test-only-session-secret-not-for-production",
     )
 
-    if request.node.get_closest_marker("live") is None:
+    if not live_test:
         monkeypatch.setattr(requests.sessions.Session, "request", _blocked_network)
         monkeypatch.setattr(socket.socket, "connect", _blocked_network)
         monkeypatch.setattr(socket, "create_connection", _blocked_network)
@@ -181,10 +192,15 @@ def isolated_test_environment(
 
     from app.llm import adapter
 
-    monkeypatch.setattr(adapter, "DEEPSEEK_API_KEY", "")
-    monkeypatch.setattr(adapter, "LLM_ENABLED", False)
     monkeypatch.setattr(adapter, "_client", None)
-    monkeypatch.setattr(adapter, "_get_client", _blocked_llm_client)
+    if live_test:
+        deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+        monkeypatch.setattr(adapter, "DEEPSEEK_API_KEY", deepseek_api_key)
+        monkeypatch.setattr(adapter, "LLM_ENABLED", bool(deepseek_api_key))
+    else:
+        monkeypatch.setattr(adapter, "DEEPSEEK_API_KEY", "")
+        monkeypatch.setattr(adapter, "LLM_ENABLED", False)
+        monkeypatch.setattr(adapter, "_get_client", _blocked_llm_client)
 
     from app.memory import manager as memory_manager
     from app.memory.json_provider import JSONFileMemoryProvider

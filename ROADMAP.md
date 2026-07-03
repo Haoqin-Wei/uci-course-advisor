@@ -110,7 +110,7 @@
 - [x] 建立 fake LLM client，支持 token、tool call、error 和 limit reached 事件。
 - [x] 建立最小课程、section、profile、memory 和 session fixture。
 - [x] 修复 smoke 脚本必须手动设置 `PYTHONPATH=.` 才能运行的问题。
-- [ ] 将 live API / live LLM 测试标记为手动测试，不进入默认 CI。
+- [x] 将 live API / live LLM 测试标记为手动测试，不进入默认 CI。
 
 ### M1.2 第一批 Characterization Tests
 
