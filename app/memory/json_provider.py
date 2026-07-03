@@ -91,17 +91,18 @@ class JSONFileMemoryProvider(MemoryProvider):
     # ── Recall channels ─────────────────────────────────────
 
     def system_prompt_block(self, user_id: str) -> str:
+        self._ensure_loaded(user_id)
         data = self._loaded.get(user_id)
         if not data:
             return ""
         lines = []
-        profile = data["profile"]
+        profile = data["profile"] if isinstance(data.get("profile"), dict) else {}
         if profile:
             lines.append("PERSISTENT STUDENT PROFILE:")
             for k, v in profile.items():
                 if v not in (None, "", []):
                     lines.append(f"  {k}: {v}")
-        preferences = data["preferences"]
+        preferences = data["preferences"] if isinstance(data.get("preferences"), list) else []
         if preferences:
             lines.append("\nLEARNED PREFERENCES (from past sessions):")
             for p in preferences[-10:]:
@@ -113,10 +114,13 @@ class JSONFileMemoryProvider(MemoryProvider):
         return "\n".join(lines)
 
     def prefetch(self, query: str, user_id: str) -> str:
+        self._ensure_loaded(user_id)
         data = self._loaded.get(user_id)
         if not data:
             return ""
-        items = data["facts"] + data["preferences"]
+        facts = data["facts"] if isinstance(data.get("facts"), list) else []
+        preferences = data["preferences"] if isinstance(data.get("preferences"), list) else []
+        items = facts + preferences
         if not items:
             return ""
         keywords = [w.lower() for w in query.split() if len(w) > 3]
@@ -188,8 +192,8 @@ class JSONFileMemoryProvider(MemoryProvider):
 
     def get_preferences(self, user_id: str) -> list[str]:
         """Return a copy of the user's current preference list."""
-        self._ensure_loaded(user_id)
-        return list(self._loaded[user_id]["preferences"])
+        prefs = self._preferences(user_id)
+        return list(prefs)
 
     def get_profile(self, user_id: str) -> dict:
         """Return a shallow copy of the user's persistent profile dict
@@ -197,21 +201,44 @@ class JSONFileMemoryProvider(MemoryProvider):
         ...). Empty dict if nothing recorded — never None so callers
         don't have to handle both branches."""
         self._ensure_loaded(user_id)
-        return dict(self._loaded[user_id]["profile"] or {})
+        profile = self._loaded[user_id]["profile"]
+        return dict(profile) if isinstance(profile, dict) else {}
+
+    def get_facts(self, user_id: str):
+        """Return a copy of the user's hard-fact store, preserving legacy shape."""
+        self._ensure_loaded(user_id)
+        facts = self._loaded[user_id]["facts"]
+        if isinstance(facts, list):
+            return list(facts)
+        if isinstance(facts, dict):
+            return dict(facts)
+        return []
+
+    def get_memory_snapshot(self, user_id: str) -> dict:
+        """Return profile, facts, and preferences from the same loaded cache."""
+        try:
+            preferences = self.get_preferences(user_id)
+        except ValueError:
+            preferences = []
+        return {
+            "profile": self.get_profile(user_id),
+            "facts": self.get_facts(user_id),
+            "preferences": preferences,
+        }
 
     # ── Write API ───────────────────────────────────────────
 
     def add_preference(self, user_id: str, text: str) -> None:
-        self._ensure_loaded(user_id)
+        prefs = self._preferences(user_id)
         text = text.strip()
         if not text:
             return
         # Dedup case-insensitively against existing — handle both legacy
         # string entries and post-migration {id, text, learned_at} dicts.
-        existing_lower = {_pref_text(p).lower() for p in self._loaded[user_id]["preferences"]}
+        existing_lower = {_pref_text(p).lower() for p in prefs}
         if text.lower() in existing_lower:
             return
-        self._loaded[user_id]["preferences"].append(text)
+        prefs.append(text)
         self._enforce_size_limit(user_id, "preferences", USER_PROFILE_MAX_CHARS)
         self._save_user(user_id, self._loaded[user_id])
 
@@ -220,30 +247,66 @@ class JSONFileMemoryProvider(MemoryProvider):
         text = text.strip()
         if not text:
             return
-        existing_lower = {f.lower() for f in self._loaded[user_id]["facts"]}
+        facts = self._loaded[user_id]["facts"]
+        if not isinstance(facts, list):
+            facts = []
+            self._loaded[user_id]["facts"] = facts
+        existing_lower = {str(f).lower() for f in facts}
         if text.lower() in existing_lower:
             return
-        self._loaded[user_id]["facts"].append(text)
+        facts.append(text)
         self._enforce_size_limit(user_id, "facts", FACTS_MAX_CHARS)
         self._save_user(user_id, self._loaded[user_id])
 
-    def update_profile(self, user_id: str, updates: dict) -> None:
+    def update_profile(self, user_id: str, updates: dict) -> dict:
         self._ensure_loaded(user_id)
         cleaned = {k: v for k, v in updates.items() if v not in (None, "", [])}
         if not cleaned:
-            return
+            return self.get_profile(user_id)
         # Skip writing if nothing actually changes
         current = self._loaded[user_id]["profile"]
+        if not isinstance(current, dict):
+            current = {}
+            self._loaded[user_id]["profile"] = current
         if all(current.get(k) == v for k, v in cleaned.items()):
-            return
+            return dict(current)
         current.update(cleaned)
         self._save_user(user_id, self._loaded[user_id])
+        return dict(current)
+
+    def forget_preference(self, user_id: str, pref_id: str) -> dict | None:
+        prefs = self._preferences(user_id)
+        before = len(prefs)
+        kept = [
+            p for p in prefs
+            if not (isinstance(p, dict) and p.get("id") == pref_id)
+        ]
+        if len(kept) == before:
+            return None
+        self._loaded[user_id]["preferences"] = kept
+        self._save_user(user_id, self._loaded[user_id])
+        return {"removed": pref_id, "remaining": len(kept)}
+
+    def forget_all_preferences(self, user_id: str) -> int:
+        self._ensure_loaded(user_id)
+        prefs = self._loaded[user_id]["preferences"]
+        removed = len(prefs) if isinstance(prefs, list) else 0
+        self._loaded[user_id]["preferences"] = []
+        self._save_user(user_id, self._loaded[user_id])
+        return removed
 
     # ── Internals ───────────────────────────────────────────
 
     def _ensure_loaded(self, user_id: str) -> None:
         if user_id not in self._loaded:
             self.initialize(session_id="", user_id=user_id)
+
+    def _preferences(self, user_id: str) -> list:
+        self._ensure_loaded(user_id)
+        prefs = self._loaded[user_id]["preferences"]
+        if not isinstance(prefs, list):
+            raise ValueError("preferences.json is malformed")
+        return prefs
 
     def _read_json(self, path: Path, default):
         if not path.exists():

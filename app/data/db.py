@@ -153,8 +153,7 @@ def get_student_profile(student_id: str) -> dict:
     fallback — if the user has never been seen, returns found=False."""
     try:
         mem = get_memory_manager()
-        provider = mem.provider
-        profile = provider.get_profile(student_id) if provider else {}
+        profile = mem.get_profile(student_id)
     except Exception as e:
         logger.warning("get_student_profile failed: %s", e)
         return {"found": False, "source": "none",

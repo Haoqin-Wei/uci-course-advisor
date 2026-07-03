@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 
 def _fresh_memory_manager(memory_root: Path):
     from app.memory.json_provider import JSONFileMemoryProvider
@@ -48,6 +46,28 @@ def test_profile_update_route_persists_after_fresh_memory_manager(
     assert profile["year"] == "Junior"
     assert profile["completed_courses"] == ["ICS33"]
     assert profile["selected_courses"] == ["STATS67"]
+    assert "major: Computer Science" in prompt_block
+    assert "completed_courses: ['ICS33']" in prompt_block
+
+
+def test_profile_update_route_updates_loaded_memory_context_without_restart(
+    app_client,
+):
+    from app.memory.manager import get_memory_manager
+
+    active_manager = get_memory_manager()
+    active_manager.initialize_session("sess_profile_cache", "demo_001")
+
+    response = app_client.post(
+        "/api/memory/path-value-is-ignored/profile",
+        json={
+            "major": "Computer Science",
+            "completed_courses": ["ics33"],
+        },
+    )
+
+    assert response.status_code == 200
+    prompt_block = active_manager.system_prompt_block("demo_001")
     assert "major: Computer Science" in prompt_block
     assert "completed_courses: ['ICS33']" in prompt_block
 
@@ -99,7 +119,7 @@ def test_sync_turn_does_not_write_duplicate_turn_log(runtime_paths):
     assert not (runtime_paths.memory_root / "demo_001" / "turn_log.jsonl").exists()
 
 
-def test_deleted_preference_is_gone_after_fresh_memory_manager_but_loaded_cache_is_stale(
+def test_deleted_preference_updates_loaded_memory_context_and_persists(
     app_client,
     runtime_paths,
     seeded_user,
@@ -130,10 +150,7 @@ def test_deleted_preference_is_gone_after_fresh_memory_manager_but_loaded_cache_
     assert snapshot.status_code == 200
     assert snapshot.json()["preferences"] == []
 
-    # Characterization of the current M1 behavior: the router rewrites
-    # preferences.json, but a provider that already loaded this user keeps
-    # serving its in-memory copy until the process/provider is restarted.
-    assert "Prefers morning classes" in active_manager.system_prompt_block(
+    assert "Prefers morning classes" not in active_manager.system_prompt_block(
         seeded_user.user_id
     )
 
@@ -150,13 +167,6 @@ def test_deleted_preference_is_gone_after_fresh_memory_manager_but_loaded_cache_
     assert "major: Computer Science" in prompt_after_restart
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "M2.3 should route preference deletion through MemoryRepository "
-        "or invalidate the loaded provider cache."
-    ),
-)
 def test_forget_preference_should_update_loaded_memory_context_without_restart(
     app_client,
     seeded_user,

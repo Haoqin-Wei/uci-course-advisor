@@ -169,14 +169,12 @@ def isolated_test_environment(
 
     from app.auth import security, store
     from app.data import grades, professor_summary, sessions
-    from app.routers import memory as memory_router
     from app.validation import log as validation_log
 
     monkeypatch.setattr(store, "DB_PATH", runtime_paths.auth_db)
     monkeypatch.setattr(security, "_SECRET_FILE", runtime_paths.auth_secret)
     monkeypatch.setattr(security, "_serializer", None)
     monkeypatch.setattr(sessions, "MEMORY_ROOT", runtime_paths.memory_root)
-    monkeypatch.setattr(memory_router, "MEMORY_ROOT", runtime_paths.memory_root)
     monkeypatch.setattr(grades, "CACHE_DIR", runtime_paths.grades_cache)
     monkeypatch.setattr(
         professor_summary,

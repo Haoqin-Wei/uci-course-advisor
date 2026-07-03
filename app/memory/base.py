@@ -106,3 +106,31 @@ class MemoryProvider(ABC):
 
     def update_profile(self, user_id: str, updates: dict) -> None:
         """Update structured profile fields (major, year, etc.)."""
+
+    def get_profile(self, user_id: str) -> dict:
+        """Return structured profile fields for a user."""
+        return {}
+
+    def get_facts(self, user_id: str):
+        """Return stored hard facts for a user."""
+        return []
+
+    def get_preferences(self, user_id: str) -> list:
+        """Return stored learned preferences for a user."""
+        return []
+
+    def get_memory_snapshot(self, user_id: str) -> dict:
+        """Return profile, facts, and preferences through the provider."""
+        return {
+            "profile": self.get_profile(user_id),
+            "facts": self.get_facts(user_id),
+            "preferences": self.get_preferences(user_id),
+        }
+
+    def forget_preference(self, user_id: str, pref_id: str) -> dict | None:
+        """Remove one learned preference by id. Return removal metadata or None."""
+        return None
+
+    def forget_all_preferences(self, user_id: str) -> int:
+        """Remove all learned preferences. Return the number removed."""
+        return 0

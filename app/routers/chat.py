@@ -406,16 +406,16 @@ def _capture_hard_facts(session: dict, extracted: dict, user_id: str, mem) -> No
 
     if currently_taking:
         new_courses = _merge_into_list(session, "selected_courses", currently_taking)
-        if new_courses and mem.provider:
+        if new_courses:
             for c in new_courses:
-                mem.provider.add_fact(user_id, f"Currently taking {c}")
+                mem.add_fact(user_id, f"Currently taking {c}")
             logger.info("[Channel A] currently_taking captured → %s", new_courses)
 
     if completed:
         new_courses = _merge_into_list(session, "completed_courses", completed)
-        if new_courses and mem.provider:
+        if new_courses:
             for c in new_courses:
-                mem.provider.add_fact(user_id, f"Completed {c}")
+                mem.add_fact(user_id, f"Completed {c}")
             logger.info("[Channel A] completed captured → %s", new_courses)
 
     # ── Identity → profile.json ──
@@ -424,8 +424,8 @@ def _capture_hard_facts(session: dict, extracted: dict, user_id: str, mem) -> No
         v = extracted.get(f) if f in ("major", "year") else extracted.pop(f, None)
         if v not in (None, "", []):
             profile_updates[f] = v
-    if profile_updates and mem.provider:
-        mem.provider.update_profile(user_id, profile_updates)
+    if profile_updates:
+        mem.update_profile(user_id, profile_updates)
         logger.info("[Channel A] profile updated → %s", profile_updates)
 
     # ── Stated preferences → facts.json ──
@@ -433,9 +433,8 @@ def _capture_hard_facts(session: dict, extracted: dict, user_id: str, mem) -> No
         v = extracted.get(field)
         if v in (None, "", []):
             continue
-        if mem.provider:
-            mem.provider.add_fact(user_id, template.format(value=v))
-            logger.info("[Channel A] preference fact → %s=%s", field, v)
+        mem.add_fact(user_id, template.format(value=v))
+        logger.info("[Channel A] preference fact → %s=%s", field, v)
 
 
 # ── Channel B: background reflection (every N turns) ─────

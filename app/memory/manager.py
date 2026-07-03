@@ -127,17 +127,60 @@ class MemoryManager:
 
     # ── Channel-B helpers ──────────────────────────────────
 
+    def get_profile(self, user_id: str) -> dict:
+        if not self._provider:
+            return {}
+        try:
+            return self._provider.get_profile(user_id)
+        except Exception as e:
+            logger.warning("get_profile failed: %s", e)
+            return {}
+
+    def get_facts(self, user_id: str):
+        if not self._provider:
+            return []
+        try:
+            return self._provider.get_facts(user_id)
+        except Exception as e:
+            logger.warning("get_facts failed: %s", e)
+            return []
+
+    def get_memory_snapshot(self, user_id: str) -> dict:
+        if not self._provider:
+            return {"profile": {}, "facts": [], "preferences": []}
+        try:
+            return self._provider.get_memory_snapshot(user_id)
+        except Exception as e:
+            logger.warning("get_memory_snapshot failed: %s", e)
+            return {"profile": {}, "facts": [], "preferences": []}
+
     def get_preferences(self, user_id: str) -> list[str]:
         """Read current preferences (used by the reflection task to dedup)."""
         if not self._provider:
             return []
         try:
-            return self._provider.get_preferences(user_id) if hasattr(
-                self._provider, "get_preferences"
-            ) else []
+            return self._provider.get_preferences(user_id)
         except Exception as e:
             logger.warning("get_preferences failed: %s", e)
             return []
+
+    def update_profile(self, user_id: str, updates: dict) -> dict:
+        if not self._provider:
+            return {}
+        try:
+            updated = self._provider.update_profile(user_id, updates)
+            return updated if isinstance(updated, dict) else self.get_profile(user_id)
+        except Exception as e:
+            logger.warning("update_profile failed: %s", e)
+            return self.get_profile(user_id)
+
+    def add_fact(self, user_id: str, text: str) -> None:
+        if not self._provider:
+            return
+        try:
+            self._provider.add_fact(user_id, text)
+        except Exception as e:
+            logger.warning("add_fact failed: %s", e)
 
     def add_preference(self, user_id: str, text: str) -> None:
         if not self._provider:
@@ -146,6 +189,26 @@ class MemoryManager:
             self._provider.add_preference(user_id, text)
         except Exception as e:
             logger.warning("add_preference failed: %s", e)
+
+    def forget_preference(self, user_id: str, pref_id: str) -> dict | None:
+        if not self._provider:
+            return None
+        try:
+            return self._provider.forget_preference(user_id, pref_id)
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.warning("forget_preference failed: %s", e)
+            return None
+
+    def forget_all_preferences(self, user_id: str) -> int:
+        if not self._provider:
+            return 0
+        try:
+            return self._provider.forget_all_preferences(user_id)
+        except Exception as e:
+            logger.warning("forget_all_preferences failed: %s", e)
+            return 0
 
 
 # ── Module-level singleton ───────────────────────────────────
