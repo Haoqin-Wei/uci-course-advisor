@@ -6,6 +6,7 @@ Stores per-session conversation history and metadata under
 
 Each session is a folder with:
   meta.json    — title, term_scope, timestamps, decisions, summary
+  state.json   — structured per-session chat/planning state
   turns.jsonl  — append-only conversation log, one Turn per line
 
 Sessions own conversation history. User-level memory
@@ -16,6 +17,8 @@ Public API:
     create_session(user_id, title=None, term_scope=None)  → session_id
     get_session_meta(user_id, session_id)                 → dict
     update_session_meta(user_id, session_id, **fields)    → dict
+    get_session_state(user_id, session_id)                → dict
+    update_session_state(user_id, session_id, updates)    → dict
     list_sessions(user_id, limit=None)                    → list[dict]
     delete_session(user_id, session_id)                   → bool
     append_turn(user_id, session_id, role, content)       → turn_index
@@ -100,6 +103,10 @@ def _turns_path(user_id: str, session_id: str) -> Path:
     return _session_dir(user_id, session_id) / "turns.jsonl"
 
 
+def _state_path(user_id: str, session_id: str) -> Path:
+    return _session_dir(user_id, session_id) / "state.json"
+
+
 # ── Time ─────────────────────────────────────────────────
 
 def _now_iso() -> str:
@@ -150,6 +157,10 @@ def _read_jsonl(path: Path) -> list[dict]:
     return rows
 
 
+def _empty_session_state() -> dict:
+    return {}
+
+
 # ── CRUD ─────────────────────────────────────────────────
 
 def create_session(
@@ -183,6 +194,7 @@ def create_session(
         "summary_through_turn":  None,
     }
     _write_json(_meta_path(user_id, session_id), meta)
+    _write_json(_state_path(user_id, session_id), _empty_session_state())
     return session_id
 
 
@@ -217,6 +229,43 @@ def update_session_meta(
         meta[k] = v
     _write_json(_meta_path(user_id, session_id), meta)
     return meta
+
+
+def get_session_state(user_id: str, session_id: str) -> dict:
+    """
+    Return the structured per-session state stored in state.json.
+
+    The meta file remains the session existence check, so older session
+    folders that predate state.json read as an empty state instead of
+    crashing. Missing or corrupt state files also fall back to an empty
+    dict; callers can patch them through update_session_state().
+    """
+    get_session_meta(user_id, session_id)
+    state = _read_json(_state_path(user_id, session_id), default=None)
+    if not isinstance(state, dict):
+        return _empty_session_state()
+    return state
+
+
+def update_session_state(
+    user_id: str,
+    session_id: str,
+    updates: dict,
+) -> dict:
+    """
+    Patch state.json with structured per-session state fields.
+
+    This is intentionally separate from meta.json so planner/chat state
+    can migrate out of app.modules.state._sessions without mixing UI
+    state into listing metadata.
+    """
+    if not isinstance(updates, dict):
+        raise ValueError("updates must be a dict")
+
+    state = get_session_state(user_id, session_id)
+    state.update(updates)
+    _write_json(_state_path(user_id, session_id), state)
+    return state
 
 
 def list_sessions(user_id: str, limit: Optional[int] = None) -> list[dict]:

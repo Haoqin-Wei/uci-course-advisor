@@ -143,7 +143,7 @@
 
 ### M2.2 选择唯一 Session 真相源
 
-- [ ] 以 `app/data/sessions.py` 为持久化 Session repository。
+- [x] 以 `app/data/sessions.py` 为持久化 Session repository。
 - [ ] Session state 增加 term、当前规划偏好和 pending schedule。
 - [ ] 聊天历史只保存在 `sessions/{session_id}/turns.jsonl`。
 - [ ] 移除 Memory 中重复的完整 `turn_log.jsonl` 和 session-end history snapshot。
