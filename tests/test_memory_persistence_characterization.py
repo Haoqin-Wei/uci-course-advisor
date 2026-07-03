@@ -239,6 +239,25 @@ def test_legacy_preferences_are_migrated_to_full_schema(runtime_paths):
     assert json.loads(preferences_path.read_text(encoding="utf-8")) == preferences
 
 
+def test_add_preference_never_persists_bare_strings(runtime_paths):
+    user_id = "new_preference_schema"
+    manager = _fresh_memory_manager(runtime_paths.memory_root)
+    try:
+        manager.add_preference(user_id, "Prefers project-based classes")
+    finally:
+        manager.shutdown()
+
+    preferences_path = runtime_paths.memory_root / user_id / "preferences.json"
+    persisted = json.loads(preferences_path.read_text(encoding="utf-8"))
+
+    assert persisted
+    assert not any(isinstance(pref, str) for pref in persisted)
+    assert all(
+        set(pref) == {"id", "text", "learned_at", "last_confirmed_at"}
+        for pref in persisted
+    )
+
+
 def test_sync_turn_does_not_write_duplicate_turn_log(runtime_paths):
     from app.memory.manager import get_memory_manager
 
