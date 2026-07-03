@@ -104,3 +104,108 @@ def test_authenticated_session_routes_ignore_path_user_id_and_enforce_owner(
     )
     assert cross_owner_response.status_code == 404
     assert "Session not found" in cross_owner_response.json()["detail"]
+
+
+def test_chat_request_model_has_no_student_id_identity_field():
+    from app.routers.chat import ChatRequest
+
+    fields = (
+        ChatRequest.model_fields
+        if hasattr(ChatRequest, "model_fields")
+        else ChatRequest.__fields__
+    )
+
+    assert "student_id" not in fields
+
+
+def test_authenticated_chat_ignores_body_student_id_and_uses_cookie_user(
+    app_client,
+    runtime_paths,
+    monkeypatch,
+):
+    from app.routers import chat as chat_router
+
+    alice = _create_user("alice-chat@example.edu")
+    bob = _create_user("bob-chat@example.edu")
+    _write_memory_profile(
+        runtime_paths.memory_root,
+        alice["id"],
+        {"major": "Computer Science", "selected_courses": ["ICS33"]},
+    )
+    _write_memory_profile(
+        runtime_paths.memory_root,
+        bob["id"],
+        {"major": "Data Science", "selected_courses": ["STATS67"]},
+    )
+
+    async def fake_extract_info(_message: str) -> dict:
+        return {}
+
+    async def fake_classify_intent(_message: str) -> dict:
+        return {
+            "intent": "single_query",
+            "confidence": 1.0,
+            "entities": {},
+            "source": "test",
+        }
+
+    async def fake_handle_single_query(*_args, **_kwargs):
+        return "offline reply", [], []
+
+    monkeypatch.setattr(chat_router, "extract_info_from_message", fake_extract_info)
+    monkeypatch.setattr(chat_router, "classify_intent", fake_classify_intent)
+    monkeypatch.setattr(chat_router, "_handle_single_query", fake_handle_single_query)
+
+    _login_as(app_client, alice["id"])
+    response = app_client.post(
+        "/api/chat",
+        json={
+            "message": "What should I take?",
+            "session_id": "body_spoof_chat",
+            "student_id": bob["id"],
+            "term": "Spring 2025",
+        },
+    )
+
+    assert response.status_code == 200
+    state = response.json()["session_state"]
+    assert state["major"] == "Computer Science"
+    assert state["selected_courses"] == ["ICS33"]
+    assert state["major"] != "Data Science"
+
+
+def test_end_session_uses_cookie_user_not_body_student_id(
+    app_client,
+    runtime_paths,
+):
+    from app.modules import state as state_module
+
+    alice = _create_user("alice-end-session@example.edu")
+    bob = _create_user("bob-end-session@example.edu")
+    session_id = "end_body_spoof"
+    state_module.add_message(session_id, "user", "Alice private question")
+    state_module.add_message(session_id, "assistant", "Alice private answer")
+
+    _login_as(app_client, alice["id"])
+    response = app_client.post(
+        "/api/session/end",
+        json={
+            "session_id": session_id,
+            "student_id": bob["id"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["messages_archived"] == 2
+    assert (
+        runtime_paths.memory_root
+        / alice["id"]
+        / "sessions"
+        / f"{session_id}.json"
+    ).exists()
+    assert not (
+        runtime_paths.memory_root
+        / bob["id"]
+        / "sessions"
+        / f"{session_id}.json"
+    ).exists()

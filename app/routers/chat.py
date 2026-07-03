@@ -91,7 +91,6 @@ _COURSE_ID_SCAN = re.compile(
 class ChatRequest(BaseModel):
     message: str
     session_id: str = "demo_session"
-    student_id: Optional[str] = "demo_001"
     term: Optional[str] = None                          # 新增
     system_prompt: Optional[str] = None                 # 新增：前端自定义 LLM system prompt
 
@@ -504,9 +503,9 @@ async def chat(
     background_tasks: BackgroundTasks,
     user: dict = Depends(current_user_optional),
 ):
-    # student_id in the request body is ignored — authoritative user id
-    # comes from the session cookie via current_user_optional (anonymous
-    # callers fall back to demo_001 so legacy demo keeps working).
+    # Authoritative user id comes from the signed session cookie via
+    # current_user_optional. Anonymous callers fall back to demo_001
+    # so the legacy demo keeps working.
     user_id = user["id"]
     mem = get_memory_manager()
 
@@ -1117,8 +1116,8 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
         """Run the full chat pipeline, pushing events into the queue."""
         try:
             mem = get_memory_manager()
-            # user_id from the session cookie (or demo_001 fallback);
-            # req.student_id from the body is ignored.
+            # user_id comes from the signed session cookie (or the
+            # demo_001 fallback for anonymous demo traffic).
 
             # ── Phase 3.3: resolve the request's session_id to a persistent one ──
             persistent_sid = _resolve_session_id(req.session_id, user_id, req.term)
@@ -1308,7 +1307,6 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
 class ContinueRequest(BaseModel):
     session_id: str = "demo_session"
     continuation_id: str
-    student_id: Optional[str] = None
 
 
 @router.post("/chat/continue")
@@ -1350,8 +1348,7 @@ async def _stream_continue(req: ContinueRequest, user_id: str):
         yield sse({"type": "done"})
         return
 
-    # user_id is resolved from the session cookie by the caller;
-    # req.student_id from the body is ignored.
+    # user_id is resolved from the signed session cookie by the caller.
     accumulated = ""
     saw_limit_again = False
     try:
@@ -1507,12 +1504,14 @@ async def clear_schedule(req: ScheduleClearRequest):
 
 class EndSessionRequest(BaseModel):
     session_id: str = "demo_session"
-    student_id: Optional[str] = "demo_001"
 
 
 @router.post("/session/end")
-async def end_session(req: EndSessionRequest):
-    user_id = req.student_id or "anonymous"
+async def end_session(
+    req: EndSessionRequest,
+    user: dict = Depends(current_user_optional),
+):
+    user_id = user["id"]
     session = get_or_create_session(req.session_id)
     history = session.get("history", [])
     get_memory_manager().on_session_end(user_id, req.session_id, history)
