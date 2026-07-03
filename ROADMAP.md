@@ -118,7 +118,7 @@
 - [x] 已登录用户只能读取自己的 session 和 memory。
 - [x] Profile 可以加载到聊天上下文。
 - [x] 记忆新增、删除、进程重启后结果一致。
-- [ ] Agent tool call、错误降级、limit reached 和 continue 协议稳定。
+- [x] Agent tool call、错误降级、limit reached 和 continue 协议稳定。
 - [ ] 推荐卡片能够通过 SSE meta 持久化并在历史会话中恢复。
 - [ ] Schedule add/remove/clear 的当前行为被固定。
 - [ ] Spring 2025 离线 smoke 校验能够识别不存在的课程与教师。
