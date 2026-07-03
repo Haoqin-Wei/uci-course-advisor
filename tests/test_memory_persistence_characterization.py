@@ -49,6 +49,53 @@ def test_memory_router_does_not_access_memory_json_files_directly():
     assert "get_memory_manager" in names
 
 
+def test_memory_snapshot_returns_facts_as_list(app_client, seeded_user):
+    response = app_client.get(f"/api/memory/{seeded_user.user_id}")
+
+    assert response.status_code == 200
+    assert response.json()["facts"] == [
+        "Currently taking STAT67",
+        "Stated difficulty preference: easy",
+        "Stated goal: ge_fulfillment",
+    ]
+
+
+def test_legacy_dict_facts_are_migrated_to_list(runtime_paths):
+    user_id = "legacy_facts"
+    user_dir = runtime_paths.memory_root / user_id
+    user_dir.mkdir(parents=True, exist_ok=True)
+    facts_path = user_dir / "facts.json"
+    facts_path.write_text(
+        json.dumps(
+            {
+                "completed": ["ICS33"],
+                "difficulty_preference": "easy",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (user_dir / "profile.json").write_text("{}", encoding="utf-8")
+    (user_dir / "preferences.json").write_text("[]", encoding="utf-8")
+
+    manager = _fresh_memory_manager(runtime_paths.memory_root)
+    try:
+        manager.initialize_session("sess_legacy_facts", user_id)
+        assert manager.get_facts(user_id) == [
+            "completed: ICS33",
+            "difficulty_preference: easy",
+        ]
+        manager.add_fact(user_id, "Currently taking STATS67")
+    finally:
+        manager.shutdown()
+
+    assert json.loads(facts_path.read_text(encoding="utf-8")) == [
+        "completed: ICS33",
+        "difficulty_preference: easy",
+        "Currently taking STATS67",
+    ]
+
+
 def test_profile_update_route_persists_after_fresh_memory_manager(
     app_client,
     runtime_paths,

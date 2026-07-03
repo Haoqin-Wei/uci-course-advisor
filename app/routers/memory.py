@@ -59,15 +59,15 @@ def get_memory(user_id: str, user: dict = Depends(current_user_optional)):
     snapshot = get_memory_manager().get_memory_snapshot(real_user_id)
     profile = snapshot.get("profile") or {}
     prefs = snapshot.get("preferences") or []
-    facts = snapshot.get("facts") or {}
+    facts = snapshot.get("facts") or []
 
     # Coerce shapes defensively (the JSON files are user-editable).
     if not isinstance(profile, dict):
         profile = {}
     if not isinstance(prefs, list):
         prefs = []
-    if not isinstance(facts, dict):
-        facts = {}
+    if not isinstance(facts, list):
+        facts = []
 
     # Compute major progress (only for hand-crafted majors).
     progress = None

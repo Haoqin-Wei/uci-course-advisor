@@ -136,7 +136,7 @@ class MemoryManager:
             logger.warning("get_profile failed: %s", e)
             return {}
 
-    def get_facts(self, user_id: str):
+    def get_facts(self, user_id: str) -> list[str]:
         if not self._provider:
             return []
         try:

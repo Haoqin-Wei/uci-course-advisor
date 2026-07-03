@@ -40,7 +40,7 @@ def _pref_text(item) -> str:
     """
     Extract searchable text from a memory item.
 
-    facts.json is list[str] (legacy format kept).
+    facts.json is list[str].
     preferences.json is list[dict] post-Phase-2 schema migration —
     each entry has {id, text, learned_at}.
 
@@ -53,6 +53,19 @@ def _pref_text(item) -> str:
         v = item.get("text")
         return v if isinstance(v, str) else ""
     return ""
+
+
+def _fact_text(item) -> str:
+    """Normalize one fact-like item to a non-empty string or ""."""
+    if isinstance(item, str):
+        return item.strip()
+    if isinstance(item, dict):
+        text = item.get("text")
+        if isinstance(text, str):
+            return text.strip()
+    if item in (None, "", []):
+        return ""
+    return str(item).strip()
 
 
 class JSONFileMemoryProvider(MemoryProvider):
@@ -81,11 +94,14 @@ class JSONFileMemoryProvider(MemoryProvider):
             return
         user_dir = self.base_dir / user_id
         user_dir.mkdir(parents=True, exist_ok=True)
+        raw_facts = self._read_json(user_dir / "facts.json", [])
         self._loaded[user_id] = {
             "profile": self._read_json(user_dir / "profile.json", {}),
             "preferences": self._read_json(user_dir / "preferences.json", []),
-            "facts": self._read_json(user_dir / "facts.json", []),
+            "facts": self._normalize_facts(raw_facts),
         }
+        if self._loaded[user_id]["facts"] != raw_facts:
+            self._save_user(user_id, self._loaded[user_id])
         logger.info("Memory loaded for user=%s", user_id)
 
     # ── Recall channels ─────────────────────────────────────
@@ -118,7 +134,7 @@ class JSONFileMemoryProvider(MemoryProvider):
         data = self._loaded.get(user_id)
         if not data:
             return ""
-        facts = data["facts"] if isinstance(data.get("facts"), list) else []
+        facts = data["facts"]
         preferences = data["preferences"] if isinstance(data.get("preferences"), list) else []
         items = facts + preferences
         if not items:
@@ -126,7 +142,7 @@ class JSONFileMemoryProvider(MemoryProvider):
         keywords = [w.lower() for w in query.split() if len(w) > 3]
         if not keywords:
             return ""
-        # facts is list[str]; preferences is list[dict] post-migration —
+        # facts is list[str]; preferences may be legacy strings or dicts —
         # normalize through _pref_text before string matching.
         matched_texts: list[str] = []
         for item in items:
@@ -204,15 +220,10 @@ class JSONFileMemoryProvider(MemoryProvider):
         profile = self._loaded[user_id]["profile"]
         return dict(profile) if isinstance(profile, dict) else {}
 
-    def get_facts(self, user_id: str):
-        """Return a copy of the user's hard-fact store, preserving legacy shape."""
+    def get_facts(self, user_id: str) -> list[str]:
+        """Return a copy of the user's hard-fact store as list[str]."""
         self._ensure_loaded(user_id)
-        facts = self._loaded[user_id]["facts"]
-        if isinstance(facts, list):
-            return list(facts)
-        if isinstance(facts, dict):
-            return dict(facts)
-        return []
+        return list(self._loaded[user_id]["facts"])
 
     def get_memory_snapshot(self, user_id: str) -> dict:
         """Return profile, facts, and preferences from the same loaded cache."""
@@ -248,9 +259,6 @@ class JSONFileMemoryProvider(MemoryProvider):
         if not text:
             return
         facts = self._loaded[user_id]["facts"]
-        if not isinstance(facts, list):
-            facts = []
-            self._loaded[user_id]["facts"] = facts
         existing_lower = {str(f).lower() for f in facts}
         if text.lower() in existing_lower:
             return
@@ -307,6 +315,29 @@ class JSONFileMemoryProvider(MemoryProvider):
         if not isinstance(prefs, list):
             raise ValueError("preferences.json is malformed")
         return prefs
+
+    def _normalize_facts(self, raw) -> list[str]:
+        """
+        The canonical facts.json schema is list[str].
+
+        Older or hand-edited dict payloads are flattened once at the provider
+        boundary so the rest of the app never has to branch on list-vs-dict.
+        """
+        if isinstance(raw, list):
+            return [text for item in raw if (text := _fact_text(item))]
+        if not isinstance(raw, dict):
+            return []
+
+        normalized: list[str] = []
+        for key, value in raw.items():
+            if value in (None, "", []):
+                continue
+            values = value if isinstance(value, list) else [value]
+            for item in values:
+                text = _fact_text(item)
+                if text:
+                    normalized.append(f"{key}: {text}")
+        return normalized
 
     def _read_json(self, path: Path, default):
         if not path.exists():

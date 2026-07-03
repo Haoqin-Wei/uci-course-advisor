@@ -111,8 +111,8 @@ class MemoryProvider(ABC):
         """Return structured profile fields for a user."""
         return {}
 
-    def get_facts(self, user_id: str):
-        """Return stored hard facts for a user."""
+    def get_facts(self, user_id: str) -> list[str]:
+        """Return stored hard facts for a user as list[str]."""
         return []
 
     def get_preferences(self, user_id: str) -> list:
