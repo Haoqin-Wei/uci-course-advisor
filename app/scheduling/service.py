@@ -22,6 +22,7 @@ DAY_CODE_TO_NAME: dict[str, str] = {
 }
 _DAY_TOKENS: tuple[str, ...] = ("Tu", "Th", "Sa", "Su", "M", "W", "F")
 SectionTimeStatus = Literal["conflict", "clear", "unknown"]
+FinalExamStatus = Literal["conflict", "clear", "unknown"]
 
 
 def parse_day_codes(value: str) -> tuple[str, ...]:
@@ -164,12 +165,18 @@ def _section_label(section: dict) -> str:
 
 
 def _section_summary(section: dict) -> dict:
-    return {
+    summary = {
         "course_id": _course_id(section),
         "section_code": _section_code(section),
         "section_num": _section_num(section),
         "window": _format_meeting_window(section),
     }
+    final_exam = _final_exam(section)
+    if isinstance(final_exam, dict):
+        exam = _parse_final_exam(final_exam)
+        if exam["status"] != "none":
+            summary["final_exam"] = exam["label"]
+    return summary
 
 
 def _section_has_unknown_time(section: dict) -> bool:
@@ -256,6 +263,106 @@ def _time_conflict(scope: str, message: str, sections: list[dict]) -> dict:
     }
 
 
+def _final_exam(section: dict):
+    return section.get("final_exam") or section.get("finalExam")
+
+
+def _exam_time_to_minutes(value) -> Optional[int]:
+    if not isinstance(value, dict):
+        return None
+    hour = value.get("hour")
+    minute = value.get("minute", 0)
+    if not isinstance(hour, int) or not isinstance(minute, int):
+        return None
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return hour * 60 + minute
+
+
+def _format_exam_time(minutes: int) -> str:
+    hour, minute = divmod(minutes, 60)
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _parse_final_exam(final_exam) -> dict:
+    """
+    Normalize Anteater/CSV finalExam payloads.
+
+    Missing final exam data is treated as "none" for M3.2b compatibility;
+    explicit TBA or malformed scheduled payloads are treated as unknown.
+    """
+    if not isinstance(final_exam, dict):
+        return {"status": "none", "label": None}
+
+    status = str(final_exam.get("examStatus") or "").upper()
+    if status == "NO_FINAL":
+        return {"status": "none", "label": "No final exam"}
+    if status == "TBA_FINAL":
+        return {"status": "unknown", "label": "Final TBA"}
+    if status != "SCHEDULED_FINAL":
+        return {"status": "unknown", "label": "Final exam status unknown"}
+
+    month = final_exam.get("month")
+    day = final_exam.get("day")
+    start = _exam_time_to_minutes(final_exam.get("startTime"))
+    end = _exam_time_to_minutes(final_exam.get("endTime"))
+    if not isinstance(month, int) or not isinstance(day, int) or None in (start, end):
+        return {"status": "unknown", "label": "Final exam time incomplete"}
+
+    day_of_week = str(final_exam.get("dayOfWeek") or "").strip()
+    date_label = f"{month}/{day}"
+    if day_of_week:
+        date_label = f"{day_of_week} {date_label}"
+
+    return {
+        "status": "scheduled",
+        "label": f"{date_label} {_format_exam_time(start)}\u2013{_format_exam_time(end)}",
+        "date": (month, day),
+        "start": start,
+        "end": end,
+    }
+
+
+def _section_has_unknown_final_exam(section: dict) -> bool:
+    final_exam = _final_exam(section)
+    return isinstance(final_exam, dict) and _parse_final_exam(final_exam)["status"] == "unknown"
+
+
+def final_exam_status(a: dict, b: dict) -> FinalExamStatus:
+    exam_a = _parse_final_exam(_final_exam(a))
+    exam_b = _parse_final_exam(_final_exam(b))
+
+    if exam_a["status"] == "none" or exam_b["status"] == "none":
+        return "clear"
+    if exam_a["status"] == "unknown" or exam_b["status"] == "unknown":
+        return "unknown"
+    if exam_a["date"] != exam_b["date"]:
+        return "clear"
+    return (
+        "conflict"
+        if exam_a["start"] < exam_b["end"] and exam_b["start"] < exam_a["end"]
+        else "clear"
+    )
+
+
+def _final_exam_unknown(scope: str, message: str, sections: list[dict]) -> dict:
+    return {
+        "type": "final_exam_unknown",
+        "scope": scope,
+        "message": message,
+        "sections": [_section_summary(section) for section in sections],
+    }
+
+
+def _final_exam_conflict(scope: str, message: str, sections: list[dict]) -> dict:
+    return {
+        "type": "final_exam_conflict",
+        "scope": scope,
+        "message": message,
+        "sections": [_section_summary(section) for section in sections],
+    }
+
+
 def validate_schedule_bundle(
     recommended_items: Iterable[dict],
     *,
@@ -264,10 +371,11 @@ def validate_schedule_bundle(
     """
     Validate a proposed set of course sections against known time rules.
 
-    M3.2a scope:
+    M3.2 scope:
       - proposed recommendation sections vs each other
       - proposed recommendation sections vs already-resolved pending sections
       - TBA/missing time is reported as ``unknown`` instead of treated as clear
+      - scheduled final-exam conflicts are reported alongside time conflicts
 
     The function is intentionally pure: callers resolve persisted
     ``pending_schedule`` entries into concrete section dicts before calling.
@@ -292,6 +400,14 @@ def validate_schedule_bundle(
                     _time_unknown(
                         "bundle",
                         f"{_section_label(section)} has unknown meeting time",
+                        [section],
+                    )
+                )
+            if _section_has_unknown_final_exam(section):
+                unknowns.append(
+                    _final_exam_unknown(
+                        "bundle",
+                        f"{_section_label(section)} final exam time is unknown",
                         [section],
                     )
                 )
@@ -325,6 +441,29 @@ def validate_schedule_bundle(
                         [left, right],
                     )
                 )
+            exam_status = final_exam_status(left, right)
+            if exam_status == "conflict":
+                conflicts.append(
+                    _final_exam_conflict(
+                        "bundle",
+                        (
+                            f"{_section_label(left)} final exam conflicts with "
+                            f"{_section_label(right)} final exam"
+                        ),
+                        [left, right],
+                    )
+                )
+            elif exam_status == "unknown":
+                unknowns.append(
+                    _final_exam_unknown(
+                        "bundle",
+                        (
+                            f"Cannot determine whether {_section_label(left)} final exam "
+                            f"conflicts with {_section_label(right)} final exam"
+                        ),
+                        [left, right],
+                    )
+                )
 
     for bundle_section in bundle_sections:
         for pending_section in pending_list:
@@ -347,6 +486,30 @@ def validate_schedule_bundle(
                         (
                             f"Cannot determine whether {_section_label(bundle_section)} "
                             f"conflicts with pending {_section_label(pending_section)}"
+                        ),
+                        [bundle_section, pending_section],
+                    )
+                )
+            exam_status = final_exam_status(bundle_section, pending_section)
+            if exam_status == "conflict":
+                conflicts.append(
+                    _final_exam_conflict(
+                        "pending_schedule",
+                        (
+                            f"{_section_label(bundle_section)} final exam conflicts with "
+                            f"pending {_section_label(pending_section)} final exam"
+                        ),
+                        [bundle_section, pending_section],
+                    )
+                )
+            elif exam_status == "unknown":
+                unknowns.append(
+                    _final_exam_unknown(
+                        "pending_schedule",
+                        (
+                            f"Cannot determine whether {_section_label(bundle_section)} "
+                            f"final exam conflicts with pending "
+                            f"{_section_label(pending_section)} final exam"
                         ),
                         [bundle_section, pending_section],
                     )

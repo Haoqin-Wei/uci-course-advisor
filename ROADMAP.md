@@ -185,7 +185,7 @@
 - [x] 新增 `validate_schedule_bundle()`。
 - [x] 检查推荐课程之间的上课时间冲突。
 - [x] 检查推荐课程与 pending schedule 的冲突。
-- [ ] 检查 final exam 冲突。
+- [x] 检查 final exam 冲突。
 - [ ] 检查 Lec/Dis/Lab pairing 是否完整。
 - [ ] 检查 cancelled、FULL、waitlist 和 section restriction。
 - [x] 返回结构化结果：`valid / warnings / conflicts / unknowns`。

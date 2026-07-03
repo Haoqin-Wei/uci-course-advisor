@@ -381,6 +381,239 @@ def test_validate_schedule_bundle_reports_tba_as_unknown_not_clear():
     ]
 
 
+def test_validate_schedule_bundle_reports_recommendation_final_exam_conflicts():
+    result = validate_schedule_bundle(
+        [
+            {
+                "course_id": "COMPSCI161",
+                "primary_code": "10000",
+                "sections": [
+                    {
+                        "course_id": "COMPSCI161",
+                        "section_code": "10000",
+                        "section_num": "A",
+                        "days": "MW",
+                        "start_time": "09:00",
+                        "end_time": "10:20",
+                        "final_exam": {
+                            "examStatus": "SCHEDULED_FINAL",
+                            "dayOfWeek": "Thu",
+                            "month": 6,
+                            "day": 12,
+                            "startTime": {"hour": 8, "minute": 0},
+                            "endTime": {"hour": 10, "minute": 0},
+                        },
+                    }
+                ],
+            },
+            {
+                "course_id": "IN4MATX43",
+                "primary_code": "20000",
+                "sections": [
+                    {
+                        "course_id": "IN4MATX43",
+                        "section_code": "20000",
+                        "section_num": "A",
+                        "days": "TuTh",
+                        "start_time": "11:00",
+                        "end_time": "12:20",
+                        "final_exam": {
+                            "examStatus": "SCHEDULED_FINAL",
+                            "dayOfWeek": "Thu",
+                            "month": 6,
+                            "day": 12,
+                            "startTime": {"hour": 9, "minute": 30},
+                            "endTime": {"hour": 11, "minute": 30},
+                        },
+                    }
+                ],
+            },
+        ]
+    )
+
+    assert result["valid"] is False
+    assert result["unknowns"] == []
+    assert result["conflicts"] == [
+        {
+            "type": "final_exam_conflict",
+            "scope": "bundle",
+            "message": "COMPSCI161 A final exam conflicts with IN4MATX43 A final exam",
+            "sections": [
+                {
+                    "course_id": "COMPSCI161",
+                    "section_code": "10000",
+                    "section_num": "A",
+                    "window": "MW 09:00–10:20",
+                    "final_exam": "Thu 6/12 08:00–10:00",
+                },
+                {
+                    "course_id": "IN4MATX43",
+                    "section_code": "20000",
+                    "section_num": "A",
+                    "window": "TuTh 11:00–12:20",
+                    "final_exam": "Thu 6/12 09:30–11:30",
+                },
+            ],
+        }
+    ]
+
+
+def test_validate_schedule_bundle_reports_pending_final_exam_conflicts():
+    result = validate_schedule_bundle(
+        [
+            {
+                "course_id": "COMPSCI161",
+                "primary_code": "10000",
+                "sections": [
+                    {
+                        "course_id": "COMPSCI161",
+                        "section_code": "10000",
+                        "section_num": "A",
+                        "days": "MW",
+                        "start_time": "09:00",
+                        "end_time": "10:20",
+                        "final_exam": {
+                            "examStatus": "SCHEDULED_FINAL",
+                            "dayOfWeek": "Thu",
+                            "month": 6,
+                            "day": 12,
+                            "startTime": {"hour": 8, "minute": 0},
+                            "endTime": {"hour": 10, "minute": 0},
+                        },
+                    }
+                ],
+            }
+        ],
+        pending_sections=[
+            {
+                "course_id": "STATS67",
+                "section_code": "30000",
+                "section_num": "A",
+                "days": "TuTh",
+                "start_time": "11:00",
+                "end_time": "12:20",
+                "final_exam": {
+                    "examStatus": "SCHEDULED_FINAL",
+                    "dayOfWeek": "Thu",
+                    "month": 6,
+                    "day": 12,
+                    "startTime": {"hour": 9, "minute": 30},
+                    "endTime": {"hour": 11, "minute": 30},
+                },
+            }
+        ],
+    )
+
+    assert result["valid"] is False
+    assert result["unknowns"] == []
+    assert result["conflicts"] == [
+        {
+            "type": "final_exam_conflict",
+            "scope": "pending_schedule",
+            "message": "COMPSCI161 A final exam conflicts with pending STATS67 A final exam",
+            "sections": [
+                {
+                    "course_id": "COMPSCI161",
+                    "section_code": "10000",
+                    "section_num": "A",
+                    "window": "MW 09:00–10:20",
+                    "final_exam": "Thu 6/12 08:00–10:00",
+                },
+                {
+                    "course_id": "STATS67",
+                    "section_code": "30000",
+                    "section_num": "A",
+                    "window": "TuTh 11:00–12:20",
+                    "final_exam": "Thu 6/12 09:30–11:30",
+                },
+            ],
+        }
+    ]
+
+
+def test_validate_schedule_bundle_reports_tba_final_exam_as_unknown():
+    result = validate_schedule_bundle(
+        [
+            {
+                "course_id": "COMPSCI161",
+                "primary_code": "10000",
+                "sections": [
+                    {
+                        "course_id": "COMPSCI161",
+                        "section_code": "10000",
+                        "section_num": "A",
+                        "days": "MW",
+                        "start_time": "09:00",
+                        "end_time": "10:20",
+                        "final_exam": {"examStatus": "TBA_FINAL"},
+                    }
+                ],
+            }
+        ],
+        pending_sections=[
+            {
+                "course_id": "STATS67",
+                "section_code": "30000",
+                "section_num": "A",
+                "days": "TuTh",
+                "start_time": "11:00",
+                "end_time": "12:20",
+                "final_exam": {
+                    "examStatus": "SCHEDULED_FINAL",
+                    "dayOfWeek": "Thu",
+                    "month": 6,
+                    "day": 12,
+                    "startTime": {"hour": 9, "minute": 30},
+                    "endTime": {"hour": 11, "minute": 30},
+                },
+            }
+        ],
+    )
+
+    assert result["valid"] is False
+    assert result["conflicts"] == []
+    assert result["unknowns"] == [
+        {
+            "type": "final_exam_unknown",
+            "scope": "bundle",
+            "message": "COMPSCI161 A final exam time is unknown",
+            "sections": [
+                {
+                    "course_id": "COMPSCI161",
+                    "section_code": "10000",
+                    "section_num": "A",
+                    "window": "MW 09:00–10:20",
+                    "final_exam": "Final TBA",
+                }
+            ],
+        },
+        {
+            "type": "final_exam_unknown",
+            "scope": "pending_schedule",
+            "message": (
+                "Cannot determine whether COMPSCI161 A final exam conflicts "
+                "with pending STATS67 A final exam"
+            ),
+            "sections": [
+                {
+                    "course_id": "COMPSCI161",
+                    "section_code": "10000",
+                    "section_num": "A",
+                    "window": "MW 09:00–10:20",
+                    "final_exam": "Final TBA",
+                },
+                {
+                    "course_id": "STATS67",
+                    "section_code": "30000",
+                    "section_num": "A",
+                    "window": "TuTh 11:00–12:20",
+                    "final_exam": "Thu 6/12 09:30–11:30",
+                },
+            ],
+        },
+    ]
+
+
 def test_agent_and_chat_do_not_define_private_schedule_parsers():
     import app.agent.tools as agent_tools
     import app.routers.chat as chat_router
