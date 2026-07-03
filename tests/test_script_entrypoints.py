@@ -28,6 +28,11 @@ def test_validation_smoke_script_runs_without_pythonpath():
     assert result.returncode == 0, result.stdout + result.stderr
     assert "ModuleNotFoundError" not in result.stderr
     assert "Loaded catalog" in result.stdout
+    assert "Validation overall: fail" in result.stdout
+    assert "HALLUCINATED_COURSE_ID" in result.stdout
+    assert "COMPSCI 999" in result.stdout
+    assert "UNKNOWN_INSTRUCTOR" in result.stdout
+    assert "Professor Nonexistent" in result.stdout
 
 
 def test_limit_reached_smoke_script_runs_without_pythonpath():
