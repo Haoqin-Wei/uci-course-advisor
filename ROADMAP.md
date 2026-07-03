@@ -105,8 +105,8 @@
 
 ### M1.1 测试基础设施
 
-- [ ] 引入 `pytest`、FastAPI TestClient 和覆盖率配置。
-- [ ] 测试默认禁止外网访问和真实 LLM 调用。
+- [x] 引入 `pytest`、FastAPI TestClient 和覆盖率配置。
+- [x] 测试默认禁止外网访问和真实 LLM 调用。
 - [ ] 建立 fake LLM client，支持 token、tool call、error 和 limit reached 事件。
 - [ ] 建立最小课程、section、profile、memory 和 session fixture。
 - [ ] 修复 smoke 脚本必须手动设置 `PYTHONPATH=.` 才能运行的问题。
