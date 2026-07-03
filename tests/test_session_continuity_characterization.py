@@ -92,6 +92,7 @@ def test_new_empty_session_persists_turns_without_splitting_state_by_id(
     assert "" not in state_module._sessions
     assert state_module._sessions[persistent_sid]["selected_courses"] == ["ICS33"]
     assert state_module._sessions[persistent_sid]["difficulty_preference"] == "easy"
+    assert state_module._sessions[persistent_sid]["history"] == []
     assert [turn["role"] for turn in sessions_data.read_turns(
         "demo_001",
         persistent_sid,
@@ -114,6 +115,7 @@ def test_new_empty_session_persists_turns_without_splitting_state_by_id(
     assert second_meta["session_state"]["selected_courses"] == ["ICS33"]
     assert second_meta["session_state"]["difficulty_preference"] == "easy"
     assert "" not in state_module._sessions
+    assert state_module._sessions[persistent_sid]["history"] == []
     assert [turn["role"] for turn in sessions_data.read_turns(
         "demo_001",
         persistent_sid,

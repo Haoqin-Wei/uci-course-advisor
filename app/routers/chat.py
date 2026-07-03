@@ -37,7 +37,7 @@ from typing import Optional
 from app.auth.deps import current_user_optional
 from app.modules.intent import classify_intent
 from app.modules.state import (
-    get_or_create_session, update_session, add_message,
+    get_or_create_session, update_session,
     load_student_into_session, get_known_fields,
 )
 from app.modules.clarification import (
@@ -177,34 +177,31 @@ def _resolve_session_id(
     return new_sid
 
 
-def _hydrate_state_from_session(
+def _history_from_session_turns(
     user_id: str,
     persistent_session_id: str,
-    in_mem_session: dict,
-) -> None:
+    *,
+    limit: Optional[int] = None,
+) -> list[dict]:
     """
-    On first use of a persistent session in this server lifetime, copy
-    its stored turns into in-memory state.history so existing code
-    (add_message, etc.) keeps working.
+    Return chat history from sessions/{session_id}/turns.jsonl.
 
-    Idempotent: only hydrates if state.history is empty.
+    Chat history is intentionally not mirrored into app.modules.state.
+    In-memory session state is reserved for structured planning fields
+    until the rest of M2.2 migrates those fields to sessions.py too.
     """
-    if in_mem_session.get("history"):
-        return
     try:
         turns = sessions_data.read_turns(user_id, persistent_session_id)
     except sessions_data.SessionNotFound:
-        return
-    in_mem_session["history"] = [
+        return []
+    history = [
         {"role": t.get("role"), "content": t.get("content")}
         for t in turns
         if t.get("role") in ("user", "assistant")
     ]
-    if turns:
-        logger.info(
-            "[stream] hydrated state.history with %d turns from session %s",
-            len(in_mem_session["history"]), persistent_session_id,
-        )
+    if limit is not None:
+        history = history[-limit:]
+    return history
 
 
 def _persist_turn(
@@ -508,20 +505,20 @@ async def chat(
     # so the legacy demo keeps working.
     user_id = user["id"]
     mem = get_memory_manager()
+    persistent_sid = _resolve_session_id(req.session_id, user_id, req.term)
+    active_session_id = persistent_sid
 
-    mem.initialize_session(req.session_id, user_id)
+    mem.initialize_session(active_session_id, user_id)
 
-    session = get_or_create_session(req.session_id)
+    session = get_or_create_session(active_session_id)
     if not session.get("major"):
-        load_student_into_session(req.session_id, user_id)
-        session = get_or_create_session(req.session_id)
+        load_student_into_session(active_session_id, user_id)
+        session = get_or_create_session(active_session_id)
 
-    add_message(req.session_id, "user", req.message)
-
-    mem.on_turn_start(req.session_id, user_id)
+    mem.on_turn_start(active_session_id, user_id)
     logger.info(
         "[turn %d] user=%s msg=%r",
-        mem.turn_count(req.session_id), user_id, req.message[:120],
+        mem.turn_count(active_session_id), user_id, req.message[:120],
     )
 
     # ── Channel A ──
@@ -530,7 +527,7 @@ async def chat(
         logger.info("[Channel A] extracted from message: %s", extracted)
         _capture_hard_facts(session, extracted, user_id, mem)
         if extracted:
-            session = update_session(req.session_id, extracted)
+            session = update_session(active_session_id, extracted)
     else:
         logger.info("[Channel A] nothing extracted from message")
 
@@ -545,7 +542,7 @@ async def chat(
             if llm_entities.get(f):
                 eu[f] = llm_entities[f]
         if eu:
-            session = update_session(req.session_id, eu)
+            session = update_session(active_session_id, eu)
 
     memory_context = {
         "system_prompt_block": mem.system_prompt_block(user_id),
@@ -561,23 +558,30 @@ async def chat(
     if needs_clarification(session, intent):
         missing = detect_missing_fields(session, intent)
         reply = build_clarification_response(missing)
-        add_message(req.session_id, "assistant", reply)
-        mem.sync_turn(user_id, req.message, reply, req.session_id)
-        _maybe_schedule_reflection(background_tasks, mem, req.session_id, user_id, session)
+        mem.sync_turn(user_id, req.message, reply, active_session_id)
+        new_turn_index, did_auto_title = _persist_turn(
+            user_id, persistent_sid, req.message, reply,
+        )
+        _maybe_schedule_auto_title(
+            background_tasks, did_auto_title,
+            user_id, persistent_sid, req.message, reply,
+        )
+        _detect_and_pin_decisions(user_id, persistent_sid, req.message, new_turn_index)
+        _maybe_schedule_reflection(background_tasks, mem, active_session_id, user_id)
         return ChatResponse(reply=reply, intent=intent,
-                            session_state=get_known_fields(req.session_id))
+                            session_state=get_known_fields(active_session_id))
 
-    state = get_known_fields(req.session_id)
+    state = get_known_fields(active_session_id)
 
     # ── Sync frontend's term to session state ──
     # The dropdown is authoritative for THIS turn — without this, the
     # downstream query falls back to state["term"] (often empty or stale)
     # and retrieves nothing, causing the LLM to hallucinate courses.
     if req.term and req.term != state.get("term"):
-        update_session(req.session_id, {"term": req.term})
-        state = get_known_fields(req.session_id)
+        update_session(active_session_id, {"term": req.term})
+        state = get_known_fields(active_session_id)
         logger.info("[term-sync] frontend term %r written to session %s",
-                    req.term, req.session_id)
+                    req.term, active_session_id)
 
     validation_dict = None                              # 新增：默认 None
 
@@ -590,13 +594,21 @@ async def chat(
         # ── 新增：把 session_id / term / system_prompt 传进去 ──
         reply, cards, followups, validation_dict = await _handle_recommendation(
             req.message, state, memory_context,
-            session_id=req.session_id, term_str=req.term,
+            session_id=active_session_id, term_str=req.term,
             system_prompt=req.system_prompt,            # 新增
         )
 
-    add_message(req.session_id, "assistant", reply)
-    mem.sync_turn(user_id, req.message, reply, req.session_id)
-    _maybe_schedule_reflection(background_tasks, mem, req.session_id, user_id, session)
+    mem.sync_turn(user_id, req.message, reply, active_session_id)
+    new_turn_index, did_auto_title = _persist_turn(
+        user_id, persistent_sid, req.message, reply,
+        cards=cards, followups=followups, validation=validation_dict,
+    )
+    _maybe_schedule_auto_title(
+        background_tasks, did_auto_title,
+        user_id, persistent_sid, req.message, reply,
+    )
+    _detect_and_pin_decisions(user_id, persistent_sid, req.message, new_turn_index)
+    _maybe_schedule_reflection(background_tasks, mem, active_session_id, user_id)
 
     return ChatResponse(
         reply=reply, cards=cards, followups=followups,
@@ -611,10 +623,9 @@ def _maybe_schedule_reflection(
     mem,
     session_id: str,
     user_id: str,
-    session: dict,
 ) -> None:
     if mem.should_reflect(session_id):
-        history_snapshot = list(session.get("history", []))[-12:]
+        history_snapshot = _history_from_session_turns(user_id, session_id, limit=12)
         logger.info(
             "[Channel B] scheduling reflection for turn %d (history=%d msgs)",
             mem.turn_count(session_id), len(history_snapshot),
@@ -1124,12 +1135,10 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
             active_session_id = persistent_sid
 
             session = get_or_create_session(active_session_id)
-            _hydrate_state_from_session(user_id, persistent_sid, session)
             if not session.get("major"):
                 load_student_into_session(active_session_id, user_id)
                 session = get_or_create_session(active_session_id)
 
-            add_message(active_session_id, "user", req.message)
             mem.on_turn_start(active_session_id, user_id)
             logger.info("[stream turn %d] user=%s session=%s msg=%r",
                         mem.turn_count(active_session_id), user_id,
@@ -1243,7 +1252,6 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
                     summary=summary,
                 )
 
-            add_message(active_session_id, "assistant", reply)
             mem.sync_turn(user_id, req.message, reply, active_session_id)
 
             # ── Phase 3.3 + 3.5 + Round 4: persist turn, schedule auto-title,
@@ -1258,7 +1266,7 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
             )
             _detect_and_pin_decisions(user_id, persistent_sid, req.message, new_turn_index)
 
-            _maybe_schedule_reflection(background_tasks, mem, active_session_id, user_id, session)
+            _maybe_schedule_reflection(background_tasks, mem, active_session_id, user_id)
 
             await queue.put({
                 "type": "meta",
@@ -1369,9 +1377,14 @@ async def _stream_continue(req: ContinueRequest, user_id: str):
         # pipeline here (no new user message); just append the text.
         if accumulated:
             try:
-                add_message(req.session_id, "assistant", accumulated)
+                sessions_data.append_turn(
+                    user_id,
+                    req.session_id,
+                    "assistant",
+                    accumulated,
+                )
             except Exception as e:
-                logger.warning("[continue] add_message failed: %s", e)
+                logger.warning("[continue] append resumed turn failed: %s", e)
 
         logger.info("[continue] cid=%s user=%s session=%s chars=%d limit_again=%s",
                     req.continuation_id, user_id, req.session_id,

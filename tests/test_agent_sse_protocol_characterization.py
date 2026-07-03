@@ -6,6 +6,7 @@ import json
 from fastapi import BackgroundTasks
 
 from app.agent import loop as agent_loop
+from app.data import sessions as sessions_data
 from app.modules import state as state_module
 from app.routers import chat as chat_router
 from app.routers.chat import ChatRequest, ContinueRequest
@@ -268,12 +269,17 @@ def test_stream_continue_resumes_once_and_persists_assistant_text(monkeypatch):
     monkeypatch.setattr(adapter, "LLM_ENABLED", True)
     monkeypatch.setattr(adapter, "_get_client", lambda: client)
     monkeypatch.setattr(adapter, "LLM_MODEL", "fake-model")
+    session_id = sessions_data.create_session(
+        "demo_001",
+        title="Continue fixture",
+        term_scope="Spring 2025",
+    )
 
     resumed_events = asyncio.run(
         _collect_sse(
             chat_router._stream_continue(
                 ContinueRequest(
-                    session_id="sess_continue",
+                    session_id=session_id,
                     continuation_id=continuation_id,
                 ),
                 user_id="demo_001",
@@ -284,16 +290,19 @@ def test_stream_continue_resumes_once_and_persists_assistant_text(monkeypatch):
     assert [event["type"] for event in resumed_events] == ["token", "final", "done"]
     assert resumed_events[0]["text"] == "Resumed answer."
     assert resumed_events[1]["text"] == "Resumed answer."
-    assert state_module._sessions["sess_continue"]["history"][-1] == {
-        "role": "assistant",
-        "content": "Resumed answer.",
-    }
+    assert state_module._sessions.get(session_id, {}).get("history", []) == []
+    assert [turn["role"] for turn in sessions_data.read_turns("demo_001", session_id)] == [
+        "assistant"
+    ]
+    assert sessions_data.read_turns("demo_001", session_id)[0]["content"] == (
+        "Resumed answer."
+    )
 
     replay_events = asyncio.run(
         _collect_sse(
             chat_router._stream_continue(
                 ContinueRequest(
-                    session_id="sess_continue",
+                    session_id=session_id,
                     continuation_id=continuation_id,
                 ),
                 user_id="demo_001",
