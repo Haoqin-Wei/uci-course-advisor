@@ -116,7 +116,7 @@
 
 - [x] 新会话第一轮到第二轮状态连续。
 - [x] 已登录用户只能读取自己的 session 和 memory。
-- [ ] Profile 可以加载到聊天上下文。
+- [x] Profile 可以加载到聊天上下文。
 - [ ] 记忆新增、删除、进程重启后结果一致。
 - [ ] Agent tool call、错误降级、limit reached 和 continue 协议稳定。
 - [ ] 推荐卡片能够通过 SSE meta 持久化并在历史会话中恢复。
