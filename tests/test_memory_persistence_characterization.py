@@ -258,6 +258,53 @@ def test_add_preference_never_persists_bare_strings(runtime_paths):
     )
 
 
+def test_legacy_string_preference_can_be_deleted_by_migrated_id(runtime_paths):
+    from app.memory.json_provider import _preference_id
+
+    user_id = "legacy_preference_delete"
+    user_dir = runtime_paths.memory_root / user_id
+    user_dir.mkdir(parents=True, exist_ok=True)
+    preferences_path = user_dir / "preferences.json"
+    preferences_path.write_text(
+        json.dumps(["Prefers asynchronous classes"], ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (user_dir / "profile.json").write_text("{}", encoding="utf-8")
+    (user_dir / "facts.json").write_text("[]", encoding="utf-8")
+
+    manager = _fresh_memory_manager(runtime_paths.memory_root)
+    pref_id = _preference_id("Prefers asynchronous classes")
+    try:
+        manager.initialize_session("sess_legacy_delete", user_id)
+        result = manager.forget_preference(user_id, pref_id)
+    finally:
+        manager.shutdown()
+
+    assert result == {"removed": pref_id, "remaining": 0}
+    assert json.loads(preferences_path.read_text(encoding="utf-8")) == []
+
+
+def test_preference_size_limit_counts_text_not_dict_fields(runtime_paths, monkeypatch):
+    from app.memory import json_provider
+
+    monkeypatch.setattr(json_provider, "USER_PROFILE_MAX_CHARS", 40)
+    user_id = "preference_size_limit"
+
+    manager = _fresh_memory_manager(runtime_paths.memory_root)
+    try:
+        manager.add_preference(user_id, "A" * 30)
+        manager.add_preference(user_id, "B" * 30)
+        preferences = manager.get_preferences(user_id)
+    finally:
+        manager.shutdown()
+
+    assert [pref["text"] for pref in preferences] == ["B" * 30]
+
+    preferences_path = runtime_paths.memory_root / user_id / "preferences.json"
+    persisted = json.loads(preferences_path.read_text(encoding="utf-8"))
+    assert [pref["text"] for pref in persisted] == ["B" * 30]
+
+
 def test_sync_turn_does_not_write_duplicate_turn_log(runtime_paths):
     from app.memory.manager import get_memory_manager
 

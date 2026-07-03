@@ -79,6 +79,14 @@ def _fact_text(item) -> str:
     return str(item).strip()
 
 
+def _memory_item_chars(item) -> int:
+    """Count stored memory item payload text, not container metadata."""
+    text = _pref_text(item)
+    if text:
+        return len(text)
+    return len(str(item)) if item not in (None, "", []) else 0
+
+
 class JSONFileMemoryProvider(MemoryProvider):
     """File-based memory store. Simple, durable, no extra dependencies."""
 
@@ -310,10 +318,7 @@ class JSONFileMemoryProvider(MemoryProvider):
     def forget_preference(self, user_id: str, pref_id: str) -> dict | None:
         prefs = self._preferences(user_id)
         before = len(prefs)
-        kept = [
-            p for p in prefs
-            if not (isinstance(p, dict) and p.get("id") == pref_id)
-        ]
+        kept = [p for p in prefs if p["id"] != pref_id]
         if len(kept) == before:
             return None
         self._loaded[user_id]["preferences"] = kept
@@ -423,8 +428,8 @@ class JSONFileMemoryProvider(MemoryProvider):
 
     def _enforce_size_limit(self, user_id: str, key: str, max_chars: int) -> None:
         items = self._loaded[user_id][key]
-        total = sum(len(s) for s in items)
+        total = sum(_memory_item_chars(item) for item in items)
         while total > max_chars and items:
             removed = items.pop(0)
-            total -= len(removed)
+            total -= _memory_item_chars(removed)
             logger.info("Memory full — dropped oldest %s entry for %s", key, user_id)
