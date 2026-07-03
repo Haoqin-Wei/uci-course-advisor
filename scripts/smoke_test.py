@@ -8,6 +8,13 @@ Run AFTER scripts/import_term_data.py has populated data/uci/*.csv:
     python scripts/smoke_test.py
 """
 
+try:
+    from scripts._bootstrap import ensure_repo_root_on_path
+except ModuleNotFoundError:  # direct execution: python scripts/smoke_test.py
+    from _bootstrap import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
+
 from app.catalog.term import Term
 from app.catalog.cache import get_catalog
 from app.catalog.normalization import parse_course_mention

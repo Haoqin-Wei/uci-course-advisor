@@ -5,15 +5,23 @@ We stub `client.chat.completions.create` so:
   1. The first call (run_agent) emits a tool_call → loop runs the tool,
      then with MAX_ITERATIONS forced to 1 we exit the loop body and
      fall into the limit branch.
-  2. The second call (the no-tools fallback) emits plain text.
+  2. The second call (the fallback with only propose_recommendation
+     available) emits plain text.
   3. The third call (resume_agent) emits a clean final.
 
-Run from repo root:   python -m scripts.smoke_limit_reached
+Run from repo root:   python scripts/smoke_limit_reached.py
 """
 
 import asyncio
 import sys
 from types import SimpleNamespace
+
+try:
+    from scripts._bootstrap import ensure_repo_root_on_path
+except ModuleNotFoundError:  # direct execution: python scripts/smoke_limit_reached.py
+    from _bootstrap import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
 
 from app.agent import loop as agent_loop
 
@@ -54,8 +62,12 @@ class StubClient:
             )
             chunks = [_chunk(_delta(tool_calls=[tc]))]
         elif n == 2:
-            # Fallback no-tools call: must NOT receive `tools=`
-            assert tools is None, f"fallback call leaked tools={tools!r}"
+            # Fallback may receive the one allowed card-staging tool,
+            # but no data-gathering tools.
+            tool_names = [s["function"]["name"] for s in (tools or [])]
+            assert tool_names == ["propose_recommendation"], (
+                f"fallback call received unexpected tools={tool_names!r}"
+            )
             chunks = [
                 _chunk(_delta(content="Sorry, ")),
                 _chunk(_delta(content="hit the budget. ")),
@@ -156,7 +168,8 @@ async def main():
                 # Fallback call. Capture the messages list so we can
                 # assert every tool_call_id from the assistant has a
                 # matching tool response.
-                assert tools is None
+                tool_names = [s["function"]["name"] for s in (tools or [])]
+                assert tool_names == ["propose_recommendation"], tool_names
                 self.last_fallback_messages = list(messages)
                 return _stream([_chunk(_delta(content="fallback"))])
 
