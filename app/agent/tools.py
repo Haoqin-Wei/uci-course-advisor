@@ -274,9 +274,8 @@ TOOL_SCHEMAS: list[dict] = [
                 "prerequisites. Uses the student's recorded completed "
                 "+ in-progress courses automatically — don't pass them "
                 "unless you want to test a hypothetical scenario. "
-                "Note: v1 treats prereqs as a flat list (AND), not an "
-                "OR-tree, so 'missing' may overstate the gap when the "
-                "real requirement is 'A OR B'."
+                "Returns status=met/not_met/unknown; unknown means the "
+                "catalog or profile lacks enough information to verify."
             ),
             "parameters": {
                 "type": "object",
@@ -291,6 +290,10 @@ TOOL_SCHEMAS: list[dict] = [
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "Optional override; omit to use the student's actual current enrollment.",
+                    },
+                    "allow_in_progress": {
+                        "type": "boolean",
+                        "description": "Whether current in-progress courses count for future-term planning. Defaults true.",
                     },
                 },
                 "required": ["course_id"],
@@ -624,6 +627,7 @@ def _tool_check_prerequisites_met(
     context: dict,
     completed_courses: Optional[list[str]] = None,
     in_progress_courses: Optional[list[str]] = None,
+    allow_in_progress: bool = True,
 ) -> dict:
     # Default to the student's actual lists if the model didn't pass them.
     if completed_courses is None or in_progress_courses is None:
@@ -638,6 +642,7 @@ def _tool_check_prerequisites_met(
         course_id,
         completed_courses=completed_courses or [],
         in_progress_courses=in_progress_courses or [],
+        allow_in_progress=allow_in_progress,
     )
 
 
@@ -1016,18 +1021,28 @@ def _tool_propose_recommendation(
                 "seats_open":  s.get("seats_open"),
             } for s in secondaries]
 
-        # Prereq status — silent fail returns "met" (don't flag false-
-        # positive missing prereqs just because the lookup failed).
+        # Prereq status — unknown is not treated as satisfied. The
+        # engine returns a tri-state status so cards can surface exact
+        # missing branches or unverifiable grade/exam data.
         prereq = db.check_prerequisites_met(
             cid_canon,
             completed_courses=completed,
             in_progress_courses=in_progress,
         )
         if prereq.get("found"):
-            prereq_met     = prereq.get("met", True)
+            prereq_status = prereq.get("status", "unknown")
+            prereq_met = prereq_status == "met"
             prereq_missing = prereq.get("missing", []) or []
+            prereq_unknown = prereq.get("unknown", []) or []
+            prereq_required = prereq.get("required", []) or []
         else:
-            prereq_met, prereq_missing = True, []
+            prereq_status = "unknown"
+            prereq_met = False
+            prereq_missing = []
+            prereq_unknown = [
+                prereq.get("reason", "prerequisite status could not be verified")
+            ]
+            prereq_required = []
 
         grade_resp = db.get_grade_distribution(cid_canon)
         grade_dist = grade_resp.get("grades") if grade_resp.get("found") else None
@@ -1072,8 +1087,11 @@ def _tool_propose_recommendation(
             "reason":      _truncate_reason(it.get("reason")),
             "term":        effective_term,
             "found":       True,
+            "prereq_status":  prereq_status,
             "prereq_met":     prereq_met,
             "prereq_missing": prereq_missing,
+            "prereq_unknown": prereq_unknown,
+            "prereq_required": prereq_required,
             "primary_code":         primary_code,         # e.g. "35640" (Lec)
             "primary_type":         primary.get("section_type"),
             "requires_secondary":   requires_secondary,   # must pair Lec + Dis/Lab on WebReg

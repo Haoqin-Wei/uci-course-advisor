@@ -115,6 +115,53 @@ def test_propose_recommendation_attaches_schedule_bundle_validation(monkeypatch)
     assert context["_proposed_cards"][0]["schedule_validation"] == validation
 
 
+def test_propose_recommendation_surfaces_unknown_prerequisites(monkeypatch):
+    from app.data import db
+
+    _install_schedule_validation_catalog(monkeypatch)
+    monkeypatch.setattr(
+        db,
+        "check_prerequisites_met",
+        lambda *_args, **_kwargs: {
+            "found": True,
+            "status": "unknown",
+            "met": False,
+            "missing": [],
+            "unknown": ["I&C SCI 33 completed, but grade is missing"],
+            "required": ["I&C SCI 33"],
+        },
+    )
+
+    context = {
+        "user_id": "demo_001",
+        "term": "Fall 2026",
+        "pending_schedule": [],
+    }
+
+    result = agent_tools.dispatch(
+        "propose_recommendation",
+        {
+            "items": [
+                {
+                    "course_id": "COMPSCI161",
+                    "category": "elective",
+                    "priority": "high",
+                    "reason": "Good systems preparation.",
+                }
+            ],
+            "term": "Fall 2026",
+        },
+        context=context,
+    )
+
+    card = context["_proposed_cards"][0]
+    assert result["ok"] is True
+    assert card["prereq_status"] == "unknown"
+    assert card["prereq_met"] is False
+    assert card["prereq_unknown"] == ["I&C SCI 33 completed, but grade is missing"]
+    assert card["prereq_required"] == ["I&C SCI 33"]
+
+
 def test_agent_and_manual_add_return_same_schedule_conflict(
     app_client,
     monkeypatch,

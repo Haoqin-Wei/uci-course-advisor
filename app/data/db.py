@@ -35,6 +35,7 @@ from app.catalog.term import Term
 from app.catalog.types import CourseRef, CourseRecord, SectionRecord
 from app.data import anteater
 from app.data import professors as profs
+from app.data.prerequisites import evaluate_prerequisite_tree
 from app.memory import get_memory_manager
 
 logger = logging.getLogger(__name__)
@@ -424,39 +425,50 @@ def check_prerequisites_met(
     course_id: str,
     completed_courses: Optional[list[str]] = None,
     in_progress_courses: Optional[list[str]] = None,
+    allow_in_progress: bool = True,
 ) -> dict:
     """
-    Resolve prereqs via get_course_info then compare against the
-    student's completed + in-progress lists. Both lists count toward
-    satisfaction (a course currently being taken will be done before
-    the term the user is planning).
+    Resolve prereqs via get_course_info then evaluate the structured
+    prerequisite tree against the student's completed + in-progress
+    lists. In-progress courses count by default because this tool is
+    used for future-term planning; the response makes that policy
+    explicit via `in_progress_policy`.
     """
     info = get_course_info(course_id)
     if not info.get("found"):
         return {"found": False, "source": "none",
+                "status": "unknown",
+                "met": False,
+                "missing": [],
+                "unknown": [info.get("reason", f"unknown course {course_id!r}")],
                 "reason": info.get("reason", f"unknown course {course_id!r}")}
-    prereqs_raw = info["course"].get("prerequisites") or []
-    # Normalize both sides through parse_course_mention → CourseRef so
-    # 'ICS33' (alias) matches 'I&C_SCI_33' (Anteater canonical) and
-    # 'I&C SCI 33' (CSV form). Comparing raw strings doesn't work
-    # across these formats.
-    prereqs_refs = [_to_ref(p) for p in prereqs_raw if p]
-    satisfied_refs: set[CourseRef] = set()
-    for c in (completed_courses or []) + (in_progress_courses or []):
-        ref = _to_ref(c or "")
-        if ref:
-            satisfied_refs.add(ref)
-    missing = [r.display() for r in prereqs_refs
-               if r and r not in satisfied_refs]
-    required = [r.display() for r in prereqs_refs if r]
+
+    course = info["course"]
+    result = evaluate_prerequisite_tree(
+        course.get("prerequisite_tree"),
+        completed_courses=completed_courses or [],
+        in_progress_courses=in_progress_courses or [],
+        flat_prerequisites=course.get("prerequisites") or [],
+        prerequisite_text=course.get("prerequisite_text"),
+        allow_in_progress=allow_in_progress,
+    )
+    required = course.get("prerequisites") or []
     return {
         "found": True,
         "source": info["source"],
-        "course_id": info["course"].get("course_id"),
-        "met": len(missing) == 0,
-        "missing": missing,
+        "course_id": course.get("course_id"),
+        "status": result.status,
+        "met": result.met,
+        "missing": result.missing,
+        "unknown": result.unknown,
+        "satisfied": result.satisfied,
+        "in_progress_used": result.in_progress_used,
         "required": required,
-        "prerequisite_text": info["course"].get("prerequisite_text"),
+        "prerequisite_text": course.get("prerequisite_text"),
+        "prerequisite_tree": course.get("prerequisite_tree"),
+        "in_progress_policy": (
+            "counts_for_future_term" if allow_in_progress else "ignored"
+        ),
     }
 
 

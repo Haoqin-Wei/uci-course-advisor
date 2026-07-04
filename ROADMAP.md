@@ -220,12 +220,12 @@
 
 ### M4.2 Prerequisite Engine
 
-- [ ] 使用现有 `prerequisite_tree_json`，不再使用 flat list 直接判断。
-- [ ] 支持 AND、OR、corequisite 和 minimum grade。
-- [ ] 明确当前学期 in-progress 是否可以满足目标学期先修。
-- [ ] 返回 `met / not_met / unknown` 三态。
-- [ ] 查询失败时不再默认 `prereq_met=True`。
-- [ ] 推荐卡片显示具体缺失分支和 unknown 原因。
+- [x] 使用现有 `prerequisite_tree_json`，不再使用 flat list 直接判断。
+- [x] 支持 AND、OR、corequisite 和 minimum grade。
+- [x] 明确当前学期 in-progress 是否可以满足目标学期先修。
+- [x] 返回 `met / not_met / unknown` 三态。
+- [x] 查询失败时不再默认 `prereq_met=True`。
+- [x] 推荐卡片显示具体缺失分支和 unknown 原因。
 
 ### M4.3 数据覆盖和新鲜度
 

@@ -5168,15 +5168,24 @@ function _renderRestrictionChips(card) {
 
 function _renderPrereqChips(card) {
   const missing  = card?.prereq_missing || [];
+  const unknown  = card?.prereq_unknown || [];
   const required = card?.prereq_required || [];
+  const status   = card?.prereq_status || (card?.prereq_met ? 'met' : 'not_met');
   // Met → single success "Prereqs met" chip.
   // Not met → one locked chip per missing prereq.
+  // Unknown → one warning chip per unverifiable prerequisite reason.
   // No prereqs known → empty column.
-  if (card?.prereq_met && required.length > 0) {
+  if (status === 'met' && required.length > 0) {
     return `<span class="cc-chip cc-chip-met">
       <span class="material-symbols-outlined">check_circle</span>
       Prereqs met
     </span>`;
+  }
+  if (status === 'unknown' && unknown.length > 0) {
+    return unknown.map(p => `<span class="cc-chip">
+      <span class="material-symbols-outlined">help</span>
+      ${escHTML(p)}
+    </span>`).join('');
   }
   if (missing.length === 0) return '';
   return missing.map(p => `<span class="cc-chip">
