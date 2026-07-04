@@ -3695,7 +3695,7 @@ body.schedule-open .input-row {
     <div class="chat-scroll is-empty" id="chatScroll">
       <div class="welcome-state" id="welcomeState">
         <div class="welcome-greeting" id="welcomeGreeting">What can I help with today?</div>
-        <div class="welcome-sub">Ask about courses, professors, or build your schedule for <span id="welcomeTerm">Spring 2026</span>.</div>
+        <div class="welcome-sub">Ask about courses, professors, or build your schedule for <span id="welcomeTerm">the selected term</span>.</div>
         <div class="followups" id="welcomeFollowups">
           <button class="followup-chip" onclick="sendFollowup('Recommend courses for next quarter')">Recommend courses</button>
           <button class="followup-chip" onclick="sendFollowup('What are some easy GE courses?')">Easy GE courses</button>
@@ -4043,22 +4043,20 @@ let currentAbortController = null;   // active fetch controller (null when idle)
 let defaultSystemPrompt = '';        // populated by /api/system_prompt
 const PROMPT_STORAGE_KEY = 'zotadvisor.systemPrompt';
 
-// Schedule course-block palette. Values match the --course-N /
-// --course-Ns tokens in :root so the JS-assigned inline colors stay
-// in sync when the theme palette is retuned. Update both places if
-// you change the schedule palette.
-const COLORS = [
-  ['#4f5d80', 'rgba(79, 93, 128, 0.12)'],
-  ['#10a37f', 'rgba(16, 163, 127, 0.12)'],
-  ['#8b5cf6', 'rgba(139, 92, 246, 0.12)'],
-  ['#db2777', 'rgba(219, 39, 119, 0.12)'],
-  ['#d97706', 'rgba(217, 119, 6, 0.12)'],
-  ['#0891b2', 'rgba(8, 145, 178, 0.12)'],
-];
+const COURSE_COLOR_TOKEN_COUNT = 6;
+
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function scheduleColorPair(index) {
+  const n = (index % COURSE_COLOR_TOKEN_COUNT) + 1;
+  return [cssVar(`--course-${n}`), cssVar(`--course-${n}s`)];
+}
 
 function getCourseColor(id) {
   if (!courseColors[id]) {
-    courseColors[id] = COLORS[colorIndex % COLORS.length];
+    courseColors[id] = scheduleColorPair(colorIndex);
     colorIndex++;
   }
   return courseColors[id];
@@ -4081,12 +4079,11 @@ async function loadTerms() {
     const res = await fetch(`${API}/api/terms`);
     if (!res.ok) throw new Error(`status ${res.status}`);
     const data = await res.json();
-    const terms = (data.terms || []).map(t =>
-      typeof t === 'string' ? {name: t, coverage_status: 'complete'} : t
-    ).filter(t => t && t.name);
+    const terms = (data.terms || []).filter(t => t && typeof t === 'object' && t.name);
     const def = data.default || (terms.length ? terms[0].name : '');
     if (!terms.length) {
-      select.innerHTML = '<option value="" disabled selected>No terms loaded</option>';
+      select.innerHTML = '<option value="" disabled selected>Terms unavailable</option>';
+      updateWelcomeTerm();
       return;
     }
     select.innerHTML = terms.map(t => {
@@ -4121,6 +4118,49 @@ function escAttr(s) {
 
 function getActivePrompt() {
   return localStorage.getItem(PROMPT_STORAGE_KEY) || '';
+}
+
+async function consumeSSE(response, handlers = {}) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  function dispatchBlock(block) {
+    const lines = block.split('\n');
+    const payload = lines
+      .filter(line => line.startsWith('data: '))
+      .map(line => line.slice(6))
+      .join('\n');
+    if (!payload) return;
+
+    let event;
+    try {
+      event = JSON.parse(payload);
+    } catch (err) {
+      if (handlers.parseError) handlers.parseError(payload, err);
+      else console.warn('SSE parse error:', payload);
+      return;
+    }
+
+    const handler = handlers[event.type];
+    if (handler) handler(event);
+  }
+
+  while (true) {
+    const {done, value} = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, {stream: true});
+
+    let sepIdx;
+    while ((sepIdx = buffer.indexOf('\n\n')) >= 0) {
+      const block = buffer.slice(0, sepIdx);
+      buffer = buffer.slice(sepIdx + 2);
+      dispatchBlock(block);
+    }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.trim()) dispatchBlock(buffer.trim());
 }
 
 /* ── Send / Stop ───────────────────────────────────── */
@@ -4176,62 +4216,51 @@ async function sendMessage(text) {
       throw new Error(`HTTP ${res.status}`);
     }
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const {done, value} = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, {stream: true});
-
-      // SSE events are separated by a blank line ("\n\n")
-      let sepIdx;
-      while ((sepIdx = buffer.indexOf('\n\n')) >= 0) {
-        const block = buffer.slice(0, sepIdx);
-        buffer = buffer.slice(sepIdx + 2);
-        if (!block.startsWith('data: ')) continue;
-        const payload = block.slice(6);
-        let event;
-        try { event = JSON.parse(payload); }
-        catch (e) { console.warn('SSE parse error:', payload); continue; }
-
-        if (event.type === 'token') {
-          fullText += event.text;
-          appendStreamingToken(aiMsg, fullText);
-        } else if (event.type === 'meta') {
-          meta = event;
-          // Phase 3 R3 — backend's authoritative session_id. If this
-          // is the first turn (we were sending "" before), capture
-          // the new sess_XXXXXX so subsequent turns route to the
-          // same session, and refresh the sidebar list.
-          if (event.session_id && event.session_id !== currentSessionId) {
-            currentSessionId = event.session_id;
-            loadSessionList();
-          }
-        } else if (event.type === 'tool_call_start') {
-          // Agent loop dispatched a tool — show a status chip in the
-          // AI bubble so the user sees what's happening during the
-          // silent stretch before the answer streams.
-          startToolChip(aiMsg, event.label || event.name);
-        } else if (event.type === 'tool_call_done') {
-          finishToolChip(aiMsg, event.ok !== false);
-        } else if (event.type === 'limit_reached') {
-          // Agent hit its budget. Stash the continuation_id on the
-          // message so finalizeAiMessage can render a Continue button
-          // after the fallback answer finishes streaming.
-          console.log('[chat] limit_reached:', event);
-          aiMsg._continuationId = event.continuation_id;
-          aiMsg._limitReason    = event.reason;
-        } else if (event.type === 'error') {
-          console.error('Stream error event:', event.message);
-          fullText += `\n\n_(server error: ${event.message})_`;
-          appendStreamingToken(aiMsg, fullText); // re-render with error suffix
-        } else if (event.type === 'done') {
-          // explicit termination — finalize below
+    await consumeSSE(res, {
+      token(event) {
+        fullText += event.text;
+        appendStreamingToken(aiMsg, fullText);
+      },
+      meta(event) {
+        meta = event;
+        // Phase 3 R3 — backend's authoritative session_id. If this
+        // is the first turn (we were sending "" before), capture
+        // the new sess_XXXXXX so subsequent turns route to the
+        // same session, and refresh the sidebar list.
+        if (event.session_id && event.session_id !== currentSessionId) {
+          currentSessionId = event.session_id;
+          loadSessionList();
         }
-      }
-    }
+      },
+      tool_call_start(event) {
+        // Agent loop dispatched a tool — show a status chip in the
+        // AI bubble so the user sees what's happening during the
+        // silent stretch before the answer streams.
+        startToolChip(aiMsg, event.label || event.name);
+      },
+      tool_call_done(event) {
+        finishToolChip(aiMsg, event.ok !== false);
+      },
+      limit_reached(event) {
+        // Agent hit its budget. Stash the continuation_id on the
+        // message so finalizeAiMessage can render a Continue button
+        // after the fallback answer finishes streaming.
+        console.log('[chat] limit_reached:', event);
+        aiMsg._continuationId = event.continuation_id;
+        aiMsg._limitReason    = event.reason;
+      },
+      error(event) {
+        console.error('Stream error event:', event.message);
+        fullText += `\n\n_(server error: ${event.message})_`;
+        appendStreamingToken(aiMsg, fullText); // re-render with error suffix
+      },
+      done() {
+        // explicit termination — finalize below
+      },
+      parseError(payload) {
+        console.warn('SSE parse error:', payload);
+      },
+    });
   } catch (err) {
     if (err.name === 'AbortError') {
       stopped = true;
@@ -4473,41 +4502,31 @@ async function continueAgent(wrap, continuationId, btn) {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    while (true) {
-      const {done, value} = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, {stream: true});
-      let sepIdx;
-      while ((sepIdx = buffer.indexOf('\n\n')) >= 0) {
-        const block = buffer.slice(0, sepIdx);
-        buffer = buffer.slice(sepIdx + 2);
-        if (!block.startsWith('data: ')) continue;
-        let event;
-        try { event = JSON.parse(block.slice(6)); }
-        catch (e) { continue; }
-
-        if (event.type === 'token') {
-          resumedText += event.text;
-          appendStreamingToken(resumeShell, resumedText);
-        } else if (event.type === 'tool_call_start') {
-          // Reuse the existing chip container on `wrap`. Pass the
-          // real wrap, not the shell, so chips land in the right DOM.
-          startToolChip(wrap, event.label || event.name);
-        } else if (event.type === 'tool_call_done') {
-          finishToolChip(wrap, event.ok !== false);
-        } else if (event.type === 'limit_reached') {
-          newContinuationId = event.continuation_id;
-          newReason = event.reason;
-        } else if (event.type === 'error') {
-          resumedText += `\n\n_(continue error: ${event.message})_`;
-          appendStreamingToken(resumeShell, resumedText);
-        }
-        // 'done' just terminates the stream
-      }
-    }
+    await consumeSSE(res, {
+      token(event) {
+        resumedText += event.text;
+        appendStreamingToken(resumeShell, resumedText);
+      },
+      tool_call_start(event) {
+        // Reuse the existing chip container on `wrap`. Pass the
+        // real wrap, not the shell, so chips land in the right DOM.
+        startToolChip(wrap, event.label || event.name);
+      },
+      tool_call_done(event) {
+        finishToolChip(wrap, event.ok !== false);
+      },
+      limit_reached(event) {
+        newContinuationId = event.continuation_id;
+        newReason = event.reason;
+      },
+      error(event) {
+        resumedText += `\n\n_(continue error: ${event.message})_`;
+        appendStreamingToken(resumeShell, resumedText);
+      },
+      done() {
+        // explicit termination — finalize below
+      },
+    });
   } catch (err) {
     console.error('continue failed:', err);
     resumedText += `\n\n_(continue failed: ${err.message || err})_`;
@@ -4539,47 +4558,6 @@ function appendUser(text) {
   el.className = 'msg msg-user';
   el.textContent = text;
   document.getElementById('chatScroll').appendChild(el);
-  scrollChat();
-}
-
-function appendTyping() {
-  const wrap = document.createElement('div');
-  wrap.className = 'msg msg-ai';
-  wrap.innerHTML = '<div class="msg-ai-label">Advisor</div><div class="typing-bar"><span></span><span></span><span></span></div>';
-  document.getElementById('chatScroll').appendChild(wrap);
-  scrollChat();
-  return wrap;
-}
-
-function appendAI(data) {
-  const wrap = document.createElement('div');
-  wrap.className = 'msg msg-ai';
-
-  let html = '<div class="msg-ai-label">Advisor</div>';
-  html += '<div class="msg-ai-body">';
-  html += formatMarkdown(data.reply || '');
-  html += '</div>';
-
-  if (data.cards && data.cards.length > 0) {
-    html += renderCardsBlock(data.cards);
-  }
-
-  if (data.followups && data.followups.length > 0) {
-    html += '<div class="followups">';
-    for (const fu of data.followups) {
-      html += `<button class="followup-chip" onclick="sendFollowup(\`${fu.replace(/`/g,"'")}\`)">${escHTML(fu)}</button>`;
-    }
-    html += '</div>';
-  }
-
-  // Validation footer (Phase 1 backend feature)
-  if (data.validation_report && Array.isArray(data.validation_report.issues)
-      && data.validation_report.issues.length > 0) {
-    html += renderValidationFooter(data.validation_report);
-  }
-
-  wrap.innerHTML = html;
-  document.getElementById('chatScroll').appendChild(wrap);
   scrollChat();
 }
 
@@ -6022,7 +6000,7 @@ function resetChatToWelcome() {
   scrollEl.innerHTML = `
     <div class="welcome-state" id="welcomeState">
       <div class="welcome-greeting" id="welcomeGreeting">What can I help with today?</div>
-      <div class="welcome-sub">Ask about courses, professors, or build your schedule for <span id="welcomeTerm">Spring 2026</span>.</div>
+      <div class="welcome-sub">Ask about courses, professors, or build your schedule for <span id="welcomeTerm">the selected term</span>.</div>
       <div class="followups" id="welcomeFollowups">
         <button class="followup-chip" onclick="sendFollowup('Recommend courses for next quarter')">Recommend courses</button>
         <button class="followup-chip" onclick="sendFollowup('What are some easy GE courses?')">Easy GE courses</button>
@@ -6042,9 +6020,7 @@ function updateWelcomeTerm() {
   const span = document.getElementById('welcomeTerm');
   if (!span) return;  // welcome state already replaced by chat messages
   const term = document.getElementById('termSelect')?.value;
-  // If terms haven't loaded yet, leave the placeholder text alone —
-  // loadTerms() calls us again once the dropdown is populated.
-  if (term) span.textContent = term;
+  span.textContent = term || 'Terms unavailable';
 }
 
 async function loadSession(sessionId) {

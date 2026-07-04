@@ -296,11 +296,11 @@
 
 ### M6.1 立即清理
 
-- [ ] 删除无调用方的 `appendTyping()`。
-- [ ] 删除无调用方的 `appendAI()`。
-- [ ] 抽取统一 `consumeSSE(response, handlers)`，供 send 和 continue 共用。
-- [ ] 删除已经被后端 `/api/terms` 替代的静态 term 假数据 fallback；API 不可用时显示 unavailable。
-- [ ] JavaScript 颜色从 CSS custom properties 读取，不再维护第二份 hardcoded palette。
+- [x] 删除无调用方的 `appendTyping()`。
+- [x] 删除无调用方的 `appendAI()`。
+- [x] 抽取统一 `consumeSSE(response, handlers)`，供 send 和 continue 共用。
+- [x] 删除已经被后端 `/api/terms` 替代的静态 term 假数据 fallback；API 不可用时显示 unavailable。
+- [x] JavaScript 颜色从 CSS custom properties 读取，不再维护第二份 hardcoded palette。
 
 ### M6.2 模块拆分
 
