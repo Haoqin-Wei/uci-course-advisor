@@ -41,7 +41,8 @@ from app.modules import decision_detector
 from app.catalog.term import Term
 from app.catalog.cache import get_catalog
 from app.catalog.coverage import get_term_coverage
-from app.catalog.normalization import parse_course_mention
+from app.catalog.departments import colloquial_course_id
+from app.catalog.normalization import iter_course_mentions, parse_course_mention
 from app.validation import (
     ValidationContext, validate, decide_action, apply_report, write_log,
 )
@@ -51,22 +52,6 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 router = APIRouter()
-
-# Scan for course IDs anywhere in a string.
-#
-# We use explicit ASCII look-arounds instead of \b because Python's
-# regex \b is Unicode-aware by default: in "我决定选CS122A", the
-# character 选 is classified as a "word" character (it's alphanumeric
-# in Unicode), so \b between 选 and CS does NOT match. The same
-# problem hits course IDs sandwiched between Chinese characters
-# anywhere ("选CS122A课"). The look-arounds below say "not preceded /
-# followed by an ASCII letter or digit" — Chinese characters are
-# fine as neighbors.
-_COURSE_ID_SCAN = re.compile(
-    r'(?<![A-Za-z0-9])[A-Z]{1,8}\d+[A-Z]?(?![A-Za-z0-9])',
-    re.IGNORECASE,
-)
-
 
 class ChatRequest(BaseModel):
     message: str
@@ -392,8 +377,8 @@ async def _run_reflection_task(user_id: str, history: list[dict]) -> None:
 
 def _course_ids_in_order(text: str) -> list[str]:
     seen, result = set(), []
-    for m in _COURSE_ID_SCAN.finditer(text):
-        cid = m.group().upper().replace(' ', '')
+    for ref, _start, _end in iter_course_mentions(text or ""):
+        cid = colloquial_course_id(ref.department, ref.course_number)
         if cid not in seen:
             seen.add(cid)
             result.append(cid)

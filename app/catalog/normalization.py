@@ -35,12 +35,16 @@ from app.catalog.departments import resolve_department, known_departments
 # Number side is digit-anchored. Dept validated against alias table after.
 _DEPT_TOKEN = r"[A-Za-z][A-Za-z0-9&/]*[A-Za-z&/]"   # 2+ chars, ends with letter/&//
 
+# Use ASCII-only boundaries. Python's ``\b`` is Unicode-aware, so a
+# Chinese character next to ``CS122A`` is treated as another word
+# character and ``我想选CS122A这门课`` would not match. These look-arounds
+# only reject adjacent ASCII identifier chars; CJK neighbors are valid.
 _COURSE_MENTION = re.compile(
-    r"\b"
+    r"(?<![A-Za-z0-9_&/])"
     r"(?P<dept>" + _DEPT_TOKEN + r"(?:\s+" + _DEPT_TOKEN + r")?)"   # 1 or 2 tokens
     r"\s*"
     r"(?P<num>[A-Z]?\d{1,3}[A-Z]{0,3})"
-    r"\b",
+    r"(?![A-Za-z0-9_])",
     re.IGNORECASE,
 )
 

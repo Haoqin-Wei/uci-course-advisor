@@ -24,51 +24,59 @@ from __future__ import annotations
 
 import re
 
+from app.catalog.departments import colloquial_course_id
+from app.catalog.normalization import iter_course_mentions
 
-# Course-ID pattern: e.g. CS161, ICS 33, CS 122A, WRITING39B, MATH3A
-_COURSE_ID = r"([A-Z]{2,8}\s?\d+[A-Z]?)"
 
-# Each entry: (compiled pattern, template — uses {0} for the captured group)
-_PATTERNS: list[tuple[re.Pattern, str]] = [
+_COURSE_LOOKAHEAD_CHARS = 80
+
+
+# Each entry: (compiled action prefix, template — uses {course})
+_COURSE_DECISION_PATTERNS: list[tuple[re.Pattern, str]] = [
     # ── English commitments ──────────────────────────────
     (re.compile(
         rf"\b(?:I'?ll|I will|I'?m going to|going to)\s+"
-        rf"(?:take|enroll in|sign up for|register for)\s+{_COURSE_ID}",
+        rf"(?:take|enroll in|sign up for|register for)\s+",
         re.IGNORECASE,
      ),
-     "Take {0}"),
+     "Take {course}"),
 
-    (re.compile(rf"\bgoing\s+with\s+{_COURSE_ID}", re.IGNORECASE),
-     "Going with {0}"),
-
-    (re.compile(
-        rf"\b(?:drop|dropping|skip|skipping)\s+{_COURSE_ID}",
-        re.IGNORECASE,
-     ),
-     "Drop {0}"),
+    (re.compile(rf"\bgoing\s+with\s+", re.IGNORECASE),
+     "Going with {course}"),
 
     (re.compile(
-        rf"\bdecided\s+(?:on|to\s+take|to\s+enroll\s+in)\s+{_COURSE_ID}",
+        rf"\b(?:drop|dropping|skip|skipping)\s+",
         re.IGNORECASE,
      ),
-     "Decided: {0}"),
+     "Drop {course}"),
+
+    (re.compile(
+        rf"\bdecided\s+(?:on|to\s+take|to\s+enroll\s+in)\s+",
+        re.IGNORECASE,
+     ),
+     "Decided: {course}"),
 
     # ── Chinese commitments ──────────────────────────────
     (re.compile(
         rf"(?:我决定|我打算|我要|准备)\s*"
-        rf"(?:选|修|上|报|学)\s*{_COURSE_ID}",
+        rf"(?:选|修|上|报|学)\s*",
      ),
-     "选 {0}"),
+     "选 {course}"),
 
     (re.compile(
-        rf"(?:就选|就上|就修|敲定|定下|定了)\s*{_COURSE_ID}",
+        rf"(?:就选|就上|就修|敲定|定下|定了)\s*",
      ),
-     "选 {0}"),
+     "选 {course}"),
 
     (re.compile(
-        rf"(?:放弃|不选|不修|不上)\s*{_COURSE_ID}",
+        rf"(?:放弃|不选|不修|不上)\s*",
      ),
-     "放弃 {0}"),
+     "放弃 {course}"),
+]
+
+
+# Each entry: (compiled pattern, template — uses {0} for the captured group)
+_OTHER_PATTERNS: list[tuple[re.Pattern, str]] = [
 
     # ── Specialization commitments ───────────────────────
     (re.compile(
@@ -87,12 +95,13 @@ _PATTERNS: list[tuple[re.Pattern, str]] = [
 ]
 
 
-def _normalize_course_id(s: str) -> str:
-    """Strip whitespace; "CS 161" → "CS161"."""
-    s = s.strip()
-    if re.match(r"^[A-Z]{2,8}\s+\d", s):
-        return re.sub(r"\s+", "", s)
-    return s
+def _course_after(text: str, offset: int) -> str | None:
+    window = text[offset:offset + _COURSE_LOOKAHEAD_CHARS]
+    mentions = iter_course_mentions(window)
+    if not mentions:
+        return None
+    ref, _start, _end = mentions[0]
+    return colloquial_course_id(ref.department, ref.course_number)
 
 
 def detect_decisions(text: str) -> list[str]:
@@ -109,13 +118,22 @@ def detect_decisions(text: str) -> list[str]:
     decisions: list[str] = []
     seen: set[str] = set()
 
-    for pattern, template in _PATTERNS:
+    for pattern, template in _COURSE_DECISION_PATTERNS:
+        for match in pattern.finditer(text):
+            value = _course_after(text, match.end())
+            if not value:
+                continue
+            decision = template.format(course=value)
+            if decision.lower() not in seen:
+                decisions.append(decision)
+                seen.add(decision.lower())
+
+    for pattern, template in _OTHER_PATTERNS:
         for match in pattern.finditer(text):
             captured = match.group(1)
             if not captured:
                 continue
-            # Trim and normalize course-id spacing
-            value = _normalize_course_id(captured.strip())
+            value = captured.strip()
             if not value or len(value) > 60:
                 continue
             decision = template.format(value)

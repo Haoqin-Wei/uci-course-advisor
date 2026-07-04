@@ -29,14 +29,15 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-
-# Same look-around regex used elsewhere — protects against Chinese
-# characters being treated as word boundaries.
-_COURSE_ID = r"(?<![A-Za-z0-9])[A-Z]{2,8}\d+[A-Z]?(?![A-Za-z0-9])"
+from app.catalog.departments import colloquial_course_id
+from app.catalog.normalization import iter_course_mentions
 
 
-# Order matters: more specific patterns first.
-_RULES: list[tuple[re.Pattern, str, str]] = [
+_COURSE_LOOKAHEAD_CHARS = 80
+_COURSE_LOOKBEHIND_CHARS = 80
+
+
+_COURSE_PREFIX_RULES: list[tuple[re.Pattern, str, str]] = [
     # ─────────────────────────────────────────────────────
     # 1. COMMITMENTS — user has decided on a specific course
     #    → single_query (focused analysis of THIS course)
@@ -46,53 +47,63 @@ _RULES: list[tuple[re.Pattern, str, str]] = [
     # NOTE: 决定/打算/准备 are multi-char tokens — they must be in an
     # alternation group, not a [character class] (which is single-char).
     (re.compile(
-        rf"我\s*(?:决定|打算|准备|要)\s*[选修上报学]\s*{_COURSE_ID}",
+        r"我\s*(?:决定|打算|准备|要)\s*[选修上报学]\s*",
      ), "single_query", "zh-commitment"),
 
     # Chinese: 就选 / 敲定 / 定下 + course_id
     (re.compile(
-        rf"(?:就[选修上]|敲定|定下|定了)\s*{_COURSE_ID}",
+        r"(?:就[选修上]|敲定|定下|定了)\s*",
      ), "single_query", "zh-commitment-2"),
 
     # Chinese: 放弃 / 不选 / 不修 / 不上 + course_id
     (re.compile(
-        rf"(?:放弃|不[选修上])\s*{_COURSE_ID}",
+        r"(?:放弃|不[选修上])\s*",
      ), "single_query", "zh-drop"),
 
     # English: I'll/I will/I'm going to + take/enroll/drop + course_id
     (re.compile(
-        rf"\b(?:I'?ll|I will|I'?m going to|going to)\s+"
-        rf"(?:take|enroll in|sign up for|register for|drop|skip)\s+{_COURSE_ID}",
+        r"\b(?:I'?ll|I will|I'?m going to|going to)\s+"
+        r"(?:take|enroll in|sign up for|register for|drop|skip)\s+",
         re.IGNORECASE,
      ), "single_query", "en-commitment"),
 
     # English: going with / decided on / decided to take + course_id
     (re.compile(
-        rf"\b(?:going\s+with|decided\s+(?:on|to\s+(?:take|enroll\s+in)))\s+{_COURSE_ID}",
+        r"\b(?:going\s+with|decided\s+(?:on|to\s+(?:take|enroll\s+in)))\s+",
         re.IGNORECASE,
      ), "single_query", "en-commitment-2"),
 
     # English: drop/dropping/skip/skipping + course_id
     (re.compile(
-        rf"\b(?:drop|dropping|skip|skipping)\s+{_COURSE_ID}",
+        r"\b(?:drop|dropping|skip|skipping)\s+",
         re.IGNORECASE,
      ), "single_query", "en-drop"),
+]
 
-    # ─────────────────────────────────────────────────────
-    # 2. SPECIFIC-COURSE / SPECIFIC-PROFESSOR queries
-    #    → single_query
-    # ─────────────────────────────────────────────────────
 
+_COURSE_SUFFIX_RULES: list[tuple[re.Pattern, str, str]] = [
     # Chinese: course_id + 怎么样 / 难不难 / 好不好 / 给分 / 评价
     (re.compile(
-        rf"{_COURSE_ID}\s*(?:怎么样|难不难|好不好|怎样|如何|给分|评价)",
+        r"\s*(?:怎么样|难不难|好不好|怎样|如何|给分|评价)",
      ), "single_query", "zh-course-question"),
+]
 
+
+_COURSE_LOOKBEHIND_RULES: list[tuple[re.Pattern, str, str]] = [
     # English: How is/How's/What is + course_id
     (re.compile(
-        rf"\b(?:how(?:'?s|\s+is)|what(?:'?s|\s+is)|what about|tell me about)\s+{_COURSE_ID}",
+        r"(?:how(?:'?s|\s+is)|what(?:'?s|\s+is)|what about|tell me about)\s+$",
         re.IGNORECASE,
      ), "single_query", "en-course-question"),
+]
+
+
+# Order matters for non-course rules: more specific patterns first.
+_RULES: list[tuple[re.Pattern, str, str]] = [
+    # ─────────────────────────────────────────────────────
+    # 2. SPECIFIC-PROFESSOR queries
+    #    → single_query
+    # ─────────────────────────────────────────────────────
 
     # English: How is/about professor X (proper-cased name)
     (re.compile(
@@ -146,22 +157,57 @@ _RULES: list[tuple[re.Pattern, str, str]] = [
         re.IGNORECASE,
      ), "course_recommendation", "en-easy-courses"),
 
-    # English: comparison of multiple courses (≥2 course IDs in same message)
-    # Matches "compare X and Y" or just "X vs Y" with two course IDs nearby
-    (re.compile(
-        rf"\b(?:compare|vs|or)\b.*{_COURSE_ID}.*{_COURSE_ID}",
-        re.IGNORECASE | re.DOTALL,
-     ), "course_recommendation", "en-compare"),
-
-    (re.compile(
-        rf"{_COURSE_ID}.*(?:还是|和|或|与).*{_COURSE_ID}",
-     ), "course_recommendation", "zh-compare"),
 ]
 
 
 def _extract_course_ids(text: str) -> list[str]:
     """Collect all course IDs in the text (for the entities field)."""
-    return list({m.upper() for m in re.findall(_COURSE_ID, text)})
+    seen: set[str] = set()
+    out: list[str] = []
+    for ref, _start, _end in iter_course_mentions(text or ""):
+        course_id = colloquial_course_id(ref.department, ref.course_number)
+        if course_id in seen:
+            continue
+        seen.add(course_id)
+        out.append(course_id)
+    return out
+
+
+def _has_course_after(text: str, offset: int) -> bool:
+    return bool(iter_course_mentions(text[offset:offset + _COURSE_LOOKAHEAD_CHARS]))
+
+
+def _has_course_before(text: str, offset: int) -> bool:
+    start = max(0, offset - _COURSE_LOOKBEHIND_CHARS)
+    return bool(iter_course_mentions(text[start:offset]))
+
+
+def _classify_course_pattern(text: str) -> Optional[tuple[str, str]]:
+    for pattern, intent, rule_id in _COURSE_PREFIX_RULES:
+        for match in pattern.finditer(text):
+            if _has_course_after(text, match.end()):
+                return intent, rule_id
+
+    for ref, start, end in iter_course_mentions(text):
+        del ref
+        suffix = text[end:end + _COURSE_LOOKAHEAD_CHARS]
+        for pattern, intent, rule_id in _COURSE_SUFFIX_RULES:
+            if pattern.match(suffix):
+                return intent, rule_id
+
+        prefix = text[max(0, start - _COURSE_LOOKBEHIND_CHARS):start]
+        for pattern, intent, rule_id in _COURSE_LOOKBEHIND_RULES:
+            if pattern.search(prefix):
+                return intent, rule_id
+
+    course_ids = _extract_course_ids(text)
+    if len(course_ids) >= 2:
+        if re.search(r"\b(?:compare|vs|or)\b", text, re.IGNORECASE):
+            return "course_recommendation", "en-compare"
+        if re.search(r"(?:还是|和|或|与)", text):
+            return "course_recommendation", "zh-compare"
+
+    return None
 
 
 def classify_by_rules(message: str) -> Optional[dict]:
@@ -183,6 +229,25 @@ def classify_by_rules(message: str) -> Optional[dict]:
     text = message.strip()
     if not text:
         return None
+
+    course_pattern = _classify_course_pattern(text)
+    if course_pattern:
+        intent, rule_id = course_pattern
+        course_ids = _extract_course_ids(text)
+        return {
+            "intent": intent,
+            "confidence": 1.0,
+            "entities": {
+                "course_ids": course_ids,
+                "professor_names": [],
+                "term": None,
+                "major": None,
+                "difficulty_preference": None,
+                "recommendation_goal": None,
+            },
+            "source": "rule",
+            "rule_id": rule_id,
+        }
 
     for pattern, intent, rule_id in _RULES:
         if pattern.search(text):

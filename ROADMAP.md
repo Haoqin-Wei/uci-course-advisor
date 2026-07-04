@@ -278,10 +278,10 @@
 
 ### M5.3 统一课程号解析
 
-- [ ] 修复 `catalog/normalization.py` 的中文相邻字符边界。
-- [ ] 所有课程 ID 提取改用同一 canonical parser。
-- [ ] 删除 chat.py 和 decision detector 中重复的课程号正则/normalize 实现。
-- [ ] 增加 `我想选CS122A这门课`、`ICS 33`、`I&C SCI 33`、`SOC SCI 178C` 测试。
+- [x] 修复 `catalog/normalization.py` 的中文相邻字符边界。
+- [x] 所有课程 ID 提取改用同一 canonical parser。
+- [x] 删除 chat.py 和 decision detector 中重复的课程号正则/normalize 实现。
+- [x] 增加 `我想选CS122A这门课`、`ICS 33`、`I&C SCI 33`、`SOC SCI 178C` 测试。
 
 ### 验收
 
