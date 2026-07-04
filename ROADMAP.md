@@ -194,16 +194,16 @@
 ### M3.3 持久化与权限
 
 - [x] Schedule API 使用当前认证用户验证 session ownership。
-- [ ] pending schedule 写入持久化 Session。
-- [ ] Add 操作遇到硬冲突时要求确认，不静默加入。
-- [ ] Lec/Dis/Lab 不完整时不允许展示为可执行完整课表。
+- [x] pending schedule 写入持久化 Session。
+- [x] Add 操作遇到硬冲突时要求确认，不静默加入。
+- [x] Lec/Dis/Lab 不完整时不允许展示为可执行完整课表。
 
 ### 验收
 
-- 同一组输入在 Agent 推荐和手动加课时得到相同冲突结果。
-- 重启和切换会话后课表保持一致。
-- 无法通过猜测 session ID 修改其他用户课表。
-- TBA 不被误报为“无冲突”，而是明确显示 unknown。
+- [x] 同一组输入在 Agent 推荐和手动加课时得到相同冲突结果。
+- [x] 重启和切换会话后课表保持一致。
+- [x] 无法通过猜测 session ID 修改其他用户课表。
+- [x] TBA 不被误报为“无冲突”，而是明确显示 unknown。
 
 ## 8. M4 — 修正数据、先修与 Validation
 

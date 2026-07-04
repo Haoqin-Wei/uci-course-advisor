@@ -5274,7 +5274,21 @@ function renderCardsBlock(cards) {
   return `<div class="cards-row">${head}${body}</div>`;
 }
 
-async function addCourse(courseId, section, btnEl) {
+function _scheduleValidationSummary(validation) {
+  const parts = [];
+  for (const issue of (validation?.conflicts || [])) {
+    if (issue?.message) parts.push('• ' + issue.message);
+  }
+  for (const issue of (validation?.unknowns || [])) {
+    if (issue?.message) parts.push('• ' + issue.message);
+  }
+  if (parts.length === 0) {
+    return 'This section may create a schedule issue.';
+  }
+  return parts.slice(0, 4).join('\n');
+}
+
+async function _postAddCourse(courseId, section, confirmConflicts=false) {
   const res = await fetch(`${API}/api/schedule/add`, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
@@ -5283,9 +5297,24 @@ async function addCourse(courseId, section, btnEl) {
       course_id:  courseId,
       section:    section,
       term:       document.getElementById('termSelect').value || null,
+      confirm_conflicts: !!confirmConflicts,
     }),
   });
-  const data = await res.json();
+  return await res.json();
+}
+
+async function addCourse(courseId, section, btnEl) {
+  let data = await _postAddCourse(courseId, section, false);
+  if (!data.ok && data.requires_confirmation) {
+    const summary = _scheduleValidationSummary(data.schedule_validation);
+    const ok = confirm(
+      'This section has schedule conflicts or unknown timing.\n\n'
+      + summary
+      + '\n\nAdd it anyway?'
+    );
+    if (!ok) throw new Error('add cancelled');
+    data = await _postAddCourse(courseId, section, true);
+  }
   if (!data.ok) throw new Error(data.reason || 'add failed');
   scheduleEvents = data.events || [];
   _hydrateScheduleState();        // rebuild local sets from server-of-truth

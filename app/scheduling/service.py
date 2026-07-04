@@ -183,6 +183,95 @@ def resolve_pending_schedule_sections(
     return resolved
 
 
+def build_pending_schedule_bundle_items(
+    pending_schedule: Iterable[dict],
+    *,
+    term: Optional[str],
+    section_lookup: SectionLookup,
+) -> list[dict]:
+    """
+    Convert compact pending schedule entries into bundle-validation items.
+
+    Unlike ``resolve_pending_schedule_sections()``, this preserves course
+    grouping and infers whether a course requires primary + secondary
+    sections from the term catalog. That lets callers validate a whole
+    pending schedule for incomplete Lec/Dis/Lab pairings.
+    """
+    if not term:
+        return []
+
+    entries_by_course: dict[str, list[dict]] = {}
+    sections_by_course: dict[str, list[dict]] = {}
+
+    for entry in pending_schedule or []:
+        if not isinstance(entry, dict):
+            continue
+        course_id = str(entry.get("course_id") or "").strip()
+        section_ref = str(
+            entry.get("section")
+            or entry.get("section_num")
+            or entry.get("section_code")
+            or ""
+        ).strip()
+        if not course_id or not section_ref:
+            continue
+
+        if course_id not in sections_by_course:
+            try:
+                envelope = section_lookup(course_id, term)
+            except Exception:
+                envelope = {}
+            raw_sections = envelope.get("sections", []) if envelope.get("found") else []
+            sections_by_course[course_id] = [
+                _with_course_id(section, course_id)
+                for section in raw_sections
+                if isinstance(section, dict)
+            ]
+
+        match = next(
+            (
+                section
+                for section in sections_by_course[course_id]
+                if _section_num(section) == section_ref
+                or _section_code(section) == section_ref
+            ),
+            None,
+        )
+        if match:
+            entries_by_course.setdefault(course_id, []).append(match)
+
+    bundle_items: list[dict] = []
+    for course_id, selected_sections in entries_by_course.items():
+        catalog_sections = sections_by_course.get(course_id, [])
+        bookable_sections = [
+            section
+            for section in catalog_sections
+            if _section_code(section) and not _section_is_cancelled(section)
+        ]
+        primaries = [
+            section for section in bookable_sections
+            if _is_primary_section(section)
+        ]
+        secondaries = [
+            section for section in bookable_sections
+            if _is_secondary_section(section)
+        ]
+
+        item = {
+            "course_id": course_id,
+            "selected_sections": selected_sections,
+        }
+        if primaries and secondaries:
+            item["requires_secondary"] = True
+            item["secondary_type"] = _secondary_type_label(
+                {"course_id": course_id},
+                secondaries,
+            )
+        bundle_items.append(item)
+
+    return bundle_items
+
+
 def _section_id(section: dict) -> str:
     return str(section.get("section_id") or section.get("section_code") or "")
 

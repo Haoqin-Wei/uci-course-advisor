@@ -3,7 +3,7 @@ from __future__ import annotations
 from app.agent import tools as agent_tools
 
 
-def test_propose_recommendation_attaches_schedule_bundle_validation(monkeypatch):
+def _install_schedule_validation_catalog(monkeypatch):
     from app.data import db, policies
 
     sections_by_course = {
@@ -59,6 +59,10 @@ def test_propose_recommendation_attaches_schedule_bundle_validation(monkeypatch)
     monkeypatch.setattr(db, "check_prerequisites_met", lambda *_args, **_kwargs: {"found": False})
     monkeypatch.setattr(db, "get_grade_distribution", lambda _course_id: {"found": False})
 
+
+def test_propose_recommendation_attaches_schedule_bundle_validation(monkeypatch):
+    _install_schedule_validation_catalog(monkeypatch)
+
     context = {
         "user_id": "demo_001",
         "term": "Fall 2026",
@@ -109,3 +113,63 @@ def test_propose_recommendation_attaches_schedule_bundle_validation(monkeypatch)
         }
     ]
     assert context["_proposed_cards"][0]["schedule_validation"] == validation
+
+
+def test_agent_and_manual_add_return_same_schedule_conflict(
+    app_client,
+    monkeypatch,
+):
+    from app.data import sessions
+
+    _install_schedule_validation_catalog(monkeypatch)
+    pending_schedule = [
+        {"course_id": "IN4MATX43", "section": "A", "status": "pending"}
+    ]
+
+    agent_context = {
+        "user_id": "demo_001",
+        "term": "Fall 2026",
+        "pending_schedule": pending_schedule,
+    }
+    agent_result = agent_tools.dispatch(
+        "propose_recommendation",
+        {
+            "items": [
+                {
+                    "course_id": "COMPSCI161",
+                    "category": "elective",
+                    "priority": "high",
+                    "reason": "Good systems preparation.",
+                }
+            ],
+            "term": "Fall 2026",
+        },
+        context=agent_context,
+    )
+
+    session_id = sessions.create_session(
+        "demo_001",
+        title="Manual conflict parity",
+        term_scope="Fall 2026",
+    )
+    sessions.update_session_state(
+        "demo_001",
+        session_id,
+        {"pending_schedule": pending_schedule},
+    )
+    manual_response = app_client.post(
+        "/api/schedule/add",
+        json={
+            "session_id": session_id,
+            "course_id": "COMPSCI161",
+            "section": "A",
+            "term": "Fall 2026",
+        },
+    )
+
+    assert manual_response.status_code == 409
+    assert manual_response.json()["requires_confirmation"] is True
+    assert (
+        manual_response.json()["schedule_validation"]
+        == agent_result["schedule_validation"]
+    )

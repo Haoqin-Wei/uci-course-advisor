@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from app.data import sessions as sessions_data
@@ -151,6 +153,67 @@ def test_schedule_add_normalizes_section_codes_dedupes_and_builds_events(
     ]
 
 
+def test_schedule_mutations_persist_pending_schedule_to_session_state_file(
+    app_client,
+    fake_schedule_catalog,
+    runtime_paths,
+):
+    session_id = sessions_data.create_session(
+        "demo_001",
+        title="Schedule persistence fixture",
+        term_scope="Spring 2025",
+    )
+    state_file = (
+        runtime_paths.memory_root
+        / "demo_001"
+        / "sessions"
+        / session_id
+        / "state.json"
+    )
+
+    added = app_client.post(
+        "/api/schedule/add",
+        json={
+            "session_id": session_id,
+            "course_id": "COMPSCI161",
+            "section": "A",
+            "term": "Spring 2025",
+        },
+    )
+    assert added.status_code == 200
+    assert json.loads(state_file.read_text(encoding="utf-8"))["pending_schedule"] == [
+        {"course_id": "COMPSCI161", "section": "A", "status": "pending"}
+    ]
+
+    removed = app_client.post(
+        "/api/schedule/remove",
+        json={
+            "session_id": session_id,
+            "course_id": "COMPSCI161",
+            "section": "A",
+            "term": "Spring 2025",
+        },
+    )
+    assert removed.status_code == 200
+    assert json.loads(state_file.read_text(encoding="utf-8"))["pending_schedule"] == []
+
+    app_client.post(
+        "/api/schedule/add",
+        json={
+            "session_id": session_id,
+            "course_id": "IN4MATX43",
+            "section": "A",
+            "term": "Spring 2025",
+        },
+    )
+    cleared = app_client.post(
+        "/api/schedule/clear",
+        json={"session_id": session_id, "term": "Spring 2025"},
+    )
+    assert cleared.status_code == 200
+    assert json.loads(state_file.read_text(encoding="utf-8"))["pending_schedule"] == []
+
+
 def test_schedule_add_rejects_time_conflict_without_mutating_session(
     app_client,
     fake_schedule_catalog,
@@ -185,6 +248,7 @@ def test_schedule_add_rejects_time_conflict_without_mutating_session(
     payload = conflict.json()
     assert payload["ok"] is False
     assert payload["reason"] == "schedule_validation_failed"
+    assert payload["requires_confirmation"] is True
     assert payload["pending_schedule"] == [
         {"course_id": "COMPSCI161", "section": "A", "status": "pending"}
     ]
@@ -214,6 +278,114 @@ def test_schedule_add_rejects_time_conflict_without_mutating_session(
     assert sessions_data.get_session_state("demo_001", session_id)["pending_schedule"] == [
         {"course_id": "COMPSCI161", "section": "A", "status": "pending"}
     ]
+
+    confirmed = app_client.post(
+        "/api/schedule/add",
+        json={
+            "session_id": session_id,
+            "course_id": "STATS67",
+            "section": "A",
+            "term": "Spring 2025",
+            "confirm_conflicts": True,
+        },
+    )
+
+    assert confirmed.status_code == 200
+    assert confirmed.json()["pending_schedule"] == [
+        {"course_id": "COMPSCI161", "section": "A", "status": "pending"},
+        {"course_id": "STATS67", "section": "A", "status": "pending"},
+    ]
+    assert confirmed.json()["schedule_validation"]["valid"] is False
+    assert confirmed.json()["schedule_validation"]["conflicts"] == [
+        {
+            "type": "incomplete_pairing",
+            "scope": "bundle",
+            "message": "COMPSCI161 requires Lec plus Dis, but no Dis section is selected",
+            "sections": [
+                {
+                    "course_id": "COMPSCI161",
+                    "section_code": "20000",
+                    "section_num": "A",
+                    "window": "TuTh 10:00–11:20",
+                }
+            ],
+        },
+        {
+            "type": "time_conflict",
+            "scope": "bundle",
+            "message": "COMPSCI161 A conflicts with STATS67 A",
+            "sections": [
+                {
+                    "course_id": "COMPSCI161",
+                    "section_code": "20000",
+                    "section_num": "A",
+                    "window": "TuTh 10:00–11:20",
+                },
+                {
+                    "course_id": "STATS67",
+                    "section_code": "40000",
+                    "section_num": "A",
+                    "window": "Tu 10:30–11:50",
+                },
+            ],
+        }
+    ]
+
+
+def test_schedule_add_surfaces_incomplete_primary_secondary_pairing(
+    app_client,
+    fake_schedule_catalog,
+):
+    session_id = sessions_data.create_session(
+        "demo_001",
+        title="Schedule pairing fixture",
+        term_scope="Spring 2025",
+    )
+
+    lecture_only = app_client.post(
+        "/api/schedule/add",
+        json={
+            "session_id": session_id,
+            "course_id": "COMPSCI161",
+            "section": "A",
+            "term": "Spring 2025",
+        },
+    )
+    assert lecture_only.status_code == 200
+    assert lecture_only.json()["schedule_validation"]["valid"] is False
+    assert lecture_only.json()["schedule_validation"]["conflicts"] == [
+        {
+            "type": "incomplete_pairing",
+            "scope": "bundle",
+            "message": "COMPSCI161 requires Lec plus Dis, but no Dis section is selected",
+            "sections": [
+                {
+                    "course_id": "COMPSCI161",
+                    "section_code": "20000",
+                    "section_num": "A",
+                    "window": "TuTh 10:00–11:20",
+                }
+            ],
+        }
+    ]
+
+    with_discussion = app_client.post(
+        "/api/schedule/add",
+        json={
+            "session_id": session_id,
+            "course_id": "COMPSCI161",
+            "section": "A1",
+            "term": "Spring 2025",
+        },
+    )
+
+    assert with_discussion.status_code == 200
+    assert with_discussion.json()["schedule_validation"] == {
+        "valid": True,
+        "warnings": [],
+        "conflicts": [],
+        "unknowns": [],
+    }
 
 
 def test_schedule_remove_specific_section_then_whole_course_with_null_section(
@@ -321,7 +493,17 @@ def test_schedule_clear_wipes_only_requested_session(
     )
 
     assert cleared.status_code == 200
-    assert cleared.json() == {"ok": True, "pending_schedule": [], "events": []}
+    assert cleared.json() == {
+        "ok": True,
+        "pending_schedule": [],
+        "events": [],
+        "schedule_validation": {
+            "valid": True,
+            "warnings": [],
+            "conflicts": [],
+            "unknowns": [],
+        },
+    }
     assert sessions_data.get_session_state("demo_001", first_session)["pending_schedule"] == []
     assert sessions_data.get_session_state("demo_001", second_session)["pending_schedule"] == [
         {"course_id": "COMPSCI161", "section": "A", "status": "pending"}

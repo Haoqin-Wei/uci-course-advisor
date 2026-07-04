@@ -3,6 +3,7 @@
 from app.scheduling.service import (
     DAY_CODE_TO_NAME,
     DAY_CODES,
+    build_pending_schedule_bundle_items,
     calendar_day_names,
     find_conflicts,
     parse_day_codes,
@@ -18,6 +19,7 @@ from app.scheduling.service import (
 __all__ = [
     "DAY_CODE_TO_NAME",
     "DAY_CODES",
+    "build_pending_schedule_bundle_items",
     "calendar_day_names",
     "find_conflicts",
     "parse_day_codes",

@@ -53,6 +53,7 @@ from app.modules.answer import (
 from app.modules.followup import generate_followups, generate_single_query_followups
 from app.memory import get_memory_manager
 from app.scheduling import (
+    build_pending_schedule_bundle_items,
     calendar_day_names,
     resolve_pending_schedule_sections,
     validate_schedule_bundle,
@@ -1394,6 +1395,9 @@ class ScheduleRequest(BaseModel):
     # the right sections from db.get_sections (term-strict). None falls
     # back to session-state term, then to the catalog registry default.
     term: Optional[str] = None
+    # Hard conflicts / unknown schedule data require an explicit second
+    # request so adding a section never silently creates a broken schedule.
+    confirm_conflicts: bool = False
 
 
 def _resolve_section_num(course_id: str, sec: Optional[str],
@@ -1435,6 +1439,40 @@ def _entries_match(entry: dict, course_id: str, req_section: Optional[str],
     return entry_norm == req_norm and entry_norm is not None
 
 
+def _empty_schedule_validation() -> dict:
+    return {
+        "valid": True,
+        "warnings": [],
+        "conflicts": [],
+        "unknowns": [],
+    }
+
+
+def _validate_pending_schedule(pending_schedule: list[dict], term: Optional[str]) -> dict:
+    if not pending_schedule:
+        return _empty_schedule_validation()
+    if not term:
+        return validate_schedule_bundle(
+            [
+                {
+                    "course_id": entry.get("course_id") or "",
+                    "selected_sections": [],
+                }
+                for entry in pending_schedule
+                if isinstance(entry, dict)
+            ]
+        )
+
+    from app.data.db import get_sections
+
+    bundle_items = build_pending_schedule_bundle_items(
+        pending_schedule,
+        term=term,
+        section_lookup=get_sections,
+    )
+    return validate_schedule_bundle(bundle_items)
+
+
 @router.post("/schedule/add")
 async def add_to_schedule(
     req: ScheduleRequest,
@@ -1460,12 +1498,10 @@ async def add_to_schedule(
         _entries_match(e, req.course_id, sec_canon, req.term)
         for e in session.get("pending_schedule", [])
     )
-    schedule_validation = {
-        "valid": True,
-        "warnings": [],
-        "conflicts": [],
-        "unknowns": [],
-    }
+    schedule_validation = _validate_pending_schedule(
+        session.get("pending_schedule", []),
+        req.term or session.get("term"),
+    )
     if not is_dup:
         from app.data.db import get_sections
 
@@ -1489,13 +1525,14 @@ async def add_to_schedule(
             [candidate_item],
             pending_sections=pending_sections,
         )
-        if not schedule_validation["valid"]:
+        if not schedule_validation["valid"] and not req.confirm_conflicts:
             events = _build_schedule_events(session, req.term)
             return JSONResponse(
                 status_code=409,
                 content={
                     "ok": False,
                     "reason": "schedule_validation_failed",
+                    "requires_confirmation": True,
                     "pending_schedule": session.get("pending_schedule", []),
                     "events": events,
                     "schedule_validation": schedule_validation,
@@ -1507,6 +1544,10 @@ async def add_to_schedule(
             active_session_id,
             {"pending_schedule": session["pending_schedule"]},
             user_id=user_id,
+        )
+        schedule_validation = _validate_pending_schedule(
+            session.get("pending_schedule", []),
+            effective_term,
         )
     events = _build_schedule_events(session, req.term)
     return {
@@ -1544,7 +1585,15 @@ async def remove_from_schedule(
         user_id=user_id,
     )
     events = _build_schedule_events(session, req.term)
-    return {"ok": True, "pending_schedule": session["pending_schedule"], "events": events}
+    return {
+        "ok": True,
+        "pending_schedule": session["pending_schedule"],
+        "events": events,
+        "schedule_validation": _validate_pending_schedule(
+            session["pending_schedule"],
+            req.term or session.get("term"),
+        ),
+    }
 
 
 class ScheduleClearRequest(BaseModel):
@@ -1563,7 +1612,12 @@ async def clear_schedule(
     user_id = user["id"]
     active_session_id = _resolve_session_id(req.session_id, user_id, req.term)
     update_session(active_session_id, {"pending_schedule": []}, user_id=user_id)
-    return {"ok": True, "pending_schedule": [], "events": []}
+    return {
+        "ok": True,
+        "pending_schedule": [],
+        "events": [],
+        "schedule_validation": _empty_schedule_validation(),
+    }
 
 
 class EndSessionRequest(BaseModel):
