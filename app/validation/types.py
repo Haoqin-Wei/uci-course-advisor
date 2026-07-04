@@ -99,7 +99,7 @@ class ValidationContext:
     to every validator in turn.
     """
     llm_answer: str
-    retrieved: dict                               # query.py result dict
+    retrieved: dict                               # retrieval result envelope
     catalog: CatalogView
     session_state: dict
     cards: list[dict] = field(default_factory=list)
@@ -119,11 +119,11 @@ class ValidationContext:
 
 
 def _refs_from_results(items: list[dict]) -> set[CourseRef]:
-    """Extract CourseRefs from query.py-shaped result items.
+    """Extract CourseRefs from retrieval result items.
 
-    query.py currently uses single-string course_ids like 'ICS33' or
-    'COMPSCI 122B'. This adapter routes both through parse_course_mention
-    so mock-data and real-data IDs end up canonicalized identically.
+    Older and newer callers may use compact IDs like 'ICS33' or catalog
+    IDs like 'COMPSCI 122B'. Route both through parse_course_mention so
+    IDs are canonicalized consistently.
     """
     from app.catalog.normalization import parse_course_mention
     out: set[CourseRef] = set()

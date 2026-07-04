@@ -48,8 +48,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="UCI Course Advisor",
-    description="Initial demo for course recommendation assistant",
-    version="0.1.0",
+    description="Private-beta course planning assistant for UCI students",
+    version="0.8.0",
     lifespan=lifespan,
 )
 

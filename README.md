@@ -1,67 +1,177 @@
-# UCI Course Recommendation Assistant — Initial Demo
+# UCI Course Advisor
 
-## Skill-to-Code Mapping
+Private-beta course planning assistant for UCI students. It combines a FastAPI backend, a streaming tool-using agent, local UCI catalog data, persistent sessions/memory, validation, and a native HTML/CSS/JS frontend.
 
-| SKILL.md Stage | Code Module | Description |
-|---|---|---|
-| Trigger / Non-trigger conditions | `modules/intent.py` | Classifies user message as course-related or not |
-| Step 1: Gather key info | `modules/state.py` | Tracks session state (term, major, courses, prefs) |
-| Step 2: Clarification | `modules/clarification.py` | Detects missing fields, generates clarifying questions |
-| Step 3: Search knowledge base | `modules/query.py` + `data/db.py` | Queries mock data through a DB-access interface |
-| Step 4: Organize & answer | `modules/answer.py` | Formats recommendations per SKILL.md answer structure |
-| Step 5: Follow-up questions | `modules/followup.py` | Generates 2–3 contextual follow-up prompts |
-| LLM integration | `llm/adapter.py` | Placeholder adapter for Claude Opus 4.6 |
-| Frontend + dynamic schedule | `static/index.html` | Chat UI with left-side pending schedule panel |
-| API layer | `routers/chat.py` | FastAPI router handling `/api/chat` |
+This project is not an official UCI advisor, degree audit, or enrollment system. It can help explore course options, but students must verify requirements, prerequisites, deadlines, and enrollment decisions with official UCI sources and academic advisors.
 
-## Project Structure
+## Current capabilities
 
+- Streaming chat through `/api/chat/stream` with SSE events, tool chips, limit-reached continuation, and persisted history.
+- Tool-backed course, section, professor, grade, prerequisite, policy, and schedule-conflict lookups.
+- Structured recommendation cards with validation before they can be added to the weekly schedule.
+- Authenticated sessions, isolated guest identities, onboarding, profile memory, preferences, and cross-session restoration.
+- Local catalog coverage manifest that distinguishes `complete`, `partial`, `stale`, and `unavailable` data.
+- Private-beta hardening: rate limits, production cookie/CSRF defaults, no shared writable demo user in production, and traceable logs.
+- Health and observability endpoints: `/health/live`, `/health/ready`, `/health/metrics`.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Browser["Native frontend<br/>static/index.html + static/js + static/styles"]
+  API["FastAPI routers<br/>chat, auth, memory, sessions, onboarding, health"]
+  Agent["Agent loop<br/>streaming LLM + tool calls + continuation budget"]
+  Tools["Agent tools<br/>course, sections, grades, professors, prereqs, schedule"]
+  Data["Data layer<br/>local CSV/SQLite + optional Anteater fallback"]
+  Memory["Persistent state<br/>sessions, profile, facts, preferences, schedule"]
+  Validation["Validation<br/>grounding, term/source checks, card blocking"]
+
+  Browser --> API
+  API --> Agent
+  Agent --> Tools
+  Tools --> Data
+  API --> Memory
+  Agent --> Memory
+  Agent --> Validation
+  Validation --> API
 ```
-uci-course-advisor/
-├── main.py                  # FastAPI entry point
-├── requirements.txt
+
+## Directory structure
+
+```text
+.
+├── main.py                         # FastAPI app, middleware, router registration
+├── Procfile                        # Production-style startup command
+├── requirements.txt                # Runtime dependencies
+├── requirements-dev.txt            # Runtime + test/data-script dependencies
 ├── app/
-│   ├── __init__.py
-│   ├── routers/
-│   │   ├── __init__.py
-│   │   └── chat.py          # POST /api/chat
-│   ├── modules/
-│   │   ├── __init__.py
-│   │   ├── intent.py        # Intent classification
-│   │   ├── state.py         # Session state management
-│   │   ├── clarification.py # Missing-info detection & question gen
-│   │   ├── query.py         # Course/professor/schedule queries
-│   │   ├── answer.py        # Answer formatting & structure
-│   │   └── followup.py      # Follow-up question generation
-│   ├── data/
-│   │   ├── __init__.py
-│   │   ├── db.py            # Database access interface (mock)
-│   │   └── mock_data.py     # Static demo data
-│   └── llm/
-│       ├── __init__.py
-│       └── adapter.py       # LLM adapter placeholder
+│   ├── agent/                      # Tool-calling agent loop and tool schemas
+│   ├── auth/                       # Auth store, cookies, guest identity, rate limits
+│   ├── catalog/                    # Term parsing, local catalog loaders, coverage manifest
+│   ├── data/                       # Course/professor/grade/session data access
+│   ├── llm/                        # DeepSeek OpenAI-compatible adapter
+│   ├── memory/                     # Profile, facts, preferences, and session memory
+│   ├── routers/                    # API routers including health endpoints
+│   ├── scheduling/                 # Schedule conflict and bundle validation service
+│   └── validation/                 # Grounding validators and validation log
+├── data/
+│   ├── uci/                        # Versioned local catalog CSVs
+│   ├── professor/                  # Professor/review data
+│   └── uci_general/                # General UCI requirements data
+├── scripts/                        # Data import, verification, smoke, and migration scripts
 ├── static/
-│   └── index.html           # Frontend (HTML + JS + CSS)
-└── templates/               # Reserved for Jinja2 if needed
+│   ├── index.html
+│   ├── js/                         # Frontend modules
+│   └── styles/                     # CSS tokens and components
+└── tests/                          # Offline pytest suite and fixtures
 ```
 
-## How to Run
+## Requirements
+
+- Python `3.14.4` (see `.python-version`)
+- `pip`
+
+## Install
 
 ```bash
-pip install fastapi uvicorn
-cd uci-course-advisor
-uvicorn main:app --reload --port 8000
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements-dev.txt
+cp .env.example .env
 ```
 
-Open `http://localhost:8000` in your browser.
+For production/runtime-only installs, use `requirements.txt` instead of `requirements-dev.txt`.
 
-## Implementation Order (Next Steps)
+## Environment variables
 
-1. Replace mock data in `data/mock_data.py` with real UCI course database
-2. Implement `data/db.py` with actual DB queries (SQLite → PostgreSQL)
-3. Implement `llm/adapter.py` with Claude Opus 4.6 API calls
-4. Replace rule-based intent classification with LLM-based classification
-5. Add real prerequisite checking logic
-6. Add real schedule conflict detection
-7. Connect frontend schedule UI to backend state
-8. Add authentication and per-user session persistence
+`.env.example` lists the supported variables and safe local defaults. Important variables:
+
+- `APP_ENV`: `development`, `test`, or `production`.
+- `AUTH_SESSION_SECRET`: required in production; use a long random value generated outside the repo.
+- `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL`: enable live LLM mode.
+- `ANTEATER_API_KEY`: optional external UCI API fallback.
+- `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_SUBJECT`: optional email verification delivery.
+- `ALLOW_SHARED_DEMO`, `ALLOW_GUEST_USERS`, `COOKIE_SECURE`, `CSRF_PROTECTION`, `ALLOWED_ORIGINS`, `ALLOW_CUSTOM_SYSTEM_PROMPT`: private-beta safety switches.
+- `LLM_INPUT_USD_PER_1K`, `LLM_OUTPUT_USD_PER_1K`: optional estimated cost rates for observability logs.
+
+Do not commit `.env`, API keys, auth databases, verification codes, cookies, or runtime memory data.
+
+## Data preparation
+
+The repository includes local data for offline development and tests:
+
+- `data/uci/*.csv` for catalog/course/section data.
+- `data/professor/*` for local professor/review lookup.
+- `data/uci_general/*` for general UCI requirement helpers.
+
+Current catalog coverage:
+
+| Term | Status | Notes |
+|---|---|---|
+| Spring 2025 | complete | Local section data available. |
+| Spring 2026 | complete | Local section data available. |
+| Fall 2026 | partial | Only partial local section coverage; answers must not treat missing rows as definitive no-offering facts. |
+
+Useful checks:
+
+```bash
+python scripts/smoke_test.py
+python scripts/verify_data.py sections CS161 "Spring 2025"
+python scripts/verify_db.py
+```
+
+Network/data refresh scripts exist under `scripts/`, but default tests and offline development do not require live API access.
+
+## Run
+
+Development:
+
+```bash
+python -m uvicorn main:app --reload --port 8000
+```
+
+Then open `http://127.0.0.1:8000`.
+
+Production-style command:
+
+```bash
+python -m uvicorn main:app --host 0.0.0.0 --port "${PORT:-8000}"
+```
+
+`Procfile` uses the same startup command.
+
+## Test and CI
+
+Run the offline suite:
+
+```bash
+python -m pytest
+```
+
+Local CI-equivalent checks:
+
+```bash
+python -m compileall app main.py scripts tests
+python -m pip check
+python -m pytest
+```
+
+Default tests block external network and real LLM calls. Manual live integration tests are marked `live`/`manual` and are not part of default CI.
+
+GitHub Actions runs install, syntax lint, dependency graph validation, and offline tests from `.github/workflows/ci.yml`.
+
+## Runtime modes
+
+- Offline mode: no API keys. The app uses local data, deterministic fallbacks, and test doubles. This is the default development/test mode.
+- External API fallback: set `ANTEATER_API_KEY` if you want live UCI API fallback when local term data is unavailable. Partial/stale local data is surfaced as uncertain instead of silently overruled.
+- Live LLM mode: set `DEEPSEEK_API_KEY`. The adapter uses an OpenAI-compatible DeepSeek endpoint and streams through the agent loop.
+- Email delivery: set `RESEND_API_KEY` and sender variables. Without this, development can still exercise auth flows without logging verification codes.
+
+## Correctness boundaries
+
+- The assistant is strongest for catalog, schedule, prerequisite, professor, and course-planning questions covered by the local data and implemented tools.
+- Degree Audit is not implemented. Major requirement support is limited and should not be treated as official degree certification.
+- `partial`, `stale`, and `unavailable` coverage states mean the assistant must say it cannot confirm a fact rather than inventing certainty.
+- Recommendation cards are validation-gated, but validation is not a substitute for official UCI enrollment rules.
+- Always verify add/drop deadlines, restrictions, prerequisites, waitlists, exams, and degree progress through official UCI systems.

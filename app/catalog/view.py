@@ -3,7 +3,7 @@ CatalogView — term-scoped, source-agnostic query interface.
 
 Validators and chat.py only call this. They never see raw CSVs / loaders.
 
-Multi-source merge strategy (Phase 1: single loader; multi-source ready):
+Multi-source merge strategy:
   - course_exists: OR across all loaders that provided data
   - get_course(ref): merge field-by-field, first loader to provide wins
   - get_sections(ref): union (each loader contributes its sections)
@@ -84,7 +84,7 @@ class CatalogView:
     def offered_this_term(self, ref: CourseRef) -> bool:
         """True iff the course has at least one section in target_term.
 
-        For Phase 1 this is equivalent to course_exists, since CatalogView
+        With the current single loader this is equivalent to course_exists,
         is already term-scoped. Kept as a separate method so validators
         express intent clearly.
         """

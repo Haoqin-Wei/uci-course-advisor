@@ -1,10 +1,9 @@
 """
-Smoke test — runs the full Phase 1 validation pipeline on a synthetic
-LLM answer to confirm everything wires up.
+Smoke test — runs the validation pipeline on a synthetic LLM answer to
+confirm everything wires up.
 
-Run AFTER scripts/import_term_data.py has populated data/uci/*.csv:
+Run from the project root:
 
-    python scripts/import_term_data.py path/to/spring_sections_relational.xlsx
     python scripts/smoke_test.py
 """
 
@@ -29,7 +28,7 @@ def run():
     catalog = get_catalog(term)
     if catalog is None:
         print("❌ No catalog data for", term.term_id)
-        print("   Did you run: python scripts/import_term_data.py <xlsx>?")
+        print("   Confirm data/uci/*.csv exists or run scripts/import_term_data.py.")
         return
 
     print(f"✅ Loaded catalog for {term.display()}")

@@ -1,103 +1,73 @@
-"""
-Smoke test for the new db.py.
+"""Offline smoke test for app.data.db.
 
-Verifies that:
-  1. Course lookup works via colloquial ID
-  2. Department search returns reasonable results
-  3. Term filter on search_courses respects terms_offered_json
-  4. Sections lookup returns real data
-  5. Prereq lookup works and returns colloquial IDs
+Run from the project root:
 
-Run from project root:
-    PYTHONPATH=. python3 scripts/verify_db.py
+    python scripts/verify_db.py
+
+The script intentionally uses only local catalog data. It exits non-zero
+if the current DB envelope API no longer returns the expected shape.
 """
+
+from __future__ import annotations
+
+try:
+    from scripts._bootstrap import ensure_repo_root_on_path
+except ModuleNotFoundError:  # direct execution: python scripts/verify_db.py
+    from _bootstrap import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
 
 from app.data import db
 
 
-def section(title):
-    print(f"\n── {title} " + "─" * (60 - len(title)))
+def section(title: str) -> None:
+    print(f"\n── {title} " + "─" * max(0, 60 - len(title)))
 
 
-# ── 1. Single course ──
-section("1. get_course_info('CS122A')")
-c = db.get_course_info("CS122A")
-if c:
-    print(f"✅ title: {c['title']}")
-    print(f"   units: {c['units']}")
-    print(f"   department: {c['department']} ({c['department_name']})")
-    print(f"   ge_categories: {c['ge_categories']}")
-    print(f"   prereqs (colloquial form): {c['prerequisites']}")
-    print(f"   restriction: {c['restriction'][:80]}...")
-else:
-    print("❌ NOT FOUND — is data/uci/courses.csv missing CS122A?")
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise SystemExit(f"❌ {message}")
 
 
-# ── 2. Department search ──
-section("2. search_courses(department='COMPSCI')")
-results = db.search_courses(department="COMPSCI")
-print(f"Found {len(results)} COMPSCI courses")
-print(f"  First 5: {[r['course_id'] for r in results[:5]]}")
+def main() -> None:
+    section("1. get_course_info('CS122A')")
+    course = db.get_course_info("CS122A")
+    require(course.get("found") is True, course.get("reason", "CS122A not found"))
+    payload = course["course"]
+    print(f"✅ {payload['course_id']}: {payload['title']} ({payload['units']} units)")
+    print(f"   source={course['source']} prereq={payload.get('prerequisite_text') or 'n/a'}")
+
+    section("2. search_courses(term='Spring 2025', department='COMPSCI')")
+    search = db.search_courses(term="Spring 2025", department="COMPSCI")
+    require(search.get("found") is True, search.get("reason", "search failed"))
+    require(search.get("total_found", 0) > 0, "expected COMPSCI courses in Spring 2025")
+    print(f"✅ found {search['total_found']} COMPSCI courses")
+    print(f"   first 5: {[item['course_id'] for item in search['courses'][:5]]}")
+
+    section("3. get_sections('CS161', 'Spring 2025')")
+    sections = db.get_sections("CS161", "Spring 2025")
+    require(sections.get("found") is True, sections.get("reason", "CS161 sections missing"))
+    print(
+        f"✅ found {len(sections['sections'])} section rows "
+        f"(coverage={sections.get('coverage_status')}, source={sections.get('source')})"
+    )
+    for row in sections["sections"][:3]:
+        instructors = ", ".join(row.get("instructors") or []) or "TBA"
+        print(
+            "   "
+            f"{row.get('section_type')} {row.get('section_num')} "
+            f"{row.get('time_display') or row.get('days') or 'TBA'} "
+            f"{instructors}"
+        )
+
+    section("4. check_prerequisites_met('CS122A', completed=['ICS 33'])")
+    prereq = db.check_prerequisites_met("CS122A", completed_courses=["ICS 33"])
+    require(prereq.get("found") is True, prereq.get("reason", "prereq lookup failed"))
+    print(f"✅ status={prereq.get('status')} met={prereq.get('met')}")
+    print(f"   missing={prereq.get('missing')} unknown={prereq.get('unknown')}")
+
+    print("\n✅ db smoke passed")
 
 
-# ── 3. Department alias resolution ──
-section("3. search_courses(department='ics') — alias resolution")
-results = db.search_courses(department="ics")
-print(f"Found {len(results)} I&C SCI courses")
-print(f"  First 5: {[r['course_id'] for r in results[:5]]}")
-
-
-# ── 4. Term filter ──
-section("4. search_courses(term='Spring 2025', department='COMPSCI')")
-results = db.search_courses(term="Spring 2025", department="COMPSCI")
-print(f"Found {len(results)} COMPSCI courses with 'Spring 2025' in terms_offered_json")
-if results:
-    print(f"  First 5: {[r['course_id'] for r in results[:5]]}")
-
-
-# ── 5. Sections for one course ──
-section("5. get_sections('CS122A', 'Spring 2025')")
-secs = db.get_sections("CS122A", "Spring 2025")
-print(f"Found {len(secs)} sections")
-for s in secs[:3]:
-    print(f"  section {s['section']}: {s['instructor']} (term={s['term']})")
-print("  (empty list is expected if CS122A wasn't actually offered Spring 2025)")
-
-
-# ── 6. Sections without term filter ──
-section("6. get_sections('CS122A')  — no term filter")
-secs = db.get_sections("CS122A")
-print(f"Found {len(secs)} total sections across all loaded terms")
-
-
-# ── 7. Prereq check ──
-section("7. check_prerequisites_met('CS122A', ['ICS33'])")
-result = db.check_prerequisites_met("CS122A", ["ICS33"])
-print(f"  met:     {result['met']}")
-print(f"  missing: {result['missing']}")
-print("  (Note: real CS122A is ICS33 OR EECS114, but Phase 2 uses flat AND.")
-print("   Phase 3 will use prerequisite_tree_json for proper OR handling.)")
-
-
-# ── 8. Major-as-dept fallback ──
-section("8. search_courses(major_requirement='Computer Science')")
-results = db.search_courses(major_requirement="Computer Science")
-print(f"Found {len(results)} courses (should map to dept=COMPSCI)")
-print(f"  First 5: {[r['course_id'] for r in results[:5]]}")
-
-
-# ── 9. GE filter ──
-section("9. search_courses(ge_category='GE-2')")
-results = db.search_courses(ge_category="GE-2")
-print(f"Found {len(results)} courses with GE-2")
-print(f"  First 5: {[r['course_id'] for r in results[:5]]}")
-
-
-# ── 10. Mock fallback for ratings (still mock until Phase 2.4) ──
-section("10. get_professor_rating('CAREY, M.') — mock fallback")
-rating = db.get_professor_rating("CAREY, M.")
-print(f"  rating: {rating}")
-print("  (None expected — mock_data uses different key format than real instructor names)")
-
-
-print("\n✅ All paths exercised.")
+if __name__ == "__main__":
+    main()

@@ -1,4 +1,4 @@
-"""Phase 1 validators."""
+"""Validation checks used before persisting or displaying grounded output."""
 
 from app.validation.validators.base import Validator
 from app.validation.validators.course_exists import CourseExistsValidator

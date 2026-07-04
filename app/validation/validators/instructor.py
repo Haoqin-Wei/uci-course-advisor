@@ -10,12 +10,10 @@ For every 'Professor X' style mention:
 We REQUIRE the 'Professor'/'Prof.'/'Instructor' keyword before the name
 to avoid false positives on bare last names like "Thornton".
 
-PHASE 1 NOTE on severity: An unknown surname in our single-term data
-may genuinely be hallucinated, OR it may be a real UCI professor who
-just doesn't teach in this particular term (mock_data ↔ real-data
-mismatch — same root cause as offered_term WARN). Until query.py is
-migrated to real data and / or we load multiple terms simultaneously,
-we cannot distinguish those cases, so we emit WARN, not ERROR.
+Severity note: an unknown surname in local term data may be hallucinated,
+or it may be a real UCI professor who does not teach in the selected
+term. We cannot distinguish those cases from local data alone, so this
+validator emits WARN, not ERROR.
 """
 
 from __future__ import annotations
@@ -53,8 +51,7 @@ class InstructorValidator(Validator):
                         f"instructor with surname '{surname}' is on record for "
                         f"{ctx.catalog.target_term.display()}. May be a "
                         f"hallucinated name, or a real professor not teaching "
-                        f"this term (mock_data ↔ catalog mismatch expected "
-                        f"during Phase 1)."
+                        f"this term."
                     ),
                     location={
                         "start": start, "end": end,

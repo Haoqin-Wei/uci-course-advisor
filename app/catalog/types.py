@@ -35,7 +35,7 @@ class Provenance:
     """
     source_term: str          # e.g. "2025_Spring"
     target_term: str          # e.g. "2025_Spring" or "2026_Spring"
-    loader: str               # e.g. "uci_relational" / "mock_data"
+    loader: str               # e.g. "uci_relational"
     source_file: Optional[str] = None
 
     @property

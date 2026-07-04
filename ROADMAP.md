@@ -371,19 +371,29 @@
 
 ### M8.1 更新本 Roadmap
 
-- [ ] 将已完成任务打勾。
-- [ ] 为每个阶段记录完成日期、commit/PR 和验收结果。
-- [ ] 将私测反馈转换成下一阶段计划。
-- [ ] 再决定多学期规划、Degree Audit、提醒和个性化的优先级。
+- [x] 将已完成任务打勾。
+- [x] 为每个阶段记录完成日期、commit/PR 和验收结果。
+- [x] 将私测反馈转换成下一阶段计划。
+- [x] 再决定多学期规划、Degree Audit、提醒和个性化的优先级。
 
 ### M8.2 README 最后更新
 
-- [ ] 删除 “Initial Demo”、mock data 和 placeholder 等过时说明。
-- [ ] 更新真实架构图和目录结构。
-- [ ] 写清 Python 版本、安装、环境变量、数据准备、启动和测试命令。
-- [ ] 区分离线模式、外部 API fallback 和 live LLM 模式。
-- [ ] 说明支持的学期、专业范围和正确性边界。
-- [ ] 说明项目不是 UCI 官方 advisor，不能替代正式学业审核。
+- [x] 删除 “Initial Demo”、mock data 和 placeholder 等过时说明。
+- [x] 更新真实架构图和目录结构。
+- [x] 写清 Python 版本、安装、环境变量、数据准备、启动和测试命令。
+- [x] 区分离线模式、外部 API fallback 和 live LLM 模式。
+- [x] 说明支持的学期、专业范围和正确性边界。
+- [x] 说明项目不是 UCI 官方 advisor，不能替代正式学业审核。
+
+### 私测反馈转下一阶段计划
+
+当前仓库内没有已记录的真实私测用户反馈；因此下一阶段先把 M7 暴露出的私测风险转成反馈闭环，而不是直接扩功能：
+
+1. P0 — 私测运行闭环：收集 trace ID、失败截图、用户问题、term、coverage status 和 validation action；每个高风险反馈必须归类为数据缺失、工具错误、LLM 行为、前端交互或认证/权限问题。
+2. P0 — 正确性修复：优先处理会导致错误课程/错误 section/错误可加课状态的反馈。
+3. P1 — 多学期规划：在现有 session state、term coverage 和 schedule validation 稳定后再扩展跨 term plan。
+4. P2 — Degree Audit：只有在 major requirement 数据结构、官方来源和 unknown 语义稳定后启动；不能把当前 CS/GE helper 伪装成完整 audit。
+5. P3 — 提醒和个性化：在认证、隐私、通知偏好和数据保留策略明确后再做。
 
 ### 验收
 
@@ -402,25 +412,30 @@
 - 不提交真实用户数据、密钥、验证码或 Cookie。
 - 代码、测试和验收证据在同一个 PR/commit 范围内可审查。
 
-## 14. 建议提交顺序
+## 14. 实际提交分组
 
-为了降低当前大工作区的审查风险，建议拆成以下提交：
+工作已按可审查、可回滚的阶段提交。每组提交都对应 ROADMAP 中的阶段性验收：
 
-1. `chore: isolate runtime data and checkpoint current card work`
-2. `test: add offline fixtures and characterize core flows`
-3. `fix: unify session identity and profile hydration`
-4. `fix: normalize memory schema and repository writes`
-5. `feat: persist schedule and validate schedule bundles`
-6. `feat: load local course metadata and evaluate prerequisite trees`
-7. `feat: expose data coverage and validate agent output`
-8. `refactor: remove legacy chat and duplicate domain logic`
-9. `refactor: split frontend modules and share SSE handling`
-10. `chore: add CI security defaults and observability`
-11. `docs: update roadmap status`
-12. `docs: rewrite README for the stabilized architecture`
+1. M0：运行数据隔离、fixture/checkpoint、demo baseline。
+2. M1：pytest 基础设施、fake LLM、离线 fixture、characterization tests。
+3. M2：身份/session/memory/profile schema 与持久化修复。
+4. M3：统一 scheduling domain service、schedule validation、ownership。
+5. M4：本地 catalog/prerequisite/coverage/validation。
+6. M5：唯一 streaming agent 主链路、legacy recommendation 删除、课程号解析统一。
+7. M6：前端 SSE 收敛、静态资源模块拆分、浏览器回归。
+8. M7：私测安全、依赖/CI、可观测性。
+9. M8：Roadmap 和 README 与当前实现对齐。
 
 ## 15. 进度记录
 
 | 日期 | 阶段 | 变更 | Commit/PR | 验收结果 |
 |---|---|---|---|---|
-| _待填写_ |  |  |  |  |
+| 2026-07-04 | M0 | 运行数据隔离、demo fixture/checkpoint、baseline 记录 | `751af53`, `a7b56ab`, `86de71a` | 真实运行数据从提交范围中隔离；后续阶段具备可回滚 checkpoint。 |
+| 2026-07-04 | M1 | pytest、fake LLM、离线 fixture、核心 characterization tests | `7455b79`–`4557643` | 默认测试不需要 API key、不联网、不调用真实 LLM；核心状态/ownership/SSE/card/schedule 行为被固定。 |
+| 2026-07-04 | M2 | session identity、persistent session repository、memory schema 统一 | `2ba2652`–`39915b6` | 新会话首轮状态连续；重启后 term/profile/history/schedule 不丢；memory 不再重复保存完整 turn。 |
+| 2026-07-04 | M3 | scheduling domain service、bundle validation、schedule API ownership | `39915b6`–`67ee8b4` | Agent 推荐和手动加课使用同一冲突结果；硬冲突和 incomplete Lec/Dis/Lab 不静默加入。 |
+| 2026-07-04 | M4 | local catalog、prerequisite tree、coverage manifest、validation gating | `2d9833e`–`ab647d9` | 数据 coverage 区分 complete/partial/stale/unavailable；错误卡片不能进入 schedule。 |
+| 2026-07-04 | M5 | 唯一 `/api/chat/stream` 主链、legacy recommendation 删除、课程解析统一 | `7c20bc9`, `48fd48d`, `18aea09` | 非流式旧入口和重复解析逻辑移除；Agent pre-flight fallback 行为确定。 |
+| 2026-07-04 | M6 | 前端 SSE 收敛、资源模块拆分、浏览器回归 | `e8d2564`, `db9daca`, `5edad5e` | 登录/onboarding/chat/tool chip/card/add/continue/session restore/mobile/keyboard 基础回归通过。 |
+| 2026-07-04 | M7 | 私测安全、依赖/CI、health/trace/metrics/logging | `ef4f779`, `a58f8d7`, `766cf94` | 生产安全默认值、rate limit、CI workflow、trace ID 和 health endpoints 已落地；`121 passed, 2 deselected`。 |
+| 2026-07-04 | M8 | Roadmap 收尾、README 按当前架构重写 | `docs: close roadmap and README` | README 删除旧 demo/mock/placeholder；README 数据检查、compileall、pip check、`121 passed, 2 deselected` 通过。 |

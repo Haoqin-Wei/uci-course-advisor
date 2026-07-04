@@ -1,4 +1,4 @@
-"""Validation package — Phase 1 audit layer for LLM outputs."""
+"""Validation package — grounding and safety layer for LLM outputs."""
 
 from app.validation.types import (
     Issue, Severity, SuggestedAction,

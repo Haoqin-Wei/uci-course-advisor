@@ -1,6 +1,6 @@
 """
-Orchestrator — runs all Phase 1 validators against one context and
-aggregates their Issues into a single ValidationReport.
+Orchestrator — runs all validators against one context and aggregates
+their Issues into a single ValidationReport.
 
 Errors in one validator never crash the others — each is wrapped
 in try/except. A crashed validator is logged but doesn't fail the turn.

@@ -39,7 +39,7 @@ from app.data import sessions as sessions_data
 from app.modules import decision_detector
 # ─────────────────────────────────────────────────────────────
 
-# ── Validation Phase 1 ───────────────────────────────────
+# ── Validation ───────────────────────────────────────────
 from app.catalog.term import Term
 from app.catalog.cache import get_catalog
 from app.catalog.coverage import get_term_coverage
