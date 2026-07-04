@@ -19,7 +19,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+
+from app import config
 
 router = APIRouter()
 
@@ -123,6 +125,8 @@ def get_system_prompt() -> dict:
 
     The frontend will fall back gracefully if this returns empty.
     """
+    if not config.allow_custom_system_prompt():
+        raise HTTPException(status_code=404, detail="System prompt endpoint is disabled")
     prompt = _resolve_default_prompt()
     return {"prompt": prompt or ""}
 

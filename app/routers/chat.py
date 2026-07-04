@@ -15,11 +15,13 @@ import asyncio
 import logging
 import re
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
 
+from app import config
 from app.auth.deps import current_user_optional
+from app.auth.rate_limit import RateLimit, check_rate_limit
 from app.modules.state import (
     get_or_create_session, update_session,
     load_student_into_session, get_known_fields,
@@ -52,6 +54,10 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 router = APIRouter()
+
+CHAT_STREAM_LIMIT = RateLimit("chat.stream", limit=30, window_seconds=60)
+CHAT_CONTINUE_LIMIT = RateLimit("chat.continue", limit=20, window_seconds=60)
+SCHEDULE_WRITE_LIMIT = RateLimit("schedule.write", limit=120, window_seconds=60)
 
 class ChatRequest(BaseModel):
     message: str
@@ -831,8 +837,10 @@ from fastapi.responses import JSONResponse, StreamingResponse
 async def chat_stream_endpoint(
     req: ChatRequest,
     background_tasks: BackgroundTasks,
+    request: Request,
     user: dict = Depends(current_user_optional),
 ):
+    check_rate_limit(request, CHAT_STREAM_LIMIT, user["id"])
     return StreamingResponse(
         _stream_chat(req, background_tasks, user["id"]),
         media_type="text/event-stream",
@@ -930,7 +938,11 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
                 req.message, state, memory_context,
                 user_id=user_id,
                 term=req.term or state.get("term"),
-                system_prompt=req.system_prompt,
+                system_prompt=(
+                    req.system_prompt
+                    if config.allow_custom_system_prompt()
+                    else None
+                ),
                 queue=queue,
                 recent_turns=recent_turns,
                 decisions=decisions,
@@ -1017,6 +1029,7 @@ class ContinueRequest(BaseModel):
 @router.post("/chat/continue")
 async def chat_continue_endpoint(
     req: ContinueRequest,
+    request: Request,
     user: dict = Depends(current_user_optional),
 ):
     """
@@ -1029,6 +1042,7 @@ async def chat_continue_endpoint(
     from the in-memory store, so a refresh / double-click can't
     accidentally double-bill the budget.
     """
+    check_rate_limit(request, CHAT_CONTINUE_LIMIT, user["id"])
     return StreamingResponse(
         _stream_continue(req, user["id"]),
         media_type="text/event-stream",
@@ -1191,6 +1205,7 @@ def _validate_pending_schedule(pending_schedule: list[dict], term: Optional[str]
 @router.post("/schedule/add")
 async def add_to_schedule(
     req: ScheduleRequest,
+    request: Request,
     user: dict = Depends(current_user_optional),
 ):
     """Phase E4: each (course_id, section) pair is a separate schedule
@@ -1201,6 +1216,7 @@ async def add_to_schedule(
     Stores the normalized section_num so subsequent compares hit the
     fast path instead of going through _resolve_section_num every
     time."""
+    check_rate_limit(request, SCHEDULE_WRITE_LIMIT, user["id"])
     user_id = user["id"]
     active_session_id = _resolve_session_id(req.session_id, user_id, req.term)
     session = get_or_create_session(active_session_id, user_id=user_id)
@@ -1276,12 +1292,14 @@ async def add_to_schedule(
 @router.post("/schedule/remove")
 async def remove_from_schedule(
     req: ScheduleRequest,
+    request: Request,
     user: dict = Depends(current_user_optional),
 ):
     """If `section` is provided, remove only that specific (course, section).
     Section-equivalence aware so legacy entries (5-digit codes stored
     where section_num is now expected) get matched and removed.
     If omitted, remove every entry for the course."""
+    check_rate_limit(request, SCHEDULE_WRITE_LIMIT, user["id"])
     user_id = user["id"]
     active_session_id = _resolve_session_id(req.session_id, user_id, req.term)
     session = get_or_create_session(active_session_id, user_id=user_id)
@@ -1319,11 +1337,13 @@ class ScheduleClearRequest(BaseModel):
 @router.post("/schedule/clear")
 async def clear_schedule(
     req: ScheduleClearRequest,
+    request: Request,
     user: dict = Depends(current_user_optional),
 ):
     """Wipe every entry in this session's pending_schedule. Escape hatch
     when the user accumulates stuck entries (e.g. from legacy format
     that the section-equivalence fix can't auto-resolve)."""
+    check_rate_limit(request, SCHEDULE_WRITE_LIMIT, user["id"])
     user_id = user["id"]
     active_session_id = _resolve_session_id(req.session_id, user_id, req.term)
     update_session(active_session_id, {"pending_schedule": []}, user_id=user_id)

@@ -335,13 +335,13 @@
 
 ### M7.1 安全
 
-- [ ] 公开环境禁用共享可写的 `demo_001`；Guest 使用隔离、可过期的临时身份。
-- [ ] Schedule、Memory、Session 写接口统一验证用户身份和 ownership。
-- [ ] 登录、验证码和 LLM 请求增加 rate limit。
-- [ ] 生产 Cookie 开启 `Secure`，增加 Origin/CSRF 防护。
-- [ ] 生产密钥必须来自环境变量，禁止自动生成本地 fallback。
-- [ ] 自定义 system prompt 和 `/api/system_prompt` 仅在开发模式或管理员模式开放。
-- [ ] 日志禁止记录密码、验证码、Cookie 和不必要的完整个人资料。
+- [x] 公开环境禁用共享可写的 `demo_001`；Guest 使用隔离、可过期的临时身份。
+- [x] Schedule、Memory、Session 写接口统一验证用户身份和 ownership。
+- [x] 登录、验证码和 LLM 请求增加 rate limit。
+- [x] 生产 Cookie 开启 `Secure`，增加 Origin/CSRF 防护。
+- [x] 生产密钥必须来自环境变量，禁止自动生成本地 fallback。
+- [x] 自定义 system prompt 和 `/api/system_prompt` 仅在开发模式或管理员模式开放。
+- [x] 日志禁止记录密码、验证码、Cookie 和不必要的完整个人资料。
 
 ### M7.2 依赖与 CI
 

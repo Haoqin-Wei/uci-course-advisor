@@ -3,13 +3,17 @@ UCI Course Recommendation Assistant — FastAPI Entry Point
 """
 
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from app.routers import chat, system_info, memory, sessions, onboarding, auth
 from app.memory import get_memory_manager
+from app import config
+from app.auth import security
 
 
 @asynccontextmanager
@@ -39,6 +43,56 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+def _origin_allowed(origin: str | None, host: str | None) -> bool:
+    if not origin:
+        return False
+    parsed = urlsplit(origin)
+    origin_host = parsed.netloc
+    if host and origin_host == host:
+        return True
+    allowed = config.allowed_origins()
+    normalized = origin.rstrip("/") if origin else ""
+    return normalized in allowed
+
+
+@app.middleware("http")
+async def security_middleware(request: Request, call_next):
+    """Production CSRF/origin guard and isolated guest-cookie bootstrap."""
+    if (
+        config.csrf_protection_enabled()
+        and request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}
+    ):
+        origin = request.headers.get("origin") or request.headers.get("referer")
+        if not _origin_allowed(origin, request.headers.get("host")):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Cross-origin request blocked"},
+            )
+
+    response = await call_next(request)
+
+    has_session = bool(request.cookies.get(security.SESSION_COOKIE_NAME))
+    guest_cookie = request.cookies.get(security.GUEST_COOKIE_NAME)
+    has_valid_guest = bool(guest_cookie and security.verify_guest(guest_cookie))
+    if (
+        config.allow_guest_users()
+        and not config.allow_shared_demo()
+        and not has_session
+        and not has_valid_guest
+    ):
+        guest_id = security.new_guest_id()
+        response.set_cookie(
+            key=security.GUEST_COOKIE_NAME,
+            value=security.sign_guest(guest_id),
+            max_age=security.GUEST_MAX_AGE_S,
+            httponly=True,
+            samesite="lax",
+            secure=config.cookie_secure(),
+            path="/",
+        )
+    return response
 
 # ── Routers ──────────────────────────────────────────────
 app.include_router(chat.router, prefix="/api")

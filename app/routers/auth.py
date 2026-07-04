@@ -32,14 +32,20 @@ import logging
 import re
 import secrets
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
+from app import config
+from app.auth.rate_limit import RateLimit, check_rate_limit
 from app.auth import email_sender, security, store
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+REQUEST_CODE_LIMIT = RateLimit("auth.request_code", limit=5, window_seconds=10 * 60)
+VERIFY_LIMIT = RateLimit("auth.verify", limit=8, window_seconds=10 * 60)
+LOGIN_LIMIT = RateLimit("auth.login", limit=10, window_seconds=10 * 60)
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -78,7 +84,7 @@ def _set_session_cookie(response: Response, user_id: str) -> None:
         max_age=security.SESSION_MAX_AGE_S,
         httponly=True,
         samesite="lax",
-        secure=False,  # demo runs over http://localhost; flip to True in prod over HTTPS
+        secure=config.cookie_secure(),
         path="/",
     )
 
@@ -86,7 +92,7 @@ def _set_session_cookie(response: Response, user_id: str) -> None:
 # ── Endpoints ────────────────────────────────────────────
 
 @router.post("/request_code")
-def request_code(body: RequestCodeBody):
+def request_code(body: RequestCodeBody, request: Request):
     """
     Issue a fresh 6-digit verification code for `email` and dispatch
     it. The code is hashed before storage; only the latest issued
@@ -94,6 +100,7 @@ def request_code(body: RequestCodeBody):
     marked consumed inside stash_verification_code).
     """
     email = _norm_email(body.email)
+    check_rate_limit(request, REQUEST_CODE_LIMIT, email)
     code = f"{secrets.randbelow(1_000_000):06d}"
 
     code_hash = security.hash_code(code)
@@ -115,7 +122,7 @@ def request_code(body: RequestCodeBody):
 
 
 @router.post("/verify")
-def verify(body: VerifyBody, response: Response):
+def verify(body: VerifyBody, response: Response, request: Request):
     """
     Consume the latest active verification code for `email` and
     create the account with the given password. On success the
@@ -123,6 +130,7 @@ def verify(body: VerifyBody, response: Response):
     — saves a round-trip vs forcing a separate /login after verify.
     """
     email = _norm_email(body.email)
+    check_rate_limit(request, VERIFY_LIMIT, email)
 
     if store.find_user_by_email(email):
         raise HTTPException(
@@ -151,8 +159,9 @@ def verify(body: VerifyBody, response: Response):
 
 
 @router.post("/login")
-def login(body: LoginBody, response: Response):
+def login(body: LoginBody, response: Response, request: Request):
     email = _norm_email(body.email)
+    check_rate_limit(request, LOGIN_LIMIT, email)
     user = store.find_user_by_email(email)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
