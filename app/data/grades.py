@@ -50,6 +50,8 @@ from typing import Optional
 
 import requests
 
+from app import observability
+
 
 logger = logging.getLogger(__name__)
 
@@ -281,6 +283,21 @@ def _fetch_aggregate(dept: str, course_number: str) -> Optional[dict]:
         return None
 
     if r.status_code != 200:
+        if r.status_code == 429:
+            observability.increment("external_api.rate_limited", service="grades")
+            observability.log_event(
+                logger,
+                logging.WARNING,
+                "external_api_rate_limited",
+                service="grades",
+                course=f"{dept}/{course_number}",
+            )
+        else:
+            observability.increment(
+                "external_api.non_200",
+                service="grades",
+                status=r.status_code,
+            )
         logger.info("grades API %d for %s/%s: %s",
                     r.status_code, dept, course_number, r.text[:200])
         return None

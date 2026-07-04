@@ -32,6 +32,8 @@ from typing import Optional
 
 import requests
 
+from app import observability
+
 logger = logging.getLogger(__name__)
 
 ANTEATER_BASE_URL = "https://anteaterapi.com/v2/rest"
@@ -58,6 +60,25 @@ def _get(path: str, params: Optional[dict] = None) -> Optional[dict]:
             timeout=REQUEST_TIMEOUT_S,
         )
         if r.status_code != 200:
+            if r.status_code == 429:
+                observability.increment(
+                    "external_api.rate_limited",
+                    service="anteater_programs",
+                )
+                observability.log_event(
+                    logger,
+                    logging.WARNING,
+                    "external_api_rate_limited",
+                    service="anteater_programs",
+                    url=url,
+                    params=params,
+                )
+            else:
+                observability.increment(
+                    "external_api.non_200",
+                    service="anteater_programs",
+                    status=r.status_code,
+                )
             logger.warning("anteater %s → %d (%s)", url, r.status_code, r.text[:120])
             return None
         body = r.json()

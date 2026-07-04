@@ -34,6 +34,7 @@ from app.catalog.coverage import get_term_coverage
 from app.catalog.normalization import parse_course_mention
 from app.catalog.term import Term
 from app.catalog.types import CourseRef, CourseRecord, SectionRecord
+from app import observability
 from app.data import anteater
 from app.data import professors as profs
 from app.data.prerequisites import evaluate_prerequisite_tree
@@ -381,6 +382,19 @@ def get_sections(course_id: str, term: str) -> dict:
         return {"found": False, "source": "none", "sections": [],
                 "reason": f"could not parse term {term!r} (expected e.g. 'Spring 2026')"}
     coverage = get_term_coverage(t)
+    coverage_status = coverage.get("coverage_status")
+    if coverage_status in {"partial", "stale", "unavailable"}:
+        observability.increment("data.coverage_status", status=coverage_status)
+        observability.log_event(
+            logger,
+            logging.WARNING,
+            "data_coverage",
+            term=t.display(),
+            course_id=ref.display(),
+            status=coverage_status,
+            source="catalog",
+            updated_at=coverage.get("updated_at"),
+        )
 
     # DB
     cv = get_catalog(t)
@@ -397,7 +411,6 @@ def get_sections(course_id: str, term: str) -> dict:
                 "sections": [_section_record_to_dict(s) for s in records],
             }
 
-        coverage_status = coverage.get("coverage_status")
         if coverage_status in {"complete", "partial", "stale"}:
             if coverage_status == "complete":
                 return {
@@ -437,6 +450,16 @@ def get_sections(course_id: str, term: str) -> dict:
         )
     except Exception as e:
         logger.warning("live section fallback failed for %s %s: %s", ref.display(), t.display(), e)
+        observability.increment("data.refresh_failures", source="anteater")
+        observability.log_event(
+            logger,
+            logging.WARNING,
+            "data_refresh_failure",
+            source="anteater",
+            term=t.display(),
+            course_id=ref.display(),
+            error=f"{type(e).__name__}: {e}",
+        )
         sections_raw = None
     if sections_raw:
         return {

@@ -167,6 +167,7 @@ def isolated_test_environment(
         monkeypatch.setattr(socket.socket, "connect", _blocked_network)
         monkeypatch.setattr(socket, "create_connection", _blocked_network)
 
+    from app import observability
     from app.auth import rate_limit, security, store
     from app.data import grades, professor_summary, sessions
     from app.validation import log as validation_log
@@ -175,6 +176,7 @@ def isolated_test_environment(
     monkeypatch.setattr(security, "_SECRET_FILE", runtime_paths.auth_secret)
     monkeypatch.setattr(security, "_serializer", None)
     rate_limit.clear_rate_limits()
+    observability.clear_metrics()
     monkeypatch.setattr(sessions, "MEMORY_ROOT", runtime_paths.memory_root)
     monkeypatch.setattr(grades, "CACHE_DIR", runtime_paths.grades_cache)
     monkeypatch.setattr(
@@ -230,6 +232,7 @@ def isolated_test_environment(
     fresh_memory_manager.shutdown()
     agent_loop._continuation_store.clear()
     rate_limit.clear_rate_limits()
+    observability.clear_metrics()
 
 
 @pytest.fixture

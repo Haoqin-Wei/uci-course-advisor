@@ -17,13 +17,15 @@ Wire-up:
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 
-from app import config
+from app import config, observability
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ── /api/terms ───────────────────────────────────────────
@@ -50,6 +52,19 @@ def list_terms() -> dict:
 
         manifest = get_coverage_manifest()
         terms = manifest["terms"]
+        for item in terms:
+            status = item.get("coverage_status")
+            if status in {"partial", "stale", "unavailable"}:
+                observability.increment("catalog.coverage_status", status=status)
+                observability.log_event(
+                    logger,
+                    logging.WARNING,
+                    "catalog_coverage",
+                    term=item.get("name"),
+                    status=status,
+                    section_count=item.get("section_count"),
+                    updated_at=item.get("updated_at"),
+                )
         term_names = [item["name"] for item in terms]
         return {
             "terms": terms,
@@ -65,6 +80,13 @@ def list_terms() -> dict:
     except Exception as e:
         # Fallback: scan sections.csv directly if the catalog isn't
         # importable for whatever reason (e.g. validation module not wired).
+        observability.increment("catalog.terms_fallback")
+        observability.log_event(
+            logger,
+            logging.WARNING,
+            "catalog_terms_fallback",
+            error=f"{type(e).__name__}: {e}",
+        )
         return _terms_from_csv_fallback(error=str(e))
 
 

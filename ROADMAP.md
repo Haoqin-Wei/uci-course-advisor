@@ -353,10 +353,10 @@
 
 ### M7.3 可观测性
 
-- [ ] 增加 `/health/live` 和 `/health/ready`。
-- [ ] 每个请求生成 trace ID，串联路由、Agent、tools、data source 和 SSE 结束状态。
-- [ ] 记录首 token 延迟、总延迟、tool failure、limit reached、LLM token 和成本。
-- [ ] 数据 partial/stale、刷新失败和外部 API 限流产生明确日志与告警。
+- [x] 增加 `/health/live` 和 `/health/ready`。
+- [x] 每个请求生成 trace ID，串联路由、Agent、tools、data source 和 SSE 结束状态。
+- [x] 记录首 token 延迟、总延迟、tool failure、limit reached、LLM token 和成本。
+- [x] 数据 partial/stale、刷新失败和外部 API 限流产生明确日志与告警。
 
 ### 验收
 

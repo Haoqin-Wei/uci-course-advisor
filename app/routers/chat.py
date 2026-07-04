@@ -19,7 +19,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
 
-from app import config
+from app import config, observability
 from app.auth.deps import current_user_optional
 from app.auth.rate_limit import RateLimit, check_rate_limit
 from app.modules.state import (
@@ -600,6 +600,17 @@ def _deterministic_single_course_fallback_reply(
     coverage = get_term_coverage(target_term)
     coverage_status = coverage.get("coverage_status") or "unknown"
     source_updated_at = coverage.get("updated_at") or "unknown"
+    if coverage_status in {"partial", "stale", "unavailable", "unknown"}:
+        observability.increment("catalog.coverage_status", status=coverage_status)
+        observability.log_event(
+            logger,
+            logging.WARNING,
+            "catalog_coverage",
+            term=term_label,
+            status=coverage_status,
+            source="grounded_fallback",
+            updated_at=source_updated_at,
+        )
     term_label = target_term.display()
 
     if not catalog:
@@ -736,6 +747,14 @@ async def _handle_agent(
                 accumulated += event.get("text", "")
                 await queue.put({"type": "token", "text": event["text"]})
             elif t == "tool_call_start":
+                observability.log_event(
+                    logger,
+                    logging.INFO,
+                    "agent_tool_start",
+                    tool=event.get("name"),
+                    label=event.get("label"),
+                    term=term,
+                )
                 await queue.put({
                     "type":  "tool_call_start",
                     "name":  event.get("name"),
@@ -743,11 +762,22 @@ async def _handle_agent(
                     "args":  event.get("args"),
                 })
             elif t == "tool_call_done":
+                ok = event.get("ok", True)
+                if not ok:
+                    observability.increment("agent.tool_failures", tool=event.get("name"))
+                observability.log_event(
+                    logger,
+                    logging.INFO if ok else logging.WARNING,
+                    "agent_tool_done",
+                    tool=event.get("name"),
+                    ok=ok,
+                    term=term,
+                )
                 await queue.put({
                     "type":  "tool_call_done",
                     "name":  event.get("name"),
                     "label": event.get("label"),
-                    "ok":    event.get("ok", True),
+                    "ok":    ok,
                 })
             elif t == "cards_proposed":
                 # propose_recommendation tool fired. Default behavior
@@ -783,6 +813,19 @@ async def _handle_agent(
                 # button that POSTs to /api/chat/continue.
                 logger.info("[agent handler] forwarding limit_reached: reason=%s cid=%s",
                             event.get("reason"), (event.get("continuation_id") or "")[:8])
+                observability.increment(
+                    "agent.limit_reached",
+                    reason=event.get("reason"),
+                )
+                observability.log_event(
+                    logger,
+                    logging.WARNING,
+                    "agent_limit_reached",
+                    reason=event.get("reason"),
+                    iterations=event.get("iterations"),
+                    tool_calls=event.get("tool_calls"),
+                    term=term,
+                )
                 await queue.put({
                     "type":  "limit_reached",
                     "reason": event.get("reason"),
@@ -841,8 +884,9 @@ async def chat_stream_endpoint(
     user: dict = Depends(current_user_optional),
 ):
     check_rate_limit(request, CHAT_STREAM_LIMIT, user["id"])
+    trace_id = observability.get_trace_id()
     return StreamingResponse(
-        _stream_chat(req, background_tasks, user["id"]),
+        _stream_chat(req, background_tasks, user["id"], trace_id=trace_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -852,7 +896,13 @@ async def chat_stream_endpoint(
     )
 
 
-async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user_id: str):
+async def _stream_chat(
+    req: ChatRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str,
+    *,
+    trace_id: Optional[str] = None,
+):
     """Async generator yielding SSE-formatted events. `user_id` is resolved
     from the session cookie in the entry-point endpoint and passed in
     rather than re-derived here, since dependencies don't compose into
@@ -860,7 +910,38 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
     import asyncio
     import json as _json
 
+    trace_token = observability.set_trace_id(trace_id or observability.get_trace_id())
+    stream_started_at = observability.now()
+    first_token_ms: Optional[float] = None
+    output_parts: list[str] = []
+    tool_failures = 0
+    saw_limit_reached = False
+    status = "ok"
+    final_session_id = req.session_id
+
+    def track_sse_event(event: dict) -> None:
+        nonlocal first_token_ms, tool_failures, saw_limit_reached, status, final_session_id
+        event_type = event.get("type")
+        if event_type == "token":
+            text = event.get("text") or ""
+            output_parts.append(text)
+            if first_token_ms is None:
+                first_token_ms = observability.elapsed_ms(stream_started_at)
+                observability.observe_ms("sse.first_token_ms", first_token_ms)
+        elif event_type == "tool_call_done" and not event.get("ok", True):
+            tool_failures += 1
+            observability.increment("sse.tool_failures", tool=event.get("name"))
+        elif event_type == "limit_reached":
+            saw_limit_reached = True
+            observability.increment("sse.limit_reached", reason=event.get("reason"))
+        elif event_type == "error":
+            status = "error"
+            observability.increment("sse.errors")
+        elif event_type == "meta":
+            final_session_id = event.get("session_id") or final_session_id
+
     def sse(event: dict) -> str:
+        track_sse_event(event)
         return f"data: {_json.dumps(event, ensure_ascii=False)}\n\n"
 
     queue: asyncio.Queue = asyncio.Queue()
@@ -998,25 +1079,54 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
 
     task = asyncio.create_task(producer())
     try:
-        while True:
-            event = await queue.get()
-            if event is DONE:
-                yield sse({"type": "done"})
-                break
-            yield sse(event)
-    except asyncio.CancelledError:
-        # Client disconnected — cancel the producer so the LLM stream
-        # closes its upstream connection and DeepSeek stops generating.
-        logger.info("[stream] consumer cancelled, cascading to producer")
-        task.cancel()
         try:
-            await task
-        except (asyncio.CancelledError, Exception):
-            pass
-        raise
-    finally:
-        if not task.done():
+            while True:
+                event = await queue.get()
+                if event is DONE:
+                    yield sse({"type": "done"})
+                    break
+                yield sse(event)
+        except asyncio.CancelledError:
+            status = "cancelled"
+            # Client disconnected — cancel the producer so the LLM stream
+            # closes its upstream connection and DeepSeek stops generating.
+            logger.info("[stream] consumer cancelled, cascading to producer")
             task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+            raise
+        finally:
+            if not task.done():
+                task.cancel()
+            total_ms = observability.elapsed_ms(stream_started_at)
+            observability.observe_ms("sse.total_ms", total_ms)
+            observability.increment("sse.streams", status=status)
+            usage = observability.record_llm_usage_estimate(
+                model="agent",
+                input_text=req.message,
+                output_text="".join(output_parts),
+            )
+            observability.log_event(
+                logger,
+                logging.INFO if status == "ok" else logging.WARNING,
+                "sse_stream_end",
+                status=status,
+                session_id=final_session_id,
+                user=user_id,
+                term=req.term,
+                first_token_ms=first_token_ms,
+                total_ms=total_ms,
+                tool_failures=tool_failures,
+                limit_reached=saw_limit_reached,
+                llm_input_tokens=usage["input_tokens"],
+                llm_output_tokens=usage["output_tokens"],
+                llm_cost_usd=usage["cost_usd"],
+                llm_usage_source=usage["source"],
+            )
+    finally:
+        observability.reset_trace_id(trace_token)
 
 
 # ── Continue endpoint (resume after limit_reached) ───────
@@ -1043,8 +1153,9 @@ async def chat_continue_endpoint(
     accidentally double-bill the budget.
     """
     check_rate_limit(request, CHAT_CONTINUE_LIMIT, user["id"])
+    trace_id = observability.get_trace_id()
     return StreamingResponse(
-        _stream_continue(req, user["id"]),
+        _stream_continue(req, user["id"], trace_id=trace_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -1054,22 +1165,51 @@ async def chat_continue_endpoint(
     )
 
 
-async def _stream_continue(req: ContinueRequest, user_id: str):
+async def _stream_continue(
+    req: ContinueRequest,
+    user_id: str,
+    *,
+    trace_id: Optional[str] = None,
+):
     import json as _json
     from app.agent.loop import resume_agent
     from app.llm.adapter import _get_client, LLM_MODEL, LLM_ENABLED
 
+    trace_token = observability.set_trace_id(trace_id or observability.get_trace_id())
+    stream_started_at = observability.now()
+    first_token_ms: Optional[float] = None
+
     def sse(event: dict) -> str:
+        nonlocal first_token_ms
+        if event.get("type") == "token" and first_token_ms is None:
+            first_token_ms = observability.elapsed_ms(stream_started_at)
+            observability.observe_ms("sse.continue_first_token_ms", first_token_ms)
         return f"data: {_json.dumps(event, ensure_ascii=False)}\n\n"
 
     if not LLM_ENABLED:
-        yield sse({"type": "error", "message": "LLM not enabled"})
-        yield sse({"type": "done"})
+        try:
+            yield sse({"type": "error", "message": "LLM not enabled"})
+            yield sse({"type": "done"})
+        finally:
+            observability.increment("sse.continue_streams", status="error")
+            observability.log_event(
+                logger,
+                logging.WARNING,
+                "sse_continue_end",
+                status="error",
+                session_id=req.session_id,
+                user=user_id,
+                first_token_ms=first_token_ms,
+                total_ms=observability.elapsed_ms(stream_started_at),
+                reason="llm_not_enabled",
+            )
+            observability.reset_trace_id(trace_token)
         return
 
     # user_id is resolved from the signed session cookie by the caller.
     accumulated = ""
     saw_limit_again = False
+    status = "ok"
     try:
         client = _get_client()
         async for event in resume_agent(
@@ -1081,6 +1221,7 @@ async def _stream_continue(req: ContinueRequest, user_id: str):
                 accumulated += event.get("text", "")
             elif t == "limit_reached":
                 saw_limit_again = True
+                observability.increment("sse.continue_limit_reached")
             yield sse(event)
 
         # Persist the resumed reply to the session log so refresh /
@@ -1102,12 +1243,41 @@ async def _stream_continue(req: ContinueRequest, user_id: str):
                     len(accumulated), saw_limit_again)
     except asyncio.CancelledError:
         logger.info("[continue] cancelled by client")
+        status = "cancelled"
         raise
     except Exception as e:
         logger.exception("[continue] failed: %s", e)
+        status = "error"
+        observability.increment("sse.continue_errors")
         yield sse({"type": "error", "message": str(e)})
     finally:
-        yield sse({"type": "done"})
+        try:
+            yield sse({"type": "done"})
+        finally:
+            total_ms = observability.elapsed_ms(stream_started_at)
+            observability.observe_ms("sse.continue_total_ms", total_ms)
+            observability.increment("sse.continue_streams", status=status)
+            usage = observability.record_llm_usage_estimate(
+                model="agent_continue",
+                input_text=req.continuation_id,
+                output_text=accumulated,
+            )
+            observability.log_event(
+                logger,
+                logging.INFO if status == "ok" else logging.WARNING,
+                "sse_continue_end",
+                status=status,
+                session_id=req.session_id,
+                user=user_id,
+                first_token_ms=first_token_ms,
+                total_ms=total_ms,
+                limit_reached=saw_limit_again,
+                llm_input_tokens=usage["input_tokens"],
+                llm_output_tokens=usage["output_tokens"],
+                llm_cost_usd=usage["cost_usd"],
+                llm_usage_source=usage["source"],
+            )
+            observability.reset_trace_id(trace_token)
 
 
 # ── Schedule endpoints ───────────────────────────────────

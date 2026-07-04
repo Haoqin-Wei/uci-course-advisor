@@ -24,6 +24,7 @@ import inspect
 import logging
 from typing import Any, Callable, Optional
 
+from app import observability
 from app.data import db
 from app.scheduling import (
     resolve_pending_schedule_sections,
@@ -1604,6 +1605,14 @@ def dispatch(name: str, args: dict, *, context: dict):
     """
     fn = DISPATCH.get(name)
     if not fn:
+        observability.increment("agent.tool_failures", tool=name or "unknown")
+        observability.log_event(
+            logger,
+            logging.WARNING,
+            "agent_tool_failure",
+            tool=name,
+            reason="unknown_tool",
+        )
         return {"error": f"unknown tool: {name}"}
     try:
         sig = inspect.signature(fn)
@@ -1611,9 +1620,27 @@ def dispatch(name: str, args: dict, *, context: dict):
             return fn(context=context, **(args or {}))
         return fn(**(args or {}))
     except TypeError as e:
+        observability.increment("agent.tool_failures", tool=name)
+        observability.log_event(
+            logger,
+            logging.WARNING,
+            "agent_tool_failure",
+            tool=name,
+            reason="bad_arguments",
+            error=str(e),
+        )
         return {"error": f"bad arguments for {name}: {e}"}
     except Exception as e:
         logger.warning("tool %s failed: %s: %s", name, type(e).__name__, e)
+        observability.increment("agent.tool_failures", tool=name)
+        observability.log_event(
+            logger,
+            logging.WARNING,
+            "agent_tool_failure",
+            tool=name,
+            reason=type(e).__name__,
+            error=str(e),
+        )
         return {"error": f"{type(e).__name__}: {e}"}
 
 
