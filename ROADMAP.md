@@ -193,7 +193,7 @@
 
 ### M3.3 持久化与权限
 
-- [ ] Schedule API 使用当前认证用户验证 session ownership。
+- [x] Schedule API 使用当前认证用户验证 session ownership。
 - [ ] pending schedule 写入持久化 Session。
 - [ ] Add 操作遇到硬冲突时要求确认，不静默加入。
 - [ ] Lec/Dis/Lab 不完整时不允许展示为可执行完整课表。

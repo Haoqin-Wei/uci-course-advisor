@@ -227,3 +227,66 @@ def test_end_session_uses_cookie_user_without_archiving_duplicate_history(
         / "sessions"
         / f"{session_id}.json"
     ).exists()
+
+
+def test_schedule_mutations_enforce_cookie_session_owner(app_client):
+    from app.data import sessions
+
+    alice = _create_user("alice-schedule@example.edu")
+    bob = _create_user("bob-schedule@example.edu")
+
+    alice_session = sessions.create_session(
+        alice["id"],
+        title="Alice schedule",
+        term_scope="Spring 2025",
+    )
+    bob_session = sessions.create_session(
+        bob["id"],
+        title="Bob schedule",
+        term_scope="Spring 2025",
+    )
+    bob_pending = [
+        {"course_id": "COMPSCI161", "section": "A", "status": "pending"}
+    ]
+    sessions.update_session_state(
+        bob["id"],
+        bob_session,
+        {"pending_schedule": bob_pending},
+    )
+
+    _login_as(app_client, alice["id"])
+
+    add_response = app_client.post(
+        "/api/schedule/add",
+        json={
+            "session_id": bob_session,
+            "course_id": "IN4MATX43",
+            "section": "A",
+            "term": "Spring 2025",
+        },
+    )
+    remove_response = app_client.post(
+        "/api/schedule/remove",
+        json={
+            "session_id": bob_session,
+            "course_id": "COMPSCI161",
+            "section": "A",
+            "term": "Spring 2025",
+        },
+    )
+    clear_response = app_client.post(
+        "/api/schedule/clear",
+        json={
+            "session_id": bob_session,
+            "term": "Spring 2025",
+        },
+    )
+
+    assert add_response.status_code == 404
+    assert remove_response.status_code == 404
+    assert clear_response.status_code == 404
+    assert "Session not found" in add_response.json()["detail"]
+    assert "Session not found" in remove_response.json()["detail"]
+    assert "Session not found" in clear_response.json()["detail"]
+    assert sessions.get_session_state(bob["id"], bob_session)["pending_schedule"] == bob_pending
+    assert sessions.get_session_state(alice["id"], alice_session)["pending_schedule"] == []
