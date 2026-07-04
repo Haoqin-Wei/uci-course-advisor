@@ -25,7 +25,11 @@ import logging
 from typing import Any, Callable, Optional
 
 from app.data import db
-from app.scheduling import sections_overlap
+from app.scheduling import (
+    resolve_pending_schedule_sections,
+    sections_overlap,
+    validate_schedule_bundle,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1084,6 +1088,18 @@ def _tool_propose_recommendation(
             "section_groups":       section_groups,       # [{letter, primary, secondaries}, ...]
         })
 
+    pending_sections = resolve_pending_schedule_sections(
+        context.get("pending_schedule") or [],
+        term=effective_term,
+        section_lookup=db.get_sections,
+    )
+    schedule_validation = validate_schedule_bundle(
+        cards,
+        pending_sections=pending_sections,
+    )
+    for card in cards:
+        card["schedule_validation"] = schedule_validation
+
     # Side channel: the agent loop reads this AFTER dispatch and emits
     # a `cards_proposed` event for the SSE consumer. We don't put
     # cards in the LLM-visible return value because (a) it'd waste a
@@ -1108,6 +1124,7 @@ def _tool_propose_recommendation(
         "course_ids": [c["course_id"] for c in cards],
         "primary_codes": [c.get("primary_code") for c in cards],
         "requires_secondary": paired,   # [{course_id, primary_code, secondary_type}, ...]
+        "schedule_validation": schedule_validation,
     }
 
 

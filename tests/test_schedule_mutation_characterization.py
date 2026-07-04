@@ -44,10 +44,23 @@ def fake_schedule_catalog(monkeypatch):
                 "instructors": ["BUILDER, B."],
             },
         ],
+        "STATS67": [
+            {
+                "section_code": "40000",
+                "section_num": "A",
+                "section_type": "Lec",
+                "days": "Tu",
+                "start_time": "10:30",
+                "end_time": "11:50",
+                "location": "SSL 290",
+                "instructors": ["STAFF"],
+            },
+        ],
     }
     titles = {
         "COMPSCI161": "Design and Analysis of Algorithms",
         "IN4MATX43": "Introduction to Software Engineering",
+        "STATS67": "Introduction to Probability and Statistics",
     }
 
     def fake_get_sections(course_id: str, term: str) -> dict:
@@ -135,6 +148,71 @@ def test_schedule_add_normalizes_section_codes_dedupes_and_builds_events(
     assert payload["events"][0]["section"] == "20000"
     assert sessions_data.get_session_state("demo_001", session_id)["pending_schedule"] == payload[
         "pending_schedule"
+    ]
+
+
+def test_schedule_add_rejects_time_conflict_without_mutating_session(
+    app_client,
+    fake_schedule_catalog,
+):
+    session_id = sessions_data.create_session(
+        "demo_001",
+        title="Schedule conflict fixture",
+        term_scope="Spring 2025",
+    )
+
+    first = app_client.post(
+        "/api/schedule/add",
+        json={
+            "session_id": session_id,
+            "course_id": "COMPSCI161",
+            "section": "A",
+            "term": "Spring 2025",
+        },
+    )
+    conflict = app_client.post(
+        "/api/schedule/add",
+        json={
+            "session_id": session_id,
+            "course_id": "STATS67",
+            "section": "A",
+            "term": "Spring 2025",
+        },
+    )
+
+    assert first.status_code == 200
+    assert conflict.status_code == 409
+    payload = conflict.json()
+    assert payload["ok"] is False
+    assert payload["reason"] == "schedule_validation_failed"
+    assert payload["pending_schedule"] == [
+        {"course_id": "COMPSCI161", "section": "A", "status": "pending"}
+    ]
+    assert payload["schedule_validation"]["valid"] is False
+    assert payload["schedule_validation"]["unknowns"] == []
+    assert payload["schedule_validation"]["conflicts"] == [
+        {
+            "type": "time_conflict",
+            "scope": "pending_schedule",
+            "message": "STATS67 A conflicts with pending COMPSCI161 A",
+            "sections": [
+                {
+                    "course_id": "STATS67",
+                    "section_code": "40000",
+                    "section_num": "A",
+                    "window": "Tu 10:30–11:50",
+                },
+                {
+                    "course_id": "COMPSCI161",
+                    "section_code": "20000",
+                    "section_num": "A",
+                    "window": "TuTh 10:00–11:20",
+                },
+            ],
+        }
+    ]
+    assert sessions_data.get_session_state("demo_001", session_id)["pending_schedule"] == [
+        {"course_id": "COMPSCI161", "section": "A", "status": "pending"}
     ]
 
 

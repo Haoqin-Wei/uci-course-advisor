@@ -84,6 +84,39 @@ def test_run_agent_dispatches_tool_then_returns_final():
     client.assert_exhausted()
 
 
+def test_run_agent_passes_pending_schedule_to_tool_context(monkeypatch):
+    pending_schedule = [
+        {"course_id": "COMPSCI161", "section": "A", "status": "pending"}
+    ]
+    seen_contexts = []
+
+    def fake_dispatch(name, args, *, context):
+        seen_contexts.append(context)
+        return {"ok": True, "name": name, "args": args}
+
+    monkeypatch.setattr(agent_loop.agent_tools, "dispatch", fake_dispatch)
+    client = ScriptedLLMClient(
+        tool_response(tool_call("get_policy", {}, call_id="call_policy")),
+        text_response("Done."),
+    )
+
+    events = asyncio.run(
+        _collect(
+            agent_loop.run_agent(
+                [{"role": "user", "content": "Check policy"}],
+                client=client,
+                model="fake-model",
+                user_id="student_001",
+                term="Spring 2025",
+                pending_schedule=pending_schedule,
+            )
+        )
+    )
+
+    assert events[-1]["text"] == "Done."
+    assert seen_contexts[0]["pending_schedule"] == pending_schedule
+
+
 def test_run_agent_surfaces_llm_create_error():
     client = ScriptedLLMClient(RuntimeError("simulated outage"))
 

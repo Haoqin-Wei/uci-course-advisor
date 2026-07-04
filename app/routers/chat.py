@@ -52,7 +52,11 @@ from app.modules.answer import (
 )
 from app.modules.followup import generate_followups, generate_single_query_followups
 from app.memory import get_memory_manager
-from app.scheduling import calendar_day_names
+from app.scheduling import (
+    calendar_day_names,
+    resolve_pending_schedule_sections,
+    validate_schedule_bundle,
+)
 
 # ── Phase 3.3 / 3.5 — session storage + decision detection ──
 from app.data import sessions as sessions_data
@@ -1065,7 +1069,7 @@ async def _handle_agent(
     return (accumulated, proposed_cards, [], None)
 
 
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 
 @router.post("/chat/stream")
@@ -1456,7 +1460,48 @@ async def add_to_schedule(
         _entries_match(e, req.course_id, sec_canon, req.term)
         for e in session.get("pending_schedule", [])
     )
+    schedule_validation = {
+        "valid": True,
+        "warnings": [],
+        "conflicts": [],
+        "unknowns": [],
+    }
     if not is_dup:
+        from app.data.db import get_sections
+
+        effective_term = req.term or session.get("term")
+        candidate_sections = resolve_pending_schedule_sections(
+            [entry],
+            term=effective_term,
+            section_lookup=get_sections,
+        )
+        pending_sections = resolve_pending_schedule_sections(
+            session.get("pending_schedule", []),
+            term=effective_term,
+            section_lookup=get_sections,
+        )
+        candidate_item = (
+            {"course_id": req.course_id, "selected_sections": candidate_sections}
+            if candidate_sections
+            else {"course_id": req.course_id}
+        )
+        schedule_validation = validate_schedule_bundle(
+            [candidate_item],
+            pending_sections=pending_sections,
+        )
+        if not schedule_validation["valid"]:
+            events = _build_schedule_events(session, req.term)
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "ok": False,
+                    "reason": "schedule_validation_failed",
+                    "pending_schedule": session.get("pending_schedule", []),
+                    "events": events,
+                    "schedule_validation": schedule_validation,
+                },
+            )
+
         session.setdefault("pending_schedule", []).append(entry)
         session = update_session(
             active_session_id,
@@ -1464,7 +1509,12 @@ async def add_to_schedule(
             user_id=user_id,
         )
     events = _build_schedule_events(session, req.term)
-    return {"ok": True, "pending_schedule": session["pending_schedule"], "events": events}
+    return {
+        "ok": True,
+        "pending_schedule": session["pending_schedule"],
+        "events": events,
+        "schedule_validation": schedule_validation,
+    }
 
 
 @router.post("/schedule/remove")

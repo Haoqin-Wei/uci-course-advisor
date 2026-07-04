@@ -1102,6 +1102,7 @@ async def stream_agent_response(
         async for event in run_agent(
             messages, client=client, model=LLM_MODEL,
             user_id=user_id, term=term,
+            pending_schedule=session_state.get("pending_schedule") or [],
         ):
             yield event
     except asyncio.CancelledError:

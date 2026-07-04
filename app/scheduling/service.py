@@ -7,7 +7,7 @@ bundle validation will build on this surface in M3.2.
 """
 from __future__ import annotations
 
-from typing import Iterable, Literal, Optional
+from typing import Callable, Iterable, Literal, Optional
 
 
 DAY_CODES: tuple[str, ...] = ("M", "Tu", "W", "Th", "F", "Sa", "Su")
@@ -25,6 +25,7 @@ _PRIMARY_SECTION_PREFIXES: tuple[str, ...] = ("lec", "sem")
 _SECONDARY_SECTION_PREFIXES: tuple[str, ...] = ("dis", "lab", "stu", "act", "tut", "fld")
 SectionTimeStatus = Literal["conflict", "clear", "unknown"]
 FinalExamStatus = Literal["conflict", "clear", "unknown"]
+SectionLookup = Callable[[str, str], dict]
 
 
 def parse_day_codes(value: str) -> tuple[str, ...]:
@@ -130,6 +131,56 @@ def section_time_status(a: dict, b: dict) -> SectionTimeStatus:
 def sections_overlap(a: dict, b: dict) -> bool:
     """Backward-compatible boolean overlap check."""
     return section_time_status(a, b) == "conflict"
+
+
+def resolve_pending_schedule_sections(
+    pending_schedule: Iterable[dict],
+    *,
+    term: Optional[str],
+    section_lookup: SectionLookup,
+) -> list[dict]:
+    """
+    Resolve persisted pending schedule entries into concrete section dicts.
+
+    Session state stores compact entries such as
+    ``{"course_id": "COMPSCI161", "section": "A"}``. Bundle validation
+    needs the actual section payload with days/times/status/finals, so callers
+    provide the term-scoped ``section_lookup(course_id, term)`` function.
+    """
+    if not term:
+        return []
+
+    resolved: list[dict] = []
+    for entry in pending_schedule or []:
+        if not isinstance(entry, dict):
+            continue
+        course_id = str(entry.get("course_id") or "").strip()
+        section_ref = str(
+            entry.get("section")
+            or entry.get("section_num")
+            or entry.get("section_code")
+            or ""
+        ).strip()
+        if not course_id or not section_ref:
+            continue
+
+        try:
+            envelope = section_lookup(course_id, term)
+        except Exception:
+            continue
+        sections = envelope.get("sections", []) if envelope.get("found") else []
+        match = next(
+            (
+                section
+                for section in sections
+                if section.get("section_num") == section_ref
+                or section.get("section_code") == section_ref
+            ),
+            None,
+        )
+        if match:
+            resolved.append(_with_course_id(match, course_id))
+    return resolved
 
 
 def _section_id(section: dict) -> str:

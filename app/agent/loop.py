@@ -108,6 +108,7 @@ def _stash_continuation(
     *,
     user_id: str,
     term: Optional[str],
+    pending_schedule: Optional[list[dict]],
     iterations_used: int,
     tool_calls_used: int,
 ) -> str:
@@ -117,6 +118,7 @@ def _stash_continuation(
         "messages": list(messages),  # shallow copy — entries are dicts we won't mutate
         "user_id":  user_id,
         "term":     term,
+        "pending_schedule": list(pending_schedule or []),
         "iterations_used":  iterations_used,
         "tool_calls_used":  tool_calls_used,
         "created_at": time.time(),
@@ -138,6 +140,7 @@ async def run_agent(
     model: str,
     user_id: str,
     term: Optional[str] = None,
+    pending_schedule: Optional[list[dict]] = None,
 ) -> AsyncIterator[dict]:
     """
     Run the agent loop on a prebuilt messages list. `messages` is
@@ -151,6 +154,7 @@ async def run_agent(
     async for event in _run_loop(
         messages, client=client, model=model,
         user_id=user_id, term=term,
+        pending_schedule=pending_schedule,
         start_iteration=0, start_tool_count=0,
     ):
         yield event
@@ -195,6 +199,7 @@ async def resume_agent(
     async for event in _run_loop(
         messages, client=client, model=model,
         user_id=snap["user_id"], term=snap["term"],
+        pending_schedule=snap.get("pending_schedule") or [],
         start_iteration=0, start_tool_count=0,
     ):
         yield event
@@ -207,11 +212,16 @@ async def _run_loop(
     model: str,
     user_id: str,
     term: Optional[str],
+    pending_schedule: Optional[list[dict]],
     start_iteration: int,
     start_tool_count: int,
 ) -> AsyncIterator[dict]:
     """The actual iteration body, shared by run_agent and resume_agent."""
-    tool_context = {"user_id": user_id, "term": term}
+    tool_context = {
+        "user_id": user_id,
+        "term": term,
+        "pending_schedule": list(pending_schedule or []),
+    }
     total_tool_calls = start_tool_count
 
     for iteration in range(start_iteration, MAX_ITERATIONS):
@@ -344,6 +354,7 @@ async def _run_loop(
                     iterations_used=iteration + 1,
                     tool_calls_used=total_tool_calls,
                     user_id=user_id, term=term,
+                    pending_schedule=pending_schedule,
                     client=client, model=model,
                 ):
                     yield ev
@@ -411,6 +422,7 @@ async def _run_loop(
         iterations_used=MAX_ITERATIONS,
         tool_calls_used=total_tool_calls,
         user_id=user_id, term=term,
+        pending_schedule=pending_schedule,
         client=client, model=model,
     ):
         yield ev
@@ -424,6 +436,7 @@ async def _emit_limit_reached_and_fallback(
     tool_calls_used: int,
     user_id: str,
     term: Optional[str],
+    pending_schedule: Optional[list[dict]],
     client,
     model: str,
 ) -> AsyncIterator[dict]:
@@ -440,6 +453,7 @@ async def _emit_limit_reached_and_fallback(
     cid = _stash_continuation(
         messages,
         user_id=user_id, term=term,
+        pending_schedule=pending_schedule,
         iterations_used=iterations_used,
         tool_calls_used=tool_calls_used,
     )
@@ -477,7 +491,11 @@ async def _emit_limit_reached_and_fallback(
         s for s in agent_tools.TOOL_SCHEMAS
         if s["function"]["name"] == "propose_recommendation"
     ]
-    tool_context: dict = {"user_id": user_id, "term": term}
+    tool_context: dict = {
+        "user_id": user_id,
+        "term": term,
+        "pending_schedule": list(pending_schedule or []),
+    }
 
     try:
         response = await client.chat.completions.create(
