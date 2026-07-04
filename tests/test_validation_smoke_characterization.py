@@ -88,9 +88,47 @@ def test_spring_2025_validation_footer_surfaces_missing_course_and_instructor(
     action = decide_action(report)
     final_answer, cards, changed = apply_report(answer, [], report, action)
 
-    assert action.value == "annotate"
+    assert action.value == "remove"
     assert changed is True
     assert cards == []
     assert "**🔍 Data check:**" in final_answer
     assert "LLM mentioned COMPSCI 999" in final_answer
     assert "LLM referenced 'Professor Nonexistent'" in final_answer
+    assert "Avoid **** unless" in final_answer
+
+
+def test_validation_removes_card_with_invalid_section_code(minimal_catalog):
+    catalog = _spring_2025_fixture_catalog(minimal_catalog)
+    answer = "Take COMPSCI 161 with section 99999."
+    cards = [
+        {
+            "course_id": "COMPSCI161",
+            "primary_code": "99999",
+            "sections": [],
+            "term": "Spring 2025",
+            "data_coverage": {"coverage_status": "complete"},
+        }
+    ]
+    ctx = ValidationContext(
+        llm_answer=answer,
+        retrieved={
+            "primary": [{"course": {"course_id": "COMPSCI 161"}}],
+            "flagged": [],
+            "total_found": 1,
+        },
+        catalog=catalog,
+        session_state={"term": "Spring 2025"},
+        cards=cards,
+        user_message="what should I take",
+    )
+
+    report = validate(ctx)
+    issues = {issue.code: issue for issue in report.issues}
+    action = decide_action(report)
+    final_answer, final_cards, changed = apply_report(answer, cards, report, action)
+
+    assert issues["CARD_INVALID_SECTION_CODE"].severity.value == "error"
+    assert action.value == "remove"
+    assert changed is True
+    assert final_cards == []
+    assert "CARD_INVALID_SECTION_CODE" not in final_answer

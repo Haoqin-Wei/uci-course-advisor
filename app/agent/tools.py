@@ -1104,6 +1104,10 @@ def _tool_propose_recommendation(
             "restriction_chips":    restriction_chips,    # [{code, label, tooltip}, ...]
             "primary_restrictions": primary.get("restrictions"),  # raw "AB" / "EJL"
             "section_groups":       section_groups,       # [{letter, primary, secondaries}, ...]
+            "course_source":        info.get("source"),
+            "course_provenance":    course.get("provenance"),
+            "section_source":       sec_resp.get("source"),
+            "data_coverage":        sec_resp.get("data_coverage"),
         })
 
     pending_sections = resolve_pending_schedule_sections(

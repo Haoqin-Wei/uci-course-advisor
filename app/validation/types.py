@@ -102,6 +102,7 @@ class ValidationContext:
     retrieved: dict                               # query.py result dict
     catalog: CatalogView
     session_state: dict
+    cards: list[dict] = field(default_factory=list)
     user_message: str = ""
 
     @property

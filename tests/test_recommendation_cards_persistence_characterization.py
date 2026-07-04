@@ -170,6 +170,76 @@ def test_recommendation_cards_in_sse_meta_are_persisted_and_restored(
     assert payload["turns"][1]["validation"] == VALIDATION_REPORT
 
 
+def test_agent_path_validates_cards_before_meta_and_persistence(
+    app_client,
+    monkeypatch,
+):
+    async def fake_extract_info(_message: str) -> dict:
+        return {}
+
+    async def fake_classify_intent(_message: str) -> dict:
+        return {
+            "intent": "course_recommendation",
+            "confidence": 1.0,
+            "entities": {},
+            "source": "test",
+        }
+
+    async def fake_handle_agent(
+        _user_message,
+        _state,
+        _memory_context,
+        *,
+        queue,
+        **_kwargs,
+    ):
+        reply = "Take COMPSCI 161."
+        await queue.put({"type": "token", "text": reply})
+        return reply, [
+            {
+                "course_id": "COMPSCI161",
+                "title": "Design and Analysis of Algorithms",
+                "primary_code": "99999",
+                "sections": [],
+                "term": "Spring 2025",
+                "data_coverage": {"coverage_status": "complete"},
+            }
+        ], [], None
+
+    monkeypatch.setattr(chat_router, "extract_info_from_message", fake_extract_info)
+    monkeypatch.setattr(chat_router, "classify_intent", fake_classify_intent)
+    monkeypatch.setattr(chat_router, "_handle_agent", fake_handle_agent)
+
+    session_id = sessions_data.create_session(
+        "demo_001",
+        title="Card validation fixture",
+        term_scope="Spring 2025",
+    )
+
+    events = asyncio.run(
+        _collect_stream_events(
+            ChatRequest(
+                message="recommend one class with a bad card",
+                session_id=session_id,
+                term="Spring 2025",
+            ),
+            user_id="demo_001",
+        )
+    )
+    meta = _meta_event(events)
+
+    assert meta["cards"] == []
+    assert meta["validation_report"]["applied_action"] == "remove"
+    assert any(
+        issue["code"] == "CARD_INVALID_SECTION_CODE"
+        for issue in meta["validation_report"]["issues"]
+    )
+
+    turns = sessions_data.read_turns("demo_001", session_id)
+    assert turns[1].get("cards", []) == []
+    assert turns[1]["validation"]["applied_action"] == "remove"
+
+
 def test_recommendation_cards_can_be_restored_with_since_turn(
     app_client,
     recommendation_cards_pipeline,

@@ -65,7 +65,7 @@ from app.modules import decision_detector
 # ─────────────────────────────────────────────────────────────
 
 # ── Validation Phase 1 ───────────────────────────────────
-from app.catalog.term import Term, get_term_registry
+from app.catalog.term import Term
 from app.catalog.cache import get_catalog
 from app.validation import (
     ValidationContext, validate, decide_action, apply_report, write_log,
@@ -655,6 +655,69 @@ def _build_card(item: dict, state: dict) -> dict:
     }
 
 
+def _retrieved_from_cards(cards: list[dict]) -> dict:
+    primary: list[dict] = []
+    flagged: list[dict] = []
+    for card in cards or []:
+        course_id = card.get("course_id")
+        if not course_id:
+            continue
+        item = {"course": {"course_id": course_id}}
+        if card.get("prereq_status") in {"not_met", "unknown"} or card.get("prereq_met") is False:
+            flagged.append(item)
+        else:
+            primary.append(item)
+    return {
+        "primary": primary,
+        "flagged": flagged,
+        "total_found": len(primary) + len(flagged),
+    }
+
+
+def _validate_response(
+    *,
+    answer: str,
+    cards: list[dict],
+    retrieved: Optional[dict],
+    state: dict,
+    user_message: str,
+    term_str: Optional[str],
+    session_id: Optional[str],
+) -> tuple[str, list[dict], Optional[dict]]:
+    target_term = (
+        Term.parse(term_str or "")
+        or Term.parse(state.get("term", ""))
+    )
+    if not target_term:
+        logger.info("[validation] skipped (no target term)")
+        return answer, cards, None
+
+    catalog = get_catalog(target_term)
+    if not catalog:
+        logger.info("[validation] skipped (no catalog for %s)", target_term.term_id)
+        return answer, cards, None
+
+    ctx = ValidationContext(
+        llm_answer=answer,
+        retrieved=retrieved or _retrieved_from_cards(cards),
+        catalog=catalog,
+        session_state=state,
+        cards=cards,
+        user_message=user_message,
+    )
+    report = validate(ctx)
+    action = decide_action(report)
+    final_answer, final_cards, changed = apply_report(answer, cards, report, action)
+    write_log(ctx, report, action, changed, session_id=session_id)
+    validation_dict = report.to_dict()
+    validation_dict["applied_action"] = action.value
+    logger.info(
+        "[validation] overall=%s errors=%d warnings=%d action=%s",
+        report.overall, len(report.errors), len(report.warnings), action.value,
+    )
+    return final_answer, final_cards, validation_dict
+
+
 async def _handle_recommendation(
     user_msg,
     state,
@@ -721,49 +784,15 @@ async def _handle_recommendation(
         answer = generate_recommendation_answer(results, state)
         cards = [_build_card(i, state) for i in results.get("primary", [])]
 
-    # ── Validation Phase 1 ─────────────────────────────────
-    # Pick a target term in order of priority:
-    #   1. req.term (frontend explicit)
-    #   2. state["term"] (session state)
-    #   3. registry.default() (latest loaded term — demo fallback)
-    validation_dict = None
-    target_term = (
-        Term.parse(term_str or "")
-        or Term.parse(state.get("term", ""))
+    answer, cards, validation_dict = _validate_response(
+        answer=answer,
+        cards=cards,
+        retrieved=results,
+        state=state,
+        user_message=user_msg,
+        term_str=term_str,
+        session_id=session_id,
     )
-    catalog = get_catalog(target_term) if target_term else None
-    # Demo fallback: when the asked term has no loaded data, use whatever
-    # term IS loaded. Remove this fallback once you have multi-term data.
-    if catalog is None:
-        fallback_term = get_term_registry().default()
-        if fallback_term:
-            catalog = get_catalog(fallback_term)
-            if catalog:
-                logger.info(
-                    "[validation] term %r has no data; falling back to %s",
-                    state.get("term"), fallback_term.term_id,
-                )
-
-    if catalog and answer:
-        ctx = ValidationContext(
-            llm_answer=answer,
-            retrieved=results,
-            catalog=catalog,
-            session_state=state,
-            user_message=user_msg,
-        )
-        report = validate(ctx)
-        action = decide_action(report)
-        answer, cards, changed = apply_report(answer, cards, report, action)
-        write_log(ctx, report, action, changed, session_id=session_id)
-        validation_dict = report.to_dict()
-        logger.info(
-            "[validation] overall=%s errors=%d warnings=%d action=%s",
-            report.overall, len(report.errors), len(report.warnings), action.value,
-        )
-    else:
-        logger.info("[validation] skipped (no catalog or no answer)")
-    # ───────────────────────────────────────────────────────
 
     followups = generate_followups(results, state, "course_recommendation")
     return answer, cards, followups, validation_dict
@@ -1235,6 +1264,17 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
                     recent_turns=recent_turns,
                     decisions=decisions,
                     summary=summary,
+                )
+
+            if validation_dict is None and reply:
+                reply, cards, validation_dict = _validate_response(
+                    answer=reply,
+                    cards=cards,
+                    retrieved=None,
+                    state=state,
+                    user_message=req.message,
+                    term_str=req.term or state.get("term"),
+                    session_id=active_session_id,
                 )
 
             mem.sync_turn(user_id, req.message, reply, active_session_id)

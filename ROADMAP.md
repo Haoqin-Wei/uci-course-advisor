@@ -238,12 +238,12 @@
 
 ### M4.4 主 Agent Validation
 
-- [ ] Agent 最终文本和结构化 cards 都进入 Validation。
-- [ ] 删除使用其他学期 catalog 验证当前学期回答的 fallback。
-- [ ] 验证课程、section code、教师、时间、seat、政策日期和 tool provenance。
-- [ ] 错误卡片禁止进入 Schedule。
-- [ ] 实现明确的 KEEP、ANNOTATE、REMOVE、BLOCK 行为。
-- [ ] Validation 输出写入 session turn，历史恢复时可重现。
+- [x] Agent 最终文本和结构化 cards 都进入 Validation。
+- [x] 删除使用其他学期 catalog 验证当前学期回答的 fallback。
+- [x] 验证课程、section code、教师、时间、seat、政策日期和 tool provenance。
+- [x] 错误卡片禁止进入 Schedule。
+- [x] 实现明确的 KEEP、ANNOTATE、REMOVE、BLOCK 行为。
+- [x] Validation 输出写入 session turn，历史恢复时可重现。
 
 ### 验收
 
