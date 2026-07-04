@@ -93,12 +93,24 @@ class CourseRecord:
     """
     ref: CourseRef
     course_numeric: Optional[int] = None         # for upper/lower division filtering
-    title: Optional[str] = None                  # from catalog API (not yet available)
+    title: Optional[str] = None
     units: Optional[float] = None
+    min_units: Optional[float] = None
+    max_units: Optional[float] = None
     description: Optional[str] = None
     prerequisites: tuple[CourseRef, ...] = field(default_factory=tuple)
+    prerequisite_text: Optional[str] = None
+    prerequisite_tree: Optional[dict] = None
     major_requirements: tuple[str, ...] = field(default_factory=tuple)
     ge_categories: tuple[str, ...] = field(default_factory=tuple)
+    course_level: Optional[str] = None
+    school: Optional[str] = None
+    department_name: Optional[str] = None
+    same_as: Optional[str] = None
+    restriction: Optional[str] = None
+    dependencies: tuple[CourseRef, ...] = field(default_factory=tuple)
+    terms_offered: tuple[str, ...] = field(default_factory=tuple)
+    all_known_instructors: tuple[str, ...] = field(default_factory=tuple)
     provenance: Optional[Provenance] = None
 
 

@@ -14,6 +14,20 @@ def test_minimal_catalog_fixture_matches_production_loader(minimal_catalog):
     assert loaded_refs == course_ids
     assert len(minimal_catalog.sections) == 4
 
+    cs161_course = next(
+        course
+        for course in minimal_catalog.courses
+        if course.ref == CourseRef("COMPSCI", "161")
+    )
+    assert cs161_course.title == "Design and Analysis of Algorithms"
+    assert cs161_course.units == 4
+    assert cs161_course.description == "Studies algorithm design and analysis"
+    assert cs161_course.course_level == "Upper Division (100-199)"
+    assert cs161_course.restriction == "ICS majors have first consideration"
+    assert cs161_course.prerequisite_text == "I&C SCI 46"
+    assert cs161_course.prerequisite_tree == {}
+    assert cs161_course.terms_offered == ("2025 Spring",)
+
     cs161_sections = [
         section
         for section in minimal_catalog.sections

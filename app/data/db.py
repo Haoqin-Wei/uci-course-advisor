@@ -26,17 +26,20 @@ the LLM is expected to say so honestly.
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from typing import Optional
 
 from app.catalog.cache import get_catalog
 from app.catalog.normalization import parse_course_mention
 from app.catalog.term import Term
-from app.catalog.types import CourseRef, SectionRecord
+from app.catalog.types import CourseRef, CourseRecord, SectionRecord
 from app.data import anteater
 from app.data import professors as profs
 from app.memory import get_memory_manager
 
 logger = logging.getLogger(__name__)
+
+_course_info_cache: dict[str, dict] = {}
 
 
 # ══════════════════════════════════════════════════════════
@@ -55,6 +58,105 @@ def _to_term(term: str) -> Optional[Term]:
 def _anteater_course_key(ref: CourseRef) -> str:
     """Anteater /courses/{id} expects 'COMPSCI122A' (no space, no underscore)."""
     return f"{ref.department.replace(' ', '')}{ref.course_number}"
+
+
+def _course_cache_key(ref: CourseRef) -> str:
+    return ref.display().replace(" ", "").upper()
+
+
+def _course_number_sort_key(value: str) -> tuple[int, str, str]:
+    import re
+
+    text = (value or "").upper()
+    match = re.match(r"([A-Z]*)(\d+)([A-Z]*)$", text)
+    if not match:
+        return (10_000, text, "")
+    prefix, number, suffix = match.groups()
+    return (int(number), prefix, suffix)
+
+
+def _format_units(course: CourseRecord):
+    if course.units is not None:
+        return int(course.units) if float(course.units).is_integer() else course.units
+    if course.min_units is None and course.max_units is None:
+        return None
+    if course.min_units == course.max_units:
+        value = course.min_units
+        return int(value) if value is not None and float(value).is_integer() else value
+
+    def fmt(value):
+        if value is None:
+            return "?"
+        return str(int(value)) if float(value).is_integer() else str(value)
+
+    return f"{fmt(course.min_units)}–{fmt(course.max_units)}"
+
+
+def _course_has_local_metadata(course: CourseRecord) -> bool:
+    return any(
+        value not in (None, "", (), [])
+        for value in (
+            course.title,
+            course.units,
+            course.min_units,
+            course.max_units,
+            course.description,
+            course.course_level,
+            course.restriction,
+            course.prerequisite_text,
+            course.prerequisite_tree,
+            course.prerequisites,
+        )
+    )
+
+
+def _course_record_to_dict(course: CourseRecord) -> dict:
+    provenance = course.provenance
+    provenance_dict = (
+        {
+            "source_term": provenance.source_term,
+            "target_term": provenance.target_term,
+            "loader": provenance.loader,
+            "source_file": provenance.source_file,
+            "is_historical_proxy": provenance.is_historical_proxy,
+        }
+        if provenance
+        else None
+    )
+    return {
+        "course_id": course.ref.display(),
+        "title": course.title,
+        "units": _format_units(course),
+        "min_units": course.min_units,
+        "max_units": course.max_units,
+        "level": course.course_level,
+        "school": course.school,
+        "department": course.department_name or course.ref.department,
+        "description": course.description,
+        "same_as": course.same_as,
+        "restriction": course.restriction,
+        "prerequisite_text": course.prerequisite_text,
+        "prerequisite_tree": course.prerequisite_tree,
+        "prerequisites": [ref.display() for ref in course.prerequisites],
+        "dependencies": [ref.display() for ref in course.dependencies],
+        "ge_categories": list(course.ge_categories),
+        "terms_offered": list(course.terms_offered),
+        "all_known_instructors": list(course.all_known_instructors),
+        "provenance": provenance_dict,
+    }
+
+
+def _find_local_course_record(ref: CourseRef) -> Optional[CourseRecord]:
+    from app.catalog.term import get_term_registry
+
+    for term in get_term_registry().all():
+        cv = get_catalog(term)
+        if not cv:
+            continue
+        record = cv.get_course(ref)
+        if record and _course_has_local_metadata(record):
+            return record
+    return None
 
 
 def _section_record_to_dict(s: SectionRecord) -> dict:
@@ -169,32 +271,32 @@ def get_student_profile(student_id: str) -> dict:
 def get_course_info(course_id: str) -> dict:
     """
     Catalog metadata (title, units, description, prerequisites) for one
-    course. DB only has IDs that are offered in a known term; for
-    everything else we go straight to Anteater /courses/{id}.
+    course. Local courses.csv metadata is authoritative when present;
+    Anteater is only a fallback for courses absent from the local build.
     """
     ref = _to_ref(course_id)
     if not ref:
         return {"found": False, "source": "none",
                 "reason": f"could not parse course id {course_id!r}"}
 
-    # DB layer first: see if any cached CatalogView knows this course
-    from app.catalog.term import get_term_registry
-    for term in get_term_registry().all():
-        cv = get_catalog(term)
-        if not cv:
-            continue
-        cr = cv.get_course(ref)
-        if cr:
-            # CSV records lack title/units/description — only worth
-            # returning if we ALSO got it from a richer source. For
-            # now treat as a hint and still call Anteater for the
-            # human-readable fields.
-            break
+    cache_key = _course_cache_key(ref)
+    if cache_key in _course_info_cache:
+        return deepcopy(_course_info_cache[cache_key])
+
+    record = _find_local_course_record(ref)
+    if record:
+        result = {
+            "found": True,
+            "source": "db",
+            "course": _course_record_to_dict(record),
+        }
+        _course_info_cache[cache_key] = deepcopy(result)
+        return result
 
     # API: Anteater /courses
     data = anteater.fetch_course(_anteater_course_key(ref))
     if data:
-        return {
+        result = {
             "found": True,
             "source": "api",
             "course": {
@@ -211,9 +313,52 @@ def get_course_info(course_id: str) -> dict:
                 "all_known_instructors": data.get("instructors") or [],
             },
         }
+        _course_info_cache[cache_key] = deepcopy(result)
+        return result
 
     return {"found": False, "source": "none",
             "reason": f"{ref.display()} not found in DB or Anteater"}
+
+
+def batch_get_course_info(course_ids: list[str]) -> dict:
+    """Batch metadata enrichment for callers that already enumerated courses.
+
+    Results use the exact same course payload as get_course_info(). Duplicate
+    inputs are collapsed by canonical CourseRef while preserving first-seen
+    output order.
+    """
+    courses: list[dict] = []
+    missing: list[dict] = []
+    seen: set[str] = set()
+
+    for raw_course_id in course_ids or []:
+        ref = _to_ref(raw_course_id)
+        if not ref:
+            missing.append({
+                "course_id": raw_course_id,
+                "reason": f"could not parse course id {raw_course_id!r}",
+            })
+            continue
+        key = _course_cache_key(ref)
+        if key in seen:
+            continue
+        seen.add(key)
+        info = get_course_info(raw_course_id)
+        if info.get("found") and info.get("course"):
+            courses.append(info["course"])
+        else:
+            missing.append({
+                "course_id": ref.display(),
+                "reason": info.get("reason", "not found"),
+            })
+
+    return {
+        "found": bool(courses),
+        "source": "db_or_api" if courses else "none",
+        "courses": courses,
+        "missing": missing,
+        "total_found": len(courses),
+    }
 
 
 # ── Sections (term-strict) ───────────────────────────────
@@ -342,7 +487,10 @@ def search_courses(
                 "reason": f"no local catalog data for {t.display()}"}
     excluded = {(c or "").replace(" ", "").replace("_", "").upper()
                 for c in (exclude_ids or [])}
-    refs = cv.all_course_refs()
+    refs = sorted(
+        cv.all_course_refs(),
+        key=lambda r: (r.department, _course_number_sort_key(r.course_number), r.course_number),
+    )
     out = []
     for r in refs:
         if department and r.department != department.upper():
@@ -353,7 +501,16 @@ def search_courses(
             cr = cv.get_course(r)
             if not cr or ge_category not in (cr.ge_categories or ()):
                 continue
-        out.append({"course_id": r.display()})
+        cr = cv.get_course(r)
+        entry = {"course_id": r.display()}
+        if cr:
+            entry.update({
+                "title": cr.title,
+                "units": _format_units(cr),
+                "level": cr.course_level,
+                "ge_categories": list(cr.ge_categories),
+            })
+        out.append(entry)
     return {
         "found": True,
         "source": "db",

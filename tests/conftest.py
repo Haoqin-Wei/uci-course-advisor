@@ -210,9 +210,10 @@ def isolated_test_environment(
     monkeypatch.setattr(memory_manager, "_manager", fresh_memory_manager)
 
     from app.agent import loop as agent_loop
-    from app.data import anteater
+    from app.data import anteater, db
     from app.data.uci_general import anteater_programs
     agent_loop._continuation_store.clear()
+    db._course_info_cache.clear()
     anteater._course_cache.clear()
     anteater._sections_cache.clear()
     anteater._instructor_cache.clear()

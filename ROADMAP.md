@@ -211,12 +211,12 @@
 
 ### M4.1 Catalog 本地化
 
-- [ ] `UCIRelationalLoader` 加载 `courses.csv`。
-- [ ] CourseRecord 填充 title、units、description、level、restriction 和 prerequisite tree。
-- [ ] `get_course_info()` 优先返回本地课程元数据，Anteater 只作为 fallback。
-- [ ] 修复 loader 跳过坏 section 后 `zip(section_rows, sections)` 可能错位的问题。
-- [ ] `search_courses()` 使用稳定排序，不再从 set 产生不确定顺序。
-- [ ] 对常用课程信息增加进程内 cache 和批量 enrich 接口。
+- [x] `UCIRelationalLoader` 加载 `courses.csv`。
+- [x] CourseRecord 填充 title、units、description、level、restriction 和 prerequisite tree。
+- [x] `get_course_info()` 优先返回本地课程元数据，Anteater 只作为 fallback。
+- [x] 修复 loader 跳过坏 section 后 `zip(section_rows, sections)` 可能错位的问题。
+- [x] `search_courses()` 使用稳定排序，不再从 set 产生不确定顺序。
+- [x] 对常用课程信息增加进程内 cache 和批量 enrich 接口。
 
 ### M4.2 Prerequisite Engine
 
