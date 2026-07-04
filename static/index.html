@@ -4081,26 +4081,24 @@ async function loadTerms() {
     const res = await fetch(`${API}/api/terms`);
     if (!res.ok) throw new Error(`status ${res.status}`);
     const data = await res.json();
-    const terms = data.terms || [];
-    const def = data.default || (terms.length ? terms[0] : '');
+    const terms = (data.terms || []).map(t =>
+      typeof t === 'string' ? {name: t, coverage_status: 'complete'} : t
+    ).filter(t => t && t.name);
+    const def = data.default || (terms.length ? terms[0].name : '');
     if (!terms.length) {
       select.innerHTML = '<option value="" disabled selected>No terms loaded</option>';
       return;
     }
-    select.innerHTML = terms.map(t =>
-      `<option value="${escAttr(t)}"${t === def ? ' selected' : ''}>${escHTML(t)}</option>`
+    select.innerHTML = terms.map(t => {
+      const status = t.coverage_status || 'unavailable';
+      const suffix = status === 'complete' ? '' : ` (${status})`;
+      return `<option value="${escAttr(t.name)}"${t.name === def ? ' selected' : ''}>${escHTML(t.name + suffix)}</option>`;
+    }
     ).join('');
     updateWelcomeTerm();  // dropdown now populated — refresh subtitle
   } catch (err) {
-    console.warn('Failed to load /api/terms — falling back to static list', err);
-    // Static fallback: mirror what /api/terms currently returns from
-    // CatalogView so the dropdown is usable even when the API is down.
-    // Keep in sync with data/uci/sections.csv coverage.
-    select.innerHTML = `
-      <option value="Spring 2026" selected>Spring 2026</option>
-      <option value="Fall 2026">Fall 2026</option>
-      <option value="Spring 2025">Spring 2025</option>
-    `;
+    console.warn('Failed to load /api/terms', err);
+    select.innerHTML = '<option value="" disabled selected>Terms unavailable</option>';
     updateWelcomeTerm();
   }
 }

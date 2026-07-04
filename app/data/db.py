@@ -30,6 +30,7 @@ from copy import deepcopy
 from typing import Optional
 
 from app.catalog.cache import get_catalog
+from app.catalog.coverage import get_term_coverage
 from app.catalog.normalization import parse_course_mention
 from app.catalog.term import Term
 from app.catalog.types import CourseRef, CourseRecord, SectionRecord
@@ -379,6 +380,7 @@ def get_sections(course_id: str, term: str) -> dict:
     if not t:
         return {"found": False, "source": "none", "sections": [],
                 "reason": f"could not parse term {term!r} (expected e.g. 'Spring 2026')"}
+    coverage = get_term_coverage(t)
 
     # DB
     cv = get_catalog(t)
@@ -390,23 +392,76 @@ def get_sections(course_id: str, term: str) -> dict:
                 "source": "db",
                 "term": t.display(),
                 "course_id": ref.display(),
+                "coverage_status": coverage.get("coverage_status"),
+                "data_coverage": coverage,
                 "sections": [_section_record_to_dict(s) for s in records],
             }
 
-    # API fallback
-    sections_raw = anteater.fetch_sections(
-        department=ref.department,
-        course_number=ref.course_number,
-        year=str(t.year),
-        quarter=t.quarter,
-    )
+        coverage_status = coverage.get("coverage_status")
+        if coverage_status in {"complete", "partial", "stale"}:
+            if coverage_status == "complete":
+                return {
+                    "found": False,
+                    "source": "db",
+                    "term": t.display(),
+                    "course_id": ref.display(),
+                    "coverage_status": coverage_status,
+                    "data_coverage": coverage,
+                    "sections": [],
+                    "reason": f"no sections published for {ref.display()} in {t.display()}",
+                }
+            return {
+                "found": False,
+                "source": "db",
+                "term": t.display(),
+                "course_id": ref.display(),
+                "coverage_status": coverage_status,
+                "data_coverage": coverage,
+                "sections": [],
+                "reason": (
+                    f"local data for {t.display()} is {coverage_status}; "
+                    f"cannot confirm whether {ref.display()} has no sections"
+                ),
+            }
+
+    # API fallback only when local term data is unavailable. Complete
+    # local terms should not need live confirmation; partial/stale terms
+    # deliberately return cannot-confirm above instead of silently
+    # presenting missing local rows as definitive no-offering facts.
+    try:
+        sections_raw = anteater.fetch_sections(
+            department=ref.department,
+            course_number=ref.course_number,
+            year=str(t.year),
+            quarter=t.quarter,
+        )
+    except Exception as e:
+        logger.warning("live section fallback failed for %s %s: %s", ref.display(), t.display(), e)
+        sections_raw = None
     if sections_raw:
         return {
             "found": True,
             "source": "api",
             "term": t.display(),
             "course_id": ref.display(),
+            "coverage_status": coverage.get("coverage_status"),
+            "data_coverage": coverage,
             "sections": [_api_section_to_dict(s) for s in sections_raw],
+        }
+
+    if coverage.get("coverage_status") == "unavailable":
+        return {
+            "found": False,
+            "source": "none",
+            "term": t.display(),
+            "course_id": ref.display(),
+            "coverage_status": "unavailable",
+            "data_coverage": coverage,
+            "sections": [],
+            "reason": (
+                f"no local catalog data for {t.display()} and live API could not "
+                f"confirm sections for {ref.display()}"
+            ),
         }
 
     return {
@@ -414,6 +469,8 @@ def get_sections(course_id: str, term: str) -> dict:
         "source": "none",
         "term": t.display(),
         "course_id": ref.display(),
+        "coverage_status": coverage.get("coverage_status"),
+        "data_coverage": coverage,
         "sections": [],
         "reason": f"no sections published for {ref.display()} in {t.display()}",
     }

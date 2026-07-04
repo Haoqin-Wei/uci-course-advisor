@@ -29,23 +29,37 @@ router = APIRouter()
 @router.get("/api/terms")
 def list_terms() -> dict:
     """
-    Return the terms the backend actually has data for, plus which one
-    is the default. Frontend uses this to populate the term dropdown.
+    Return the terms the backend actually has section data for, plus
+    coverage status and which one is the default. Frontend uses this to
+    populate the term dropdown without hard-coded term names.
 
     Response shape:
         {
-          "terms":   ["Spring 2025", "Spring 2026"],
-          "default": "Spring 2025"
+          "terms": [
+            {"name": "Spring 2026", "coverage_status": "complete", ...},
+            {"name": "Fall 2026", "coverage_status": "partial", ...}
+          ],
+          "term_names": ["Spring 2026", "Fall 2026"],
+          "default": "Spring 2026"
         }
     """
     try:
-        # Re-use the catalog layer's registry — single source of truth
-        from app.catalog import get_term_registry
-        registry = get_term_registry()
-        terms = [t.display() for t in registry.all()]
-        default_t = registry.default()
-        default = default_t.display() if default_t else (terms[0] if terms else None)
-        return {"terms": terms, "default": default}
+        from app.catalog.coverage import default_term_name, get_coverage_manifest
+
+        manifest = get_coverage_manifest()
+        terms = manifest["terms"]
+        term_names = [item["name"] for item in terms]
+        return {
+            "terms": terms,
+            "term_names": term_names,
+            "default": default_term_name(manifest),
+            "manifest": {
+                "schema_version": manifest["schema_version"],
+                "generated_at": manifest["generated_at"],
+                "updated_at": manifest["updated_at"],
+                "source": manifest["source"],
+            },
+        }
     except Exception as e:
         # Fallback: scan sections.csv directly if the catalog isn't
         # importable for whatever reason (e.g. validation module not wired).
@@ -77,8 +91,18 @@ def _terms_from_csv_fallback(error: Optional[str] = None) -> dict:
         return (-int(y), -QUARTER_ORDER.get(q, 0))
     terms = sorted(counter.keys(), key=sort_key)
 
+    term_objects = [
+        {
+            "name": term,
+            "coverage_status": "partial" if counter[term] < 1_000 else "complete",
+            "section_count": counter[term],
+        }
+        for term in terms
+    ]
+
     return {
-        "terms": terms,
+        "terms": term_objects,
+        "term_names": terms,
         "default": terms[0] if terms else None,
         **({"error": error} if error else {}),
     }

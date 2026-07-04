@@ -229,12 +229,12 @@
 
 ### M4.3 数据覆盖和新鲜度
 
-- [ ] 为每次数据构建生成 manifest：term、记录数、部门覆盖、来源、更新时间、schema version。
-- [ ] 学期状态统一为 `complete / partial / stale / unavailable`。
-- [ ] 将当前 Fall 2026 标记为 partial，禁止将 452 条数据视为完整学期。
-- [ ] `/api/terms` 返回 coverage status，不只返回名称。
-- [ ] 前端 term selector 显示 partial/stale 标识。
-- [ ] API 失败时区分“没有开课”和“无法确认”。
+- [x] 为每次数据构建生成 manifest：term、记录数、部门覆盖、来源、更新时间、schema version。
+- [x] 学期状态统一为 `complete / partial / stale / unavailable`。
+- [x] 将当前 Fall 2026 标记为 partial，禁止将 452 条数据视为完整学期。
+- [x] `/api/terms` 返回 coverage status，不只返回名称。
+- [x] 前端 term selector 显示 partial/stale 标识。
+- [x] API 失败时区分“没有开课”和“无法确认”。
 
 ### M4.4 主 Agent Validation
 
