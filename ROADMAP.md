@@ -258,12 +258,12 @@
 
 ### M5.1 唯一聊天入口
 
-- [ ] `/api/chat/stream` 成为唯一产品聊天入口。
-- [ ] Agent pre-flight 失败时返回确定性的 grounded fallback，不再启动第二套 LLM 推荐流程。
-- [ ] 确认无外部客户端依赖后，弃用并删除非流式 `/api/chat`。
-- [ ] Intent 结果不再控制主链路，只保留必要的确定性 decision detection。
-- [ ] 删除 streaming 前串行执行的非必要 intent LLM 调用。
-- [ ] 将 hard-fact extraction 合并进 Agent/tool，或移动到回答后的后台任务。
+- [x] `/api/chat/stream` 成为唯一产品聊天入口。
+- [x] Agent pre-flight 失败时返回确定性的 grounded fallback，不再启动第二套 LLM 推荐流程。
+- [x] 确认无外部客户端依赖后，弃用并删除非流式 `/api/chat`。
+- [x] Intent 结果不再控制主链路，只保留必要的确定性 decision detection。
+- [x] 删除 streaming 前串行执行的非必要 intent LLM 调用。
+- [x] 将 hard-fact extraction 合并进 Agent/tool，或移动到回答后的后台任务。
 
 ### M5.2 删除 Legacy Recommendation
 

@@ -138,37 +138,38 @@ def test_authenticated_chat_ignores_body_student_id_and_uses_cookie_user(
         {"major": "Data Science", "selected_courses": ["STATS67"]},
     )
 
-    async def fake_extract_info(_message: str) -> dict:
-        return {}
+    captured = {}
 
-    async def fake_classify_intent(_message: str) -> dict:
-        return {
-            "intent": "single_query",
-            "confidence": 1.0,
-            "entities": {},
-            "source": "test",
-        }
+    async def fake_handle_agent(
+        _message,
+        state,
+        _memory_context,
+        *,
+        queue,
+        **_kwargs,
+    ):
+        captured["state"] = state
+        reply = "offline reply"
+        await queue.put({"type": "token", "text": reply})
+        return reply, [], [], None
 
-    async def fake_handle_single_query(*_args, **_kwargs):
-        return "offline reply", [], []
-
-    monkeypatch.setattr(chat_router, "extract_info_from_message", fake_extract_info)
-    monkeypatch.setattr(chat_router, "classify_intent", fake_classify_intent)
-    monkeypatch.setattr(chat_router, "_handle_single_query", fake_handle_single_query)
+    monkeypatch.setattr(chat_router, "_handle_agent", fake_handle_agent)
 
     _login_as(app_client, alice["id"])
-    response = app_client.post(
-        "/api/chat",
+    with app_client.stream(
+        "POST",
+        "/api/chat/stream",
         json={
             "message": "What should I take?",
             "session_id": "",
             "student_id": bob["id"],
             "term": "Spring 2025",
         },
-    )
+    ) as response:
+        assert response.status_code == 200
+        _ = response.read()
 
-    assert response.status_code == 200
-    state = response.json()["session_state"]
+    state = captured["state"]
     assert state["major"] == "Computer Science"
     assert state["selected_courses"] == ["ICS33"]
     assert state["major"] != "Data Science"

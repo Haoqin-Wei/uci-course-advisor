@@ -25,6 +25,15 @@ def test_terms_endpoint_uses_local_catalog(app_client):
     assert payload["manifest"]["schema_version"] == "uci-relational-v1"
 
 
+def test_non_streaming_chat_endpoint_is_removed(app_client):
+    response = app_client.post(
+        "/api/chat",
+        json={"message": "hello", "session_id": "", "term": "Spring 2026"},
+    )
+
+    assert response.status_code == 404
+
+
 def test_profile_write_uses_temporary_runtime(app_client, runtime_paths):
     response = app_client.post(
         "/api/memory/path-value-is-ignored/profile",

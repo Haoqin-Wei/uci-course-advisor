@@ -472,131 +472,34 @@ def _course_ids_in_order(text: str) -> list[str]:
     return result
 
 
-# ── Main chat endpoint ───────────────────────────────────
+def _extract_deterministic_hard_facts(message: str) -> dict:
+    """Small non-LLM extractor for explicit facts stated this turn."""
+    text = message or ""
+    lower = text.lower()
+    updates: dict = {}
 
-@router.post("/chat", response_model=ChatResponse)
-async def chat(
-    req: ChatRequest,
-    background_tasks: BackgroundTasks,
-    user: dict = Depends(current_user_optional),
-):
-    # Authoritative user id comes from the signed session cookie via
-    # current_user_optional. Anonymous callers fall back to demo_001
-    # so the legacy demo keeps working.
-    user_id = user["id"]
-    mem = get_memory_manager()
-    persistent_sid = _resolve_session_id(req.session_id, user_id, req.term)
-    active_session_id = persistent_sid
+    if re.search(r"\b(i am|i'm|my major is|majoring in)\s+(cs|computer science)\b", lower):
+        updates["major"] = "Computer Science"
+    if re.search(r"\b(easy|easier|light workload|low workload)\b", lower):
+        updates["difficulty_preference"] = "easy"
 
-    mem.initialize_session(active_session_id, user_id)
+    course_ids = _course_ids_in_order(text)
+    if course_ids:
+        if re.search(r"\b(currently taking|taking|enrolled in)\b", lower):
+            updates["currently_taking"] = course_ids
+        elif re.search(r"\b(completed|finished|passed|took)\b", lower):
+            updates["completed"] = course_ids
+    return updates
 
-    session = get_or_create_session(active_session_id, user_id=user_id)
-    if not session.get("major"):
-        load_student_into_session(active_session_id, user_id, user_id=user_id)
-        session = get_or_create_session(active_session_id, user_id=user_id)
 
-    mem.on_turn_start(active_session_id, user_id)
-    logger.info(
-        "[turn %d] user=%s msg=%r",
-        mem.turn_count(active_session_id), user_id, req.message[:120],
-    )
+# ── Legacy non-streaming chat route removed ──────────────
+#
+# `/api/chat/stream` is the only product chat entrypoint. Keep a tiny
+# unregistered tombstone for internal callers/tests that import the
+# symbol directly; no FastAPI route is attached to this function.
 
-    # ── Channel A ──
-    extracted = await extract_info_from_message(req.message)
-    if extracted:
-        logger.info("[Channel A] extracted from message: %s", extracted)
-        _capture_hard_facts(session, extracted, user_id, mem)
-        session = update_session(active_session_id, session, user_id=user_id)
-        if extracted:
-            session = update_session(active_session_id, extracted, user_id=user_id)
-    else:
-        logger.info("[Channel A] nothing extracted from message")
-
-    intent_result = await classify_intent(req.message)
-    intent = intent_result["intent"]
-    logger.info("[intent] %s (confidence=%s)", intent, intent_result.get("confidence"))
-
-    llm_entities = intent_result.get("entities", {})
-    if llm_entities:
-        eu = {}
-        for f in ("term", "major", "difficulty_preference", "recommendation_goal"):
-            if llm_entities.get(f):
-                eu[f] = llm_entities[f]
-        if eu:
-            session = update_session(active_session_id, eu, user_id=user_id)
-
-    memory_context = {
-        "system_prompt_block": mem.system_prompt_block(user_id),
-        "prefetched_context": mem.prefetch(req.message, user_id),
-    }
-
-    # off_topic used to short-circuit with a hardcoded template here;
-    # removed for the same reason as the streaming path — the
-    # classifier sees only the latest message and can't tell "继续"
-    # from genuine off-topic. Let the downstream handlers + LLM
-    # handle these cases with conversation context instead.
-
-    if needs_clarification(session, intent):
-        missing = detect_missing_fields(session, intent)
-        reply = build_clarification_response(missing)
-        mem.sync_turn(user_id, req.message, reply, active_session_id)
-        new_turn_index, did_auto_title = _persist_turn(
-            user_id, persistent_sid, req.message, reply,
-        )
-        _maybe_schedule_auto_title(
-            background_tasks, did_auto_title,
-            user_id, persistent_sid, req.message, reply,
-        )
-        _detect_and_pin_decisions(user_id, persistent_sid, req.message, new_turn_index)
-        _maybe_schedule_reflection(background_tasks, mem, active_session_id, user_id)
-        return ChatResponse(reply=reply, intent=intent,
-                            session_state=get_known_fields(active_session_id, user_id=user_id))
-
-    state = get_known_fields(active_session_id, user_id=user_id)
-
-    # ── Sync frontend's term to session state ──
-    # The dropdown is authoritative for THIS turn — without this, the
-    # downstream query falls back to state["term"] (often empty or stale)
-    # and retrieves nothing, causing the LLM to hallucinate courses.
-    if req.term and req.term != state.get("term"):
-        update_session(active_session_id, {"term": req.term}, user_id=user_id)
-        state = get_known_fields(active_session_id, user_id=user_id)
-        logger.info("[term-sync] frontend term %r written to session %s",
-                    req.term, active_session_id)
-
-    validation_dict = None                              # 新增：默认 None
-
-    if intent == "single_query":
-        reply, cards, followups = await _handle_single_query(
-            req.message, state, memory_context,
-            system_prompt=req.system_prompt,            # 新增
-        )
-    else:
-        # ── 新增：把 session_id / term / system_prompt 传进去 ──
-        reply, cards, followups, validation_dict = await _handle_recommendation(
-            req.message, state, memory_context,
-            session_id=active_session_id, term_str=req.term,
-            system_prompt=req.system_prompt,            # 新增
-        )
-
-    mem.sync_turn(user_id, req.message, reply, active_session_id)
-    new_turn_index, did_auto_title = _persist_turn(
-        user_id, persistent_sid, req.message, reply,
-        cards=cards, followups=followups, validation=validation_dict,
-    )
-    _maybe_schedule_auto_title(
-        background_tasks, did_auto_title,
-        user_id, persistent_sid, req.message, reply,
-    )
-    _detect_and_pin_decisions(user_id, persistent_sid, req.message, new_turn_index)
-    _maybe_schedule_reflection(background_tasks, mem, active_session_id, user_id)
-
-    return ChatResponse(
-        reply=reply, cards=cards, followups=followups,
-        intent=intent, session_state=state,
-        pending_schedule=session.get("pending_schedule", []),
-        validation_report=validation_dict,              # 新增
-    )
+async def chat(*_args, **_kwargs):
+    raise HTTPException(status_code=410, detail="Use /api/chat/stream")
 
 
 def _maybe_schedule_reflection(
@@ -956,6 +859,23 @@ async def _handle_single_query(message, state, memory_context=None, system_promp
 
 # ── Agent-loop handler (replaces single_query / recommendation) ──
 
+def _grounded_agent_fallback_reply(
+    user_message: str,
+    state: dict,
+    *,
+    term: Optional[str],
+    reason: Optional[str] = None,
+) -> str:
+    effective_term = term or state.get("term") or "the selected term"
+    details = f" ({reason})" if reason else ""
+    return (
+        f"I can’t reach the agent right now{details}, so I won’t invent "
+        f"course recommendations or section details. Your current term is "
+        f"{effective_term}. Please try again, or ask about a specific course "
+        f"and I’ll verify it against the local catalog when the agent is available."
+    )
+
+
 async def _handle_agent(
     user_message: str,
     state: dict,
@@ -1014,9 +934,16 @@ async def _handle_agent(
             if not saw_any_event:
                 saw_any_event = True
                 if t == "error":
-                    logger.warning("[agent] pre-flight error, falling back: %s",
+                    logger.warning("[agent] pre-flight error, grounded fallback: %s",
                                    event.get("message"))
-                    return None
+                    fallback = _grounded_agent_fallback_reply(
+                        user_message,
+                        state,
+                        term=term,
+                        reason=event.get("message"),
+                    )
+                    await queue.put({"type": "token", "text": fallback})
+                    return (fallback, [], [], None)
 
             if t == "token":
                 accumulated += event.get("text", "")
@@ -1091,13 +1018,27 @@ async def _handle_agent(
     except Exception as e:
         logger.exception("[agent handler] failed: %s", e)
         if not accumulated:
-            return None    # nothing shown → safe to fall back
+            fallback = _grounded_agent_fallback_reply(
+                user_message,
+                state,
+                term=term,
+                reason=str(e),
+            )
+            await queue.put({"type": "token", "text": fallback})
+            return (fallback, [], [], None)
         await queue.put({"type": "error", "message": str(e)})
         return (accumulated, proposed_cards, [], None)
 
     if not saw_any_event:
         # Generator yielded zero events — typically LLM_ENABLED=False.
-        return None
+        fallback = _grounded_agent_fallback_reply(
+            user_message,
+            state,
+            term=term,
+            reason="agent produced no output",
+        )
+        await queue.put({"type": "token", "text": fallback})
+        return (fallback, [], [], None)
 
     return (accumulated, proposed_cards, [], None)
 
@@ -1157,25 +1098,15 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
                         mem.turn_count(active_session_id), user_id,
                         persistent_sid, req.message[:120])
 
-            # Channel A
-            extracted = await extract_info_from_message(req.message)
+            # M5: do not run pre-agent LLM classifiers/extractors. The
+            # agent sees profile/session/history context directly; hard
+            # facts captured here are deterministic regex-only updates.
+            intent = "agent"
+            extracted = _extract_deterministic_hard_facts(req.message)
             if extracted:
                 _capture_hard_facts(session, extracted, user_id, mem)
                 session = update_session(active_session_id, session, user_id=user_id)
-                if extracted:
-                    session = update_session(active_session_id, extracted, user_id=user_id)
-
-            intent_result = await classify_intent(req.message)
-            intent = intent_result["intent"]
-            logger.info("[stream intent] %s", intent)
-
-            llm_entities = intent_result.get("entities", {})
-            if llm_entities:
-                eu = {f: llm_entities[f]
-                      for f in ("term", "major", "difficulty_preference", "recommendation_goal")
-                      if llm_entities.get(f)}
-                if eu:
-                    session = update_session(active_session_id, eu, user_id=user_id)
+                session = update_session(active_session_id, extracted, user_id=user_id)
 
             memory_context = {
                 "system_prompt_block": mem.system_prompt_block(user_id),
@@ -1227,11 +1158,9 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
                 await queue.put({"type": "token", "text": text})
 
             validation_dict = None
-            # Agent loop first; on pre-flight failure (LLM unreachable
-            # or yielded no events) fall back to the legacy intent-
-            # specific handlers. Mid-flight errors stay visible to the
-            # user — we can't cleanly fall back after streaming has
-            # started without producing duplicate text.
+            # Agent loop is the only chat chain. Pre-flight failures
+            # return a deterministic grounded fallback from _handle_agent;
+            # no legacy LLM recommendation path is started.
             agent_result = await _handle_agent(
                 req.message, state, memory_context,
                 user_id=user_id,
@@ -1242,29 +1171,7 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
                 decisions=decisions,
                 summary=summary,
             )
-            if agent_result is not None:
-                reply, cards, followups, validation_dict = agent_result
-            elif intent == "single_query":
-                logger.info("[stream] agent fallback → _handle_single_query")
-                reply, cards, followups = await _handle_single_query(
-                    req.message, state, memory_context,
-                    system_prompt=req.system_prompt,
-                    on_token=on_token,
-                    recent_turns=recent_turns,
-                    decisions=decisions,
-                    summary=summary,
-                )
-            else:
-                logger.info("[stream] agent fallback → _handle_recommendation")
-                reply, cards, followups, validation_dict = await _handle_recommendation(
-                    req.message, state, memory_context,
-                    session_id=active_session_id, term_str=req.term,
-                    system_prompt=req.system_prompt,
-                    on_token=on_token,
-                    recent_turns=recent_turns,
-                    decisions=decisions,
-                    summary=summary,
-                )
+            reply, cards, followups, validation_dict = agent_result
 
             if validation_dict is None and reply:
                 reply, cards, validation_dict = _validate_response(

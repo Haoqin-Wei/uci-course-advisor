@@ -130,7 +130,7 @@ def test_handle_agent_forwards_tool_limit_and_merges_fallback_cards(monkeypatch)
     }
 
 
-def test_handle_agent_preflight_error_returns_none_without_sse(monkeypatch):
+def test_handle_agent_preflight_error_returns_grounded_fallback(monkeypatch):
     from app.llm import adapter
 
     async def fake_stream_agent_response(*_args, **_kwargs):
@@ -151,7 +151,9 @@ def test_handle_agent_preflight_error_returns_none_without_sse(monkeypatch):
         )
     )
 
-    assert result is None
+    assert result[1:] == ([], [], None)
+    assert "I can’t reach the agent right now" in result[0]
+    assert queue.get_nowait()["text"] == result[0]
     assert queue.empty()
 
 
@@ -185,39 +187,13 @@ def test_handle_agent_midflight_error_is_forwarded_without_fallback(monkeypatch)
     ]
 
 
-def test_stream_chat_falls_back_when_agent_errors_before_streaming(monkeypatch):
+def test_stream_chat_returns_grounded_fallback_when_agent_errors_before_streaming(monkeypatch):
     from app.llm import adapter
-
-    async def fake_extract_info(_message: str) -> dict:
-        return {}
-
-    async def fake_classify_intent(_message: str) -> dict:
-        return {
-            "intent": "course_recommendation",
-            "confidence": 1.0,
-            "entities": {},
-            "source": "test",
-        }
 
     async def fake_stream_agent_response(*_args, **_kwargs):
         yield {"type": "error", "message": "LLM call failed: offline"}
 
-    async def fake_handle_recommendation(
-        _message,
-        _state,
-        _memory_context,
-        *,
-        on_token,
-        **_kwargs,
-    ):
-        reply = "legacy fallback reply"
-        await on_token(reply)
-        return reply, [], [], None
-
-    monkeypatch.setattr(chat_router, "extract_info_from_message", fake_extract_info)
-    monkeypatch.setattr(chat_router, "classify_intent", fake_classify_intent)
     monkeypatch.setattr(adapter, "stream_agent_response", fake_stream_agent_response)
-    monkeypatch.setattr(chat_router, "_handle_recommendation", fake_handle_recommendation)
 
     events = asyncio.run(
         _collect_sse(
@@ -234,8 +210,11 @@ def test_stream_chat_falls_back_when_agent_errors_before_streaming(monkeypatch):
     )
 
     assert [event["type"] for event in events] == ["token", "meta", "done"]
-    assert events[0]["text"] == "legacy fallback reply"
+    assert "I can’t reach the agent right now" in events[0]["text"]
+    assert "LLM call failed: offline" in events[0]["text"]
     assert events[1]["session_state"]["term"] == "Spring 2025"
+    assert events[1]["intent"] == "agent"
+    assert events[1]["cards"] == []
     assert "error" not in {event["type"] for event in events}
 
 

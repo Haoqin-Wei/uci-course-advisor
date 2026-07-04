@@ -75,7 +75,7 @@ def test_new_empty_session_persists_turns_without_splitting_state_by_id(
     first_events = asyncio.run(
         _collect_stream_events(
             ChatRequest(
-                message="first turn: I am CS and taking ICS33",
+                message="first turn: I am CS and taking ICS33, prefer easy classes",
                 session_id="",
                 term="Spring 2025",
             )
@@ -129,7 +129,7 @@ def test_new_session_second_turn_should_see_first_turn_state(
     first_events = asyncio.run(
         _collect_stream_events(
             ChatRequest(
-                message="first turn: I am CS and taking ICS33",
+                message="first turn: I am CS and taking ICS33, prefer easy classes",
                 session_id="",
                 term="Spring 2025",
             )
