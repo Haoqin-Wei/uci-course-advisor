@@ -1,29 +1,14 @@
 """
-Chat Router — orchestrates the SKILL.md pipeline.
+Chat Router — streams every product chat turn through the Agent loop.
 
-Two-channel memory architecture:
-    Channel A (immediate, every turn):
-        extract_info_llm() pulls hard facts from the user's message.
-        _capture_hard_facts() routes them to the right destinations:
-          • course status → session lists + MemoryManager facts
-          • identity → MemoryManager profile
-          • stated preferences (difficulty / goal) → MemoryManager facts
+The legacy non-streaming chat endpoint, pre-agent intent classifier,
+template answer path, and old recommendation query path have been
+removed. This router now handles:
 
-    Channel B (periodic, background):
-        Every REFLECTION_INTERVAL turns, after the response is sent,
-        FastAPI BackgroundTasks fires _run_reflection_task(). That task
-        spawns an independent LLM call for SOFT pattern detection.
-
-Validation (Phase 1):
-    After generate_answer_llm() returns, the answer is run through the
-    Phase 1 validator suite (course_exists / instructor / offered_term /
-    consistency). Hallucinated course IDs and unknown professors get
-    annotated as footer issues. validation_report is attached to
-    ChatResponse for inspection.
-
-Logging:
-    INFO-level logs at every capture and reflection step so the operator
-    can watch the memory pipeline live in the uvicorn terminal.
+  • deterministic hard-fact capture for explicit user statements
+  • Agent-loop SSE streaming and continuation
+  • validation of final text/cards before persistence
+  • session-backed schedule mutations
 """
 
 import asyncio
@@ -31,26 +16,14 @@ import logging
 import re
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Optional
 
 from app.auth.deps import current_user_optional
-from app.modules.intent import classify_intent
 from app.modules.state import (
     get_or_create_session, update_session,
     load_student_into_session, get_known_fields,
 )
-from app.modules.clarification import (
-    detect_missing_fields, needs_clarification,
-    build_clarification_response, extract_info_from_message,
-)
-from app.modules.query import (
-    query_course_recommendations, query_single_course,
-)
-from app.modules.answer import (
-    generate_recommendation_answer, generate_single_query_answer,
-)
-from app.modules.followup import generate_followups, generate_single_query_followups
 from app.memory import get_memory_manager
 from app.scheduling import (
     build_pending_schedule_bundle_items,
@@ -67,6 +40,8 @@ from app.modules import decision_detector
 # ── Validation Phase 1 ───────────────────────────────────
 from app.catalog.term import Term
 from app.catalog.cache import get_catalog
+from app.catalog.coverage import get_term_coverage
+from app.catalog.normalization import parse_course_mention
 from app.validation import (
     ValidationContext, validate, decide_action, apply_report, write_log,
 )
@@ -98,16 +73,6 @@ class ChatRequest(BaseModel):
     session_id: str = ""
     term: Optional[str] = None                          # 新增
     system_prompt: Optional[str] = None                 # 新增：前端自定义 LLM system prompt
-
-
-class ChatResponse(BaseModel):
-    reply: str
-    cards: list[dict] = Field(default_factory=list)
-    followups: list[str] = Field(default_factory=list)
-    intent: str = ""
-    session_state: dict = Field(default_factory=dict)
-    pending_schedule: list[dict] = Field(default_factory=list)
-    validation_report: Optional[dict] = None            # 新增
 
 
 # ── Session ID resolution ─────────────────────────────────
@@ -336,43 +301,6 @@ def _detect_and_pin_decisions(
         logger.warning("[stream] decision-pinning failed: %s", e)
 
 
-def _resolve_referenced_course(recent_turns: list[dict]) -> Optional[str]:
-    """
-    Scan recent conversation turns (newest first) for a course ID.
-
-    Used by _handle_single_query when the current user message contains
-    no explicit course ID but is likely a follow-up referring to
-    something earlier ("那个课", "the first one", "上面提到的那门").
-
-    Prefers user-side mentions (the subject the user steered the
-    conversation toward) over assistant-side mentions (the assistant
-    might rattle off many courses in a recommendation reply, only one
-    of which is what the user wants more info on).
-
-    Returns the most recent course ID seen, or None.
-    """
-    if not recent_turns:
-        return None
-
-    # First pass: walk user turns newest-first
-    for turn in reversed(recent_turns):
-        if turn.get("role") != "user":
-            continue
-        matches = _COURSE_ID_SCAN.findall(turn.get("content") or "")
-        if matches:
-            return matches[0].upper()
-
-    # Second pass: fall back to assistant turns if no user mention
-    for turn in reversed(recent_turns):
-        if turn.get("role") != "assistant":
-            continue
-        matches = _COURSE_ID_SCAN.findall(turn.get("content") or "")
-        if matches:
-            return matches[0].upper()
-
-    return None
-
-
 # ── Channel A: hard-fact capture (every turn) ────────────
 
 def _merge_into_list(session: dict, field: str, items: list[str]) -> list[str]:
@@ -521,43 +449,6 @@ def _maybe_schedule_reflection(
         )
 
 
-# ── Card builder ─────────────────────────────────────────
-
-def _build_card(item: dict, state: dict) -> dict:
-    c = item["course"]
-    reasons = []
-    major = state.get("major")
-    if major and major in c.get("major_requirement", []):
-        reasons.append(f"Counts toward {major}")
-    grades = item.get("grade_distribution") or {}
-    avg = grades.get("avg_gpa", 0)
-    if avg >= 3.3:
-        reasons.append(f"Generous grading (avg GPA {avg:.1f})")
-    for sec in item.get("sections", []):
-        pr = sec.get("professor_rating") or {}
-        if pr.get("overall") and pr["overall"] >= 4.5:
-            reasons.append(f"{sec['instructor']} rated {pr['overall']}/5")
-            break
-    return {
-        "course_id": c["course_id"], "title": c["title"],
-        "units": c["units"], "department": c.get("department", ""),
-        "description": c.get("description", ""),
-        "ge_category": c.get("ge_category"),
-        "major_requirement": c.get("major_requirement", []),
-        "prereq_status": item.get("prereq_status", "met" if item.get("prereq_met", True) else "not_met"),
-        "prereq_met": item.get("prereq_met", True),
-        "prereq_missing": item.get("prereq_missing", []),
-        "prereq_unknown": item.get("prereq_unknown", []),
-        "prereq_required": item.get("prereq_required", []),
-        "has_conflict": item.get("has_conflict", False),
-        "conflict_summary": item.get("conflict_summary", ""),
-        "conflict_status":  item.get("conflict_status",  "none"),
-        "grade_distribution": item.get("grade_distribution"),
-        "sections": item.get("sections", []),
-        "reason": ". ".join(reasons) if reasons else "Solid option.",
-    }
-
-
 def _retrieved_from_cards(cards: list[dict]) -> dict:
     primary: list[dict] = []
     flagged: list[dict] = []
@@ -621,233 +512,11 @@ def _validate_response(
     return final_answer, final_cards, validation_dict
 
 
-async def _handle_recommendation(
-    user_msg,
-    state,
-    memory_context=None,
-    session_id=None,                                    # 新增
-    term_str=None,                                      # 新增
-    system_prompt=None,                                 # 新增
-    on_token=None,                                      # 新增：流式回调
-    # ── Phase 3.4 ─────────────────────────────────────
-    recent_turns: Optional[list[dict]] = None,
-    decisions: Optional[list[dict]] = None,
-    summary: Optional[str] = None,
-):
-    from app.llm.adapter import generate_answer_llm
-    results = query_course_recommendations(
-        # No default — the agent path is primary now; if this legacy
-        # handler runs without a term in session state, let it fail
-        # explicitly rather than silently routing to a wrong term.
-        term=state.get("term"), major=state.get("major"),
-        completed_courses=state.get("completed_courses", []),
-        selected_courses=state.get("selected_courses", []),
-        difficulty_preference=state.get("difficulty_preference"),
-        recommendation_goal=state.get("recommendation_goal"),
-    )
-    # Empty / whitespace-only override → adapter falls back to default.
-    sp_override = system_prompt.strip() if (system_prompt and system_prompt.strip()) else None
-
-    if on_token is not None:
-        # Streaming path — yield chunks to caller as they arrive.
-        from app.llm.adapter import stream_answer_llm
-        chunks: list[str] = []
-        async for chunk in stream_answer_llm(
-            user_msg, results, state,
-            memory_context=memory_context,
-            system_prompt_override=sp_override,
-            recent_turns=recent_turns,
-            decisions=decisions,
-            summary=summary,
-        ):
-            chunks.append(chunk)
-            await on_token(chunk)
-        answer = "".join(chunks) or None
-    else:
-        # Non-streaming path (existing behavior).
-        answer = await generate_answer_llm(
-            user_msg, results, state,
-            memory_context=memory_context,
-            system_prompt_override=sp_override,             # 新增
-            recent_turns=recent_turns,
-            decisions=decisions,
-            summary=summary,
-        )
-
-    if answer:
-        all_candidates = results.get("primary", []) + results.get("flagged", [])
-        by_id = {item["course"]["course_id"].upper(): item for item in all_candidates}
-        cards = []
-        for cid in _course_ids_in_order(answer):
-            if cid in by_id:
-                cards.append(_build_card(by_id[cid], state))
-        if not cards:
-            cards = [_build_card(i, state) for i in results.get("primary", [])[:3]]
-    else:
-        answer = generate_recommendation_answer(results, state)
-        cards = [_build_card(i, state) for i in results.get("primary", [])]
-
-    answer, cards, validation_dict = _validate_response(
-        answer=answer,
-        cards=cards,
-        retrieved=results,
-        state=state,
-        user_message=user_msg,
-        term_str=term_str,
-        session_id=session_id,
-    )
-
-    followups = generate_followups(results, state, "course_recommendation")
-    return answer, cards, followups, validation_dict
-
-
-async def _handle_single_query(message, state, memory_context=None, system_prompt=None, on_token=None,
-                               recent_turns: Optional[list[dict]] = None,
-                               decisions: Optional[list[dict]] = None,
-                               summary: Optional[str] = None):
-    from app.llm.adapter import generate_answer_llm
-    sp_override = system_prompt.strip() if (system_prompt and system_prompt.strip()) else None
-
-    async def _call_llm(payload_data):
-        """Run generate_answer_llm OR stream_answer_llm depending on on_token."""
-        if on_token is None:
-            return await generate_answer_llm(
-                message, payload_data, state,
-                memory_context=memory_context,
-                system_prompt_override=sp_override,
-                recent_turns=recent_turns,
-                decisions=decisions,
-                summary=summary,
-            )
-        from app.llm.adapter import stream_answer_llm
-        chunks: list[str] = []
-        async for chunk in stream_answer_llm(
-            message, payload_data, state,
-            memory_context=memory_context,
-            system_prompt_override=sp_override,
-            recent_turns=recent_turns,
-            decisions=decisions,
-            summary=summary,
-        ):
-            chunks.append(chunk)
-            await on_token(chunk)
-        return "".join(chunks) or None
-
-    # ── Phase 3 R3 cleanup: regex extraction + real catalog ──
-    # Was: `for c in mock_data.COURSES: if c["course_id"].lower() in ml: ...`
-    # Problems with the old approach:
-    #   - lower()-substring match falsely matches "CS33" inside "CS331"
-    #   - only finds courses present in mock_data (10 of 6687)
-    #   - drags mock_data into the hot path even when LLM is fine
-    # The fix: extract course IDs via the Unicode-safe regex (same one
-    # _resolve_referenced_course uses), then query the REAL catalog
-    # through db.query_single_course (loads from data/uci/courses.csv).
-    for raw_course_id in _COURSE_ID_SCAN.findall(message):
-        course_id = raw_course_id.upper()
-        data = query_single_course(course_id, state.get("term"))
-        if data:
-            card = {
-                "course_id": data["course"]["course_id"],
-                "title": data["course"]["title"],
-                "units": data["course"]["units"],
-                "department": data["course"].get("department", ""),
-                "description": data["course"].get("description", ""),
-                "ge_category": data["course"].get("ge_category"),
-                "major_requirement": data["course"].get("major_requirement", []),
-                "prereq_met": True, "prereq_missing": [],
-                "has_conflict": False,
-                "grade_distribution": data.get("grade_distribution"),
-                "sections": data.get("sections", []),
-                "reason": "",
-            }
-            ans = await _call_llm(data)
-            if not ans:
-                logger.warning(
-                    "[single_query] LLM returned empty for %s — using template fallback",
-                    course_id,
-                )
-                ans = generate_single_query_answer(data)
-                if on_token:
-                    await on_token(ans)        # fallback also reaches the stream
-            fu = generate_single_query_followups(course_id, state)
-            return ans, [card], fu
-    # (Legacy: the old code looped over mock_data.PROFESSOR_RATINGS here
-    # to handle "how is professor X" queries. That mock table is gone —
-    # the agent's get_professor_rating tool hits Anteater /instructors
-    # directly. This branch is unreachable in the current pipeline; left
-    # as a no-op rather than restored so the fallback path doesn't try
-    # to invent professors out of nothing.)
-
-    # ── Phase 3.4 polish: referential follow-up resolution ──
-    # The user's current message has no explicit course ID or
-    # professor name — but they're likely referring to something we
-    # discussed earlier ("那个课怎么样" / "what about that course").
-    #
-    # Strategy:
-    #   1. Scan recent_turns for the most recently mentioned course ID
-    #   2. If found → run query_single_course on it so we get REAL
-    #      grade distribution + sections (not LLM-fabricated stats)
-    #   3. Pass the full data to the LLM, which now has both history
-    #      and real data — produces a grounded answer + a course card
-    #   4. If no course in history either → fall through to LLM with
-    #      history alone, then to the hardcoded help message
-    if recent_turns:
-        referenced = _resolve_referenced_course(recent_turns)
-        if referenced:
-            data = query_single_course(referenced, state.get("term"))
-            if data:
-                logger.info("[single_query] referential resolve %r → %s (full data)",
-                            message[:40], referenced)
-                card = {
-                    "course_id": data["course"]["course_id"],
-                    "title": data["course"]["title"],
-                    "units": data["course"]["units"],
-                    "department": data["course"].get("department", ""),
-                    "description": data["course"].get("description", ""),
-                    "ge_category": data["course"].get("ge_category"),
-                    "major_requirement": data["course"].get("major_requirement", []),
-                    "prereq_met": True, "prereq_missing": [],
-                    "has_conflict": False,
-                    "grade_distribution": data.get("grade_distribution"),
-                    "sections": data.get("sections", []),
-                    "reason": "",
-                }
-                ans = await _call_llm(data)
-                if ans:
-                    fu = generate_single_query_followups(referenced, state)
-                    return ans, [card], fu
-                # LLM empty → fall through to history-only call
-
-        # No course in history (or query returned None) — try LLM
-        # with history alone. It may still produce a useful answer
-        # for non-course follow-ups ("你刚才的建议靠谱吗").
-        ans = await _call_llm({})
-        if ans:
-            return ans, [], []
-        # else fall through to fallback
-
-    fallback = ("I'm not sure which course or professor you mean. "
-                "Try a course ID like ICS33 or a professor name.")
-    if on_token:
-        await on_token(fallback)
-    return (fallback, [], [])
-
-
 # ══════════════════════════════════════════════════════════
 #  Streaming endpoint  /api/chat/stream
 # ══════════════════════════════════════════════════════════
 #
-# Same logic as the /api/chat endpoint above, but the LLM-generated
-# `reply` field is streamed back via Server-Sent Events instead of
-# waiting for the full text. cards/followups/validation are sent as
-# one final `meta` event.
-#
-# Why it matters:
-#   - UX: user sees text appearing immediately (no "Send → 10s blank → big reply")
-#   - Stop button: aborting the fetch closes the HTTP connection, FastAPI
-#     cancels the producer task, the async iterator inside stream_answer_llm
-#     gets CancelledError, AsyncOpenAI closes its connection to DeepSeek,
-#     and DeepSeek stops generating tokens. No wasted API tokens.
+# cards/followups/validation are sent as one final `meta` event.
 #
 # Wire format:
 #   data: {"type": "token", "text": "<chunk>"}
@@ -857,7 +526,7 @@ async def _handle_single_query(message, state, memory_context=None, system_promp
 #   data: {"type": "done"}
 
 
-# ── Agent-loop handler (replaces single_query / recommendation) ──
+# ── Agent-loop handler ───────────────────────────────────
 
 def _grounded_agent_fallback_reply(
     user_message: str,
@@ -866,6 +535,15 @@ def _grounded_agent_fallback_reply(
     term: Optional[str],
     reason: Optional[str] = None,
 ) -> str:
+    course_reply = _deterministic_single_course_fallback_reply(
+        user_message,
+        state,
+        term=term,
+        reason=reason,
+    )
+    if course_reply:
+        return course_reply
+
     effective_term = term or state.get("term") or "the selected term"
     details = f" ({reason})" if reason else ""
     return (
@@ -874,6 +552,126 @@ def _grounded_agent_fallback_reply(
         f"{effective_term}. Please try again, or ask about a specific course "
         f"and I’ll verify it against the local catalog when the agent is available."
     )
+
+
+def _format_course_units_for_fallback(record) -> str:
+    if record.units is not None:
+        return str(int(record.units)) if float(record.units).is_integer() else str(record.units)
+    if record.min_units is None and record.max_units is None:
+        return "unknown units"
+    if record.min_units == record.max_units:
+        value = record.min_units
+        return str(int(value)) if value is not None and float(value).is_integer() else str(value)
+
+    def fmt(value):
+        if value is None:
+            return "?"
+        return str(int(value)) if float(value).is_integer() else str(value)
+
+    return f"{fmt(record.min_units)}–{fmt(record.max_units)}"
+
+
+def _deterministic_single_course_fallback_reply(
+    user_message: str,
+    state: dict,
+    *,
+    term: Optional[str],
+    reason: Optional[str] = None,
+) -> Optional[str]:
+    """Local-only fallback for explicit single-course questions."""
+    refs = []
+    seen = set()
+    for course_id in _course_ids_in_order(user_message):
+        ref = parse_course_mention(course_id)
+        if not ref:
+            continue
+        key = ref.course_id()
+        if key in seen:
+            continue
+        seen.add(key)
+        refs.append(ref)
+    if len(refs) != 1:
+        return None
+
+    effective_term = term or state.get("term")
+    target_term = Term.parse(effective_term or "")
+    if not target_term:
+        return None
+
+    ref = refs[0]
+    details = f" ({reason})" if reason else ""
+    prefix = (
+        f"I can’t reach the agent right now{details}. "
+        "Here is the local catalog fallback for the single course you mentioned."
+    )
+
+    catalog = get_catalog(target_term)
+    coverage = get_term_coverage(target_term)
+    coverage_status = coverage.get("coverage_status") or "unknown"
+    source_updated_at = coverage.get("updated_at") or "unknown"
+    term_label = target_term.display()
+
+    if not catalog:
+        return (
+            f"{prefix}\n\n"
+            f"I parsed the course as {ref.display()}, but local catalog data for "
+            f"{term_label} is unavailable. I cannot verify title, units, sections, "
+            f"or prerequisites without the agent/tools."
+        )
+
+    record = catalog.get_course(ref)
+    if not record:
+        if coverage_status in {"partial", "stale"}:
+            status_line = (
+                f"Local data for {term_label} is {coverage_status}, so I cannot "
+                f"confirm whether {ref.display()} exists or is offered."
+            )
+        else:
+            status_line = f"{ref.display()} was not found in the local catalog for {term_label}."
+        return (
+            f"{prefix}\n\n"
+            f"{status_line} Source coverage: {coverage_status}, updated_at: {source_updated_at}."
+        )
+
+    sections = catalog.get_sections(ref)
+    units = _format_course_units_for_fallback(record)
+    title = record.title or "Untitled course"
+    lines = [
+        prefix,
+        "",
+        f"{record.ref.display()} — {title} ({units} units)",
+    ]
+    if record.description:
+        lines.append(record.description)
+    if record.prerequisite_text:
+        lines.append(f"Prerequisites: {record.prerequisite_text}")
+    if record.restriction:
+        lines.append(f"Restriction: {record.restriction}")
+
+    if sections:
+        examples = []
+        for section in sections[:3]:
+            when = " ".join(
+                part for part in (section.days, section.start_time, section.end_time)
+                if part
+            )
+            examples.append(
+                f"{section.section_type or 'Section'} {section.section_num or section.section_code}"
+                + (f" ({when})" if when else "")
+            )
+        lines.append(
+            f"Sections in {term_label}: {len(sections)} local section(s) found"
+            + (f"; examples: {', '.join(examples)}." if examples else ".")
+        )
+    elif coverage_status == "complete":
+        lines.append(f"Sections in {term_label}: no local sections found.")
+    else:
+        lines.append(
+            f"Sections in {term_label}: local data is {coverage_status}; cannot confirm availability."
+        )
+
+    lines.append(f"Source coverage: {coverage_status}, updated_at: {source_updated_at}.")
+    return "\n".join(lines)
 
 
 async def _handle_agent(
@@ -888,17 +686,16 @@ async def _handle_agent(
     recent_turns: Optional[list[dict]] = None,
     decisions: Optional[list[dict]] = None,
     summary: Optional[str] = None,
-) -> Optional[tuple[str, list, list, Optional[dict]]]:
+) -> tuple[str, list, list, Optional[dict]]:
     """
     Drive a tool-using LLM turn via app.agent.loop and forward its
     events to the SSE queue.
 
     Pre-flight fallback: if the agent's FIRST event is an error (LLM
-    call failed before any output reached the client), return None so
-    the caller can fall back to the legacy single_query / recommendation
-    handler. Mid-flight errors surface as visible error events — by
-    that point the user has already seen partial output, falling back
-    would produce duplicate text.
+    call failed before any output reached the client), stream a
+    deterministic grounded fallback instead of starting another LLM
+    recommendation path. Mid-flight errors surface as visible error
+    events — by that point the user has already seen partial output.
 
     Returns (reply_text, cards, followups, validation) on success.
 
@@ -929,8 +726,7 @@ async def _handle_agent(
             t = event.get("type")
 
             # Pre-flight fallback gate: if the very first event is an
-            # error, the agent never streamed anything to the client,
-            # so legacy fallback is safe.
+            # error, the agent never streamed anything to the client.
             if not saw_any_event:
                 saw_any_event = True
                 if t == "error":
@@ -1125,27 +921,11 @@ async def _stream_chat(req: ChatRequest, background_tasks: BackgroundTasks, user
                 decisions    = []
                 summary      = None
 
-            # NOTE: the off_topic short-circuit that used to live here
-            # was removed. It rendered a hardcoded English "I'm your
-            # UCI course advisor..." template whenever classify_intent
-            # tagged a message off_topic — but the classifier only
-            # sees the latest message, so short replies like "继续",
-            # "需要", "yes" routinely tripped it. Now every message
-            # flows into the agent loop, which has the conversation
-            # history (recent_turns) and can interpret continuations
-            # in context. The agent's system prompt handles genuinely
-            # off-topic questions (weather, food, etc.) by politely
-            # redirecting in the user's language.
-
-            # NOTE: legacy `needs_clarification` short-circuit lived here.
-            # It returned a hardcoded English "I'd love to help! A few
-            # quick questions first..." template — which (a) ignored the
-            # student's language and (b) ignored that the term was
-            # already selected in the dropdown. The agent loop below
-            # handles underspecified queries correctly: it sees the
-            # selected term in its system context, calls tools to fill
-            # gaps, and asks its own clarifying questions in the user's
-            # language if any are truly needed.
+            # Off-topic and clarification decisions are handled inside
+            # the agent with recent_turns/session context. The old
+            # pre-agent short-circuits were removed because they only
+            # saw the latest message and produced hardcoded English
+            # templates for valid continuations like "继续" / "yes".
 
             state = get_known_fields(active_session_id, user_id=user_id)
             if req.term and req.term != state.get("term"):

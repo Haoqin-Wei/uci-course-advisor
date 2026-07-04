@@ -91,17 +91,6 @@ def _meta_event(events: list[dict]) -> dict:
 
 @pytest.fixture
 def recommendation_cards_pipeline(monkeypatch):
-    async def fake_extract_info(_message: str) -> dict:
-        return {}
-
-    async def fake_classify_intent(_message: str) -> dict:
-        return {
-            "intent": "course_recommendation",
-            "confidence": 1.0,
-            "entities": {},
-            "source": "test",
-        }
-
     async def fake_handle_agent(
         _user_message,
         _state,
@@ -114,8 +103,6 @@ def recommendation_cards_pipeline(monkeypatch):
         await queue.put({"type": "token", "text": reply})
         return reply, RECOMMENDATION_CARDS, FOLLOWUPS, VALIDATION_REPORT
 
-    monkeypatch.setattr(chat_router, "extract_info_from_message", fake_extract_info)
-    monkeypatch.setattr(chat_router, "classify_intent", fake_classify_intent)
     monkeypatch.setattr(chat_router, "_handle_agent", fake_handle_agent)
 
 
@@ -174,17 +161,6 @@ def test_agent_path_validates_cards_before_meta_and_persistence(
     app_client,
     monkeypatch,
 ):
-    async def fake_extract_info(_message: str) -> dict:
-        return {}
-
-    async def fake_classify_intent(_message: str) -> dict:
-        return {
-            "intent": "course_recommendation",
-            "confidence": 1.0,
-            "entities": {},
-            "source": "test",
-        }
-
     async def fake_handle_agent(
         _user_message,
         _state,
@@ -206,8 +182,6 @@ def test_agent_path_validates_cards_before_meta_and_persistence(
             }
         ], [], None
 
-    monkeypatch.setattr(chat_router, "extract_info_from_message", fake_extract_info)
-    monkeypatch.setattr(chat_router, "classify_intent", fake_classify_intent)
     monkeypatch.setattr(chat_router, "_handle_agent", fake_handle_agent)
 
     session_id = sessions_data.create_session(

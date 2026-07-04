@@ -267,14 +267,14 @@
 
 ### M5.2 删除 Legacy Recommendation
 
-- [ ] 删除 `_handle_recommendation()`。
-- [ ] 删除 `_handle_single_query()`，保留一个最小确定性单课程降级查询即可。
-- [ ] 删除 legacy `_build_card()`。
-- [ ] 删除 `modules/query.py` 的旧推荐和排序流程。
-- [ ] 删除 `modules/answer.py` 的模板回答。
-- [ ] 删除未使用的 `query_professor()` 和 `generate_professor_answer()`。
-- [ ] 评估 structured followup chips 是否仍需要；需要则基于 Agent/cards 重写，否则删除 `modules/followup.py`。
-- [ ] `clarification.py` 只保留仍被事实提取使用的部分，或整体迁移后删除。
+- [x] 删除 `_handle_recommendation()`。
+- [x] 删除 `_handle_single_query()`，保留一个最小确定性单课程降级查询即可。
+- [x] 删除 legacy `_build_card()`。
+- [x] 删除 `modules/query.py` 的旧推荐和排序流程。
+- [x] 删除 `modules/answer.py` 的模板回答。
+- [x] 删除未使用的 `query_professor()` 和 `generate_professor_answer()`。
+- [x] 评估 structured followup chips 是否仍需要；需要则基于 Agent/cards 重写，否则删除 `modules/followup.py`。
+- [x] `clarification.py` 只保留仍被事实提取使用的部分，或整体迁移后删除。
 
 ### M5.3 统一课程号解析
 

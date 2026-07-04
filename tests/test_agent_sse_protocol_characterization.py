@@ -157,6 +157,35 @@ def test_handle_agent_preflight_error_returns_grounded_fallback(monkeypatch):
     assert queue.empty()
 
 
+def test_handle_agent_preflight_error_can_answer_single_course_from_local_catalog(monkeypatch):
+    from app.llm import adapter
+
+    async def fake_stream_agent_response(*_args, **_kwargs):
+        yield {"type": "error", "message": "LLM call failed: offline"}
+
+    monkeypatch.setattr(adapter, "stream_agent_response", fake_stream_agent_response)
+    queue: asyncio.Queue = asyncio.Queue()
+
+    result = asyncio.run(
+        chat_router._handle_agent(
+            "Tell me about COMPSCI161",
+            {"term": "Spring 2025"},
+            {"system_prompt_block": "", "prefetched_context": ""},
+            user_id="demo_001",
+            term="Spring 2025",
+            system_prompt=None,
+            queue=queue,
+        )
+    )
+
+    assert result[1:] == ([], [], None)
+    assert "local catalog fallback" in result[0]
+    assert "COMPSCI 161 — Design and Analysis of Algorithms" in result[0]
+    assert "Sections in Spring 2025:" in result[0]
+    assert queue.get_nowait()["text"] == result[0]
+    assert queue.empty()
+
+
 def test_handle_agent_midflight_error_is_forwarded_without_fallback(monkeypatch):
     from app.llm import adapter
 

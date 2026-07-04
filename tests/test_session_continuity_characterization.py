@@ -31,23 +31,6 @@ def _meta_event(events: list[dict]) -> dict:
 
 @pytest.fixture
 def deterministic_chat_pipeline(monkeypatch):
-    async def fake_extract_info(message: str) -> dict:
-        if "first turn" not in message:
-            return {}
-        return {
-            "major": "Computer Science",
-            "currently_taking": ["ICS33"],
-            "difficulty_preference": "easy",
-        }
-
-    async def fake_classify_intent(_message: str) -> dict:
-        return {
-            "intent": "course_recommendation",
-            "confidence": 1.0,
-            "entities": {},
-            "source": "test",
-        }
-
     async def fake_handle_agent(
         user_message,
         _state,
@@ -60,12 +43,6 @@ def deterministic_chat_pipeline(monkeypatch):
         await queue.put({"type": "token", "text": reply})
         return reply, [], [], None
 
-    monkeypatch.setattr(
-        chat_router,
-        "extract_info_from_message",
-        fake_extract_info,
-    )
-    monkeypatch.setattr(chat_router, "classify_intent", fake_classify_intent)
     monkeypatch.setattr(chat_router, "_handle_agent", fake_handle_agent)
 
 

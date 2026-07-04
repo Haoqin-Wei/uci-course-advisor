@@ -31,17 +31,6 @@ def _meta_event(events: list[dict]) -> dict:
 def captured_stream_agent_context(monkeypatch):
     captured: dict[str, object] = {}
 
-    async def fake_extract_info(_message: str) -> dict:
-        return {}
-
-    async def fake_classify_intent(_message: str) -> dict:
-        return {
-            "intent": "course_recommendation",
-            "confidence": 1.0,
-            "entities": {},
-            "source": "test",
-        }
-
     async def fake_handle_agent(
         user_message,
         state,
@@ -59,12 +48,6 @@ def captured_stream_agent_context(monkeypatch):
         await queue.put({"type": "token", "text": reply})
         return reply, [], [], None
 
-    monkeypatch.setattr(
-        chat_router,
-        "extract_info_from_message",
-        fake_extract_info,
-    )
-    monkeypatch.setattr(chat_router, "classify_intent", fake_classify_intent)
     monkeypatch.setattr(chat_router, "_handle_agent", fake_handle_agent)
 
     return captured
