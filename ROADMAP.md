@@ -345,11 +345,11 @@
 
 ### M7.2 依赖与 CI
 
-- [ ] 补全运行依赖：FastAPI、LLM client、requests、bcrypt、itsdangerous 等。
-- [ ] 单独声明开发/数据脚本依赖：pytest、python-dotenv、openpyxl、beautifulsoup4 等。
-- [ ] 固定 Python 版本和启动命令。
-- [ ] GitHub Actions 执行安装、lint、离线测试和最小构建验证。
-- [ ] 增加 `.env.example`，只列变量名和说明，不包含真实密钥。
+- [x] 补全运行依赖：FastAPI、LLM client、requests、bcrypt、itsdangerous 等。
+- [x] 单独声明开发/数据脚本依赖：pytest、python-dotenv、openpyxl、beautifulsoup4 等。
+- [x] 固定 Python 版本和启动命令。
+- [x] GitHub Actions 执行安装、lint、离线测试和最小构建验证。
+- [x] 增加 `.env.example`，只列变量名和说明，不包含真实密钥。
 
 ### M7.3 可观测性
 
