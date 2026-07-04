@@ -20,12 +20,13 @@
     ZotAdvisor
   </div>
   <div class="topbar-sep"></div>
-  <select class="term-select" id="termSelect">
+  <select class="term-select" id="termSelect" aria-label="Select academic term">
     <option value="" disabled selected>Loading terms…</option>
   </select>
   <div class="topbar-right">
     <div class="topbar-status"><span class="dot"></span>System ready</div>
     <button class="topbar-btn topbar-icon-btn" id="settingsBtn"
+            aria-label="Open settings"
             onclick="openSettings()" title="System prompt &amp; settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
            stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
@@ -33,7 +34,8 @@
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
       </svg>
     </button>
-    <button class="topbar-btn" id="toggleScheduleBtn" onclick="toggleSchedule()">Schedule</button>
+    <button class="topbar-btn" id="toggleScheduleBtn" onclick="toggleSchedule()"
+            aria-controls="schedulePanel" aria-expanded="false">Schedule</button>
   </div>
 </div>
 
@@ -68,56 +70,58 @@
    </div><!-- /left-panel-scroll -->
 
    <!-- User bar (bottom) — click to open popover ──── -->
-   <div class="user-bar" id="userBar" onclick="toggleUserPopover(event)">
+   <div class="user-bar" id="userBar" role="button" tabindex="0"
+        aria-label="Open user menu" aria-haspopup="menu" aria-expanded="false"
+        onclick="toggleUserPopover(event)">
      <div class="user-bar-avatar" id="ub-avatar">··</div>
      <div class="user-bar-name"   id="ub-name">…</div>
      <div class="user-bar-chev">▴</div>
 
-     <div class="user-popover" id="userPopover" onclick="event.stopPropagation()">
+     <div class="user-popover" id="userPopover" role="menu" onclick="event.stopPropagation()">
        <div class="user-popover-email" id="userPopoverEmail">demo_001 · guest</div>
        <div class="user-popover-sep"></div>
-       <div class="user-popover-item" onclick="openProfile()">
+       <button type="button" class="user-popover-item" role="menuitem" onclick="openProfile()">
          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
            <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
            <circle cx="12" cy="7" r="4"/>
          </svg>
-         Profile
-       </div>
-       <div class="user-popover-item" onclick="openMemory()">
+         <span>Profile</span>
+       </button>
+       <button type="button" class="user-popover-item" role="menuitem" onclick="openMemory()">
          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
            <path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/>
            <path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>
          </svg>
-         Memory
-       </div>
-       <div class="user-popover-item" onclick="closeUserPopover(); openSettings()">
+         <span>Memory</span>
+       </button>
+       <button type="button" class="user-popover-item" role="menuitem" onclick="closeUserPopover(); openSettings()">
          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
            <circle cx="12" cy="12" r="3"/>
            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/>
          </svg>
-         Settings
-       </div>
+         <span>Settings</span>
+       </button>
        <div class="user-popover-sep" id="logoutSep" style="display:none;"></div>
-       <div class="user-popover-item" id="logoutItem" onclick="doLogout()" style="display:none;">
+       <button type="button" class="user-popover-item" id="logoutItem" role="menuitem" onclick="doLogout()" style="display:none;">
          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
            <polyline points="16 17 21 12 16 7"/>
            <line x1="21" y1="12" x2="9" y2="12"/>
          </svg>
-         Sign out
-       </div>
+         <span>Sign out</span>
+       </button>
      </div>
    </div>
   </aside>
 
   <!-- ── Center: Chat ───────────────────────────── -->
-  <main class="chat-panel">
+  <main class="chat-panel" aria-label="Chat with ZotAdvisor">
     <div class="chat-header">
       <div class="chat-header-title">Planning Terminal</div>
       <div class="chat-header-pill">Active</div>
     </div>
 
-    <div class="chat-scroll is-empty" id="chatScroll">
+    <div class="chat-scroll is-empty" id="chatScroll" role="log" aria-live="polite" aria-relevant="additions text">
       <div class="welcome-state" id="welcomeState">
         <div class="welcome-greeting" id="welcomeGreeting">What can I help with today?</div>
         <div class="welcome-sub">Ask about courses, professors, or build your schedule for <span id="welcomeTerm">the selected term</span>.</div>
@@ -133,6 +137,7 @@
       <div class="input-row">
         <input type="text" class="input-field" id="userInput"
                placeholder="Ask about courses, professors, or schedule…"
+               aria-label="Ask ZotAdvisor a question"
                autocomplete="off">
         <button class="send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
         <button class="stop-btn" id="stopBtn" onclick="stopGeneration()" style="display:none">
@@ -146,16 +151,17 @@
   </main>
 
   <!-- ── Right: Schedule ────────────────────────── -->
-  <aside class="schedule-panel" id="schedulePanel">
-    <div class="resize-handle" id="resizeHandle"></div>
+  <aside class="schedule-panel" id="schedulePanel" aria-label="Weekly schedule">
+    <div class="resize-handle" id="resizeHandle" aria-hidden="true"></div>
     <div class="schedule-header">
       <div class="schedule-header-title">Weekly Schedule</div>
       <span class="pill" id="scheduleCount">0 courses</span>
       <button class="schedule-clear"
               id="scheduleClearBtn"
               onclick="clearSchedule()"
+              aria-label="Clear weekly schedule"
               title="Remove every section from the schedule">Clear</button>
-      <button class="schedule-close" onclick="toggleSchedule()">&#x2715;</button>
+      <button class="schedule-close" onclick="toggleSchedule()" aria-label="Close weekly schedule">&#x2715;</button>
     </div>
     <div class="schedule-body" id="scheduleBody">
       <div class="schedule-empty">Add courses from recommendations<br>to build your schedule.</div>
@@ -165,7 +171,7 @@
 </div>
 
 <!-- ═══ ONBOARDING WIZARD (Phase C) ═════════════════════ -->
-<div class="wizard-overlay" id="wizardOverlay">
+<div class="wizard-overlay" id="wizardOverlay" role="dialog" aria-modal="true" aria-labelledby="wizardHeadline">
   <div class="wizard-main">
     <!-- Header -->
     <div class="wizard-header">
@@ -303,10 +309,10 @@
 </div>
 
 <!-- ═══ AUTH MODAL (login / register) ═══════════════════ -->
-<div class="modal-backdrop" id="authModal">
+<div class="modal-backdrop" id="authModal" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
   <div class="modal-panel" onclick="event.stopPropagation()" style="max-width: 440px;">
     <div class="modal-header">
-      <div class="modal-title">Welcome to ZotAdvisor</div>
+      <div class="modal-title" id="authModalTitle">Welcome to ZotAdvisor</div>
     </div>
     <div class="modal-body">
       <div class="auth-tabs">
@@ -366,18 +372,18 @@
       </div>
 
       <div class="auth-guest-link">
-        想直接试用 demo？<a onclick="continueAsGuest()">以游客身份继续</a>
+        想直接试用 demo？<button type="button" class="auth-guest-btn" onclick="continueAsGuest()">以游客身份继续</button>
       </div>
     </div>
   </div>
 </div>
 
 <!-- ═══ SETTINGS MODAL ════════════════════════════════ -->
-<div class="modal-backdrop" id="settingsModal" onclick="closeSettings(event)">
+<div class="modal-backdrop" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle" onclick="closeSettings(event)">
   <div class="modal-panel" onclick="event.stopPropagation()">
     <div class="modal-header">
-      <div class="modal-title">System Prompt</div>
-      <button class="modal-close" onclick="closeSettings()">&#x2715;</button>
+      <div class="modal-title" id="settingsModalTitle">System Prompt</div>
+      <button class="modal-close" onclick="closeSettings()" aria-label="Close settings">&#x2715;</button>
     </div>
     <div class="modal-body">
       <p class="modal-hint">
@@ -400,11 +406,11 @@
 </div>
 
 <!-- ═══ MEMORY MODAL ═══════════════════════════════════ -->
-<div class="modal-backdrop" id="memoryModal" onclick="closeMemory(event)">
+<div class="modal-backdrop" id="memoryModal" role="dialog" aria-modal="true" aria-labelledby="memoryModalTitle" onclick="closeMemory(event)">
   <div class="modal-panel memory-modal-content" onclick="event.stopPropagation()">
     <div class="modal-header">
-      <div class="modal-title">Memory</div>
-      <button class="modal-close" onclick="closeMemory()">&#x2715;</button>
+      <div class="modal-title" id="memoryModalTitle">Memory</div>
+      <button class="modal-close" onclick="closeMemory()" aria-label="Close memory">&#x2715;</button>
     </div>
     <div class="modal-body" id="memoryBody">
       <div class="memory-empty">Loading…</div>
@@ -413,11 +419,11 @@
 </div>
 
 <!-- ═══ PROFILE MODAL ══════════════════════════════════ -->
-<div class="modal-backdrop" id="profileModal" onclick="closeProfile(event)">
+<div class="modal-backdrop" id="profileModal" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle" onclick="closeProfile(event)">
   <div class="modal-panel profile-modal-content" onclick="event.stopPropagation()">
     <div class="modal-header">
-      <div class="modal-title">Student Profile</div>
-      <button class="modal-close" onclick="closeProfile()">&#x2715;</button>
+      <div class="modal-title" id="profileModalTitle">Student Profile</div>
+      <button class="modal-close" onclick="closeProfile()" aria-label="Close profile">&#x2715;</button>
     </div>
     <div class="modal-body" id="profileBody">
       <div class="memory-empty">Loading…</div>

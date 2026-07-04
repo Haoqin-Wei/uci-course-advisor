@@ -318,9 +318,9 @@
 
 ### M6.3 浏览器回归
 
-- [ ] 覆盖登录、onboarding、发送消息、tool chip、卡片、加课、继续生成和会话恢复。
-- [ ] 增加移动端、键盘焦点、对比度和基础 screen-reader 检查。
-- [ ] 历史消息与实时消息共用同一个 card/followup/validation renderer。
+- [x] 覆盖登录、onboarding、发送消息、tool chip、卡片、加课、继续生成和会话恢复。
+- [x] 增加移动端、键盘焦点、对比度和基础 screen-reader 检查。
+- [x] 历史消息与实时消息共用同一个 card/followup/validation renderer。
 
 ### 验收
 

@@ -91,6 +91,7 @@ function openSchedule() {
   scheduleOpen = true;
   document.getElementById('schedulePanel').classList.add('open');
   document.body.classList.add('schedule-open');     // chat shrinks to make room
+  document.getElementById('toggleScheduleBtn')?.setAttribute('aria-expanded', 'true');
 }
 
 /* Wipe every entry from the session's pending_schedule. Used as an
@@ -123,6 +124,7 @@ function toggleSchedule() {
   scheduleOpen = !scheduleOpen;
   document.getElementById('schedulePanel').classList.toggle('open', scheduleOpen);
   document.body.classList.toggle('schedule-open', scheduleOpen);
+  document.getElementById('toggleScheduleBtn')?.setAttribute('aria-expanded', String(scheduleOpen));
 }
 
 (function initResize() {

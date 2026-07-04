@@ -3,21 +3,31 @@
 function toggleUserPopover(ev) {
   ev.stopPropagation();
   const pop = document.getElementById('userPopover');
+  const trigger = document.getElementById('userBar');
   if (!pop) return;
   const wasOpen = pop.classList.contains('open');
   closeUserPopover();   // close before reopening (idempotent)
   if (!wasOpen) {
     pop.classList.add('open');
+    trigger?.setAttribute('aria-expanded', 'true');
     document.addEventListener('click', _userPopoverOutsideClick, { once: true });
   }
 }
 function closeUserPopover() {
   const pop = document.getElementById('userPopover');
   if (pop) pop.classList.remove('open');
+  document.getElementById('userBar')?.setAttribute('aria-expanded', 'false');
 }
 function _userPopoverOutsideClick() {
   closeUserPopover();
 }
+
+document.getElementById('userBar')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    toggleUserPopover(e);
+  }
+});
 
 /* ── Memory modal ─────────────────────────────────────── */
 function openMemory() {

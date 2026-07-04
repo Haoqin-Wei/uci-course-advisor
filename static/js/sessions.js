@@ -144,10 +144,9 @@ async function loadSession(sessionId) {
     const data = await r.json();
     currentSessionId = sessionId;
 
-    // Replace the chat scroll with the historical turns. We render
-    // them as plain text messages — no cards / followups / validation
-    // (those metadata aren't persisted in turns.jsonl). Future R4
-    // could re-render cards if we persist them.
+    // Replace the chat scroll with the historical turns. Assistant
+    // turns reuse the same card/followup/validation renderers as live
+    // streaming finalization so session restore preserves structured UI.
     const scrollEl = document.getElementById('chatScroll');
     scrollEl.classList.remove('is-empty');
     scrollEl.innerHTML = '';
