@@ -453,6 +453,109 @@ def _final_exam_conflict(scope: str, message: str, sections: list[dict]) -> dict
     }
 
 
+def _section_status(section: dict) -> str:
+    return str(section.get("status") or "").strip()
+
+
+def _section_status_key(section: dict) -> str:
+    return _section_status(section).upper()
+
+
+def _section_is_cancelled(section: dict) -> bool:
+    return (
+        _truthy(section.get("is_cancelled"))
+        or _truthy(section.get("cancelled"))
+        or _section_status_key(section) in {"CANCELLED", "CANCELED"}
+    )
+
+
+def _section_is_full(section: dict) -> bool:
+    return _section_status_key(section) == "FULL"
+
+
+def _section_is_waitlisted(section: dict) -> bool:
+    return "WAIT" in _section_status_key(section)
+
+
+def _section_restrictions(section: dict) -> str:
+    restrictions = section.get("restrictions")
+    if restrictions is None:
+        return ""
+    if isinstance(restrictions, list):
+        return ", ".join(str(value).strip() for value in restrictions if str(value).strip())
+    return str(restrictions).strip()
+
+
+def _section_issue_subject(section: dict, scope: str) -> str:
+    label = _section_label(section)
+    return f"pending {label}" if scope == "pending_schedule" else label
+
+
+def _single_section_issue(
+    issue_type: str,
+    scope: str,
+    message: str,
+    section: dict,
+) -> dict:
+    return {
+        "type": issue_type,
+        "scope": scope,
+        "message": message,
+        "sections": [_section_summary(section)],
+    }
+
+
+def _section_availability_issues(section: dict, scope: str) -> tuple[list[dict], list[dict]]:
+    conflicts: list[dict] = []
+    warnings: list[dict] = []
+    subject = _section_issue_subject(section, scope)
+
+    if _section_is_cancelled(section):
+        conflicts.append(
+            _single_section_issue(
+                "section_unavailable",
+                scope,
+                f"{subject} is cancelled",
+                section,
+            )
+        )
+        return conflicts, warnings
+
+    if _section_is_full(section):
+        conflicts.append(
+            _single_section_issue(
+                "section_unavailable",
+                scope,
+                f"{subject} is FULL",
+                section,
+            )
+        )
+        return conflicts, warnings
+
+    if _section_is_waitlisted(section):
+        warnings.append(
+            _single_section_issue(
+                "section_waitlist",
+                scope,
+                f"{subject} is waitlist-only",
+                section,
+            )
+        )
+
+    restrictions = _section_restrictions(section)
+    if restrictions:
+        warnings.append(
+            _single_section_issue(
+                "section_restriction",
+                scope,
+                f"{subject} has enrollment restrictions: {restrictions}",
+                section,
+            )
+        )
+
+    return conflicts, warnings
+
+
 def validate_schedule_bundle(
     recommended_items: Iterable[dict],
     *,
@@ -467,6 +570,8 @@ def validate_schedule_bundle(
       - TBA/missing time is reported as ``unknown`` instead of treated as clear
       - scheduled final-exam conflicts are reported alongside time conflicts
       - required primary/secondary pairings must include both halves
+      - cancelled/FULL sections are hard conflicts
+      - waitlist and enrollment restrictions are warnings
 
     The function is intentionally pure: callers resolve persisted
     ``pending_schedule`` entries into concrete section dicts before calling.
@@ -489,6 +594,12 @@ def validate_schedule_bundle(
         if pairing_conflict:
             conflicts.append(pairing_conflict)
         for section in selected_sections:
+            section_conflicts, section_warnings = _section_availability_issues(
+                section,
+                "bundle",
+            )
+            conflicts.extend(section_conflicts)
+            warnings.extend(section_warnings)
             if _section_has_unknown_time(section):
                 unknowns.append(
                     _time_unknown(
@@ -510,6 +621,13 @@ def validate_schedule_bundle(
         section for section in pending_sections or []
         if isinstance(section, dict)
     ]
+    for section in pending_list:
+        section_conflicts, section_warnings = _section_availability_issues(
+            section,
+            "pending_schedule",
+        )
+        conflicts.extend(section_conflicts)
+        warnings.extend(section_warnings)
 
     for left_index, left in enumerate(bundle_sections):
         for right in bundle_sections[left_index + 1:]:

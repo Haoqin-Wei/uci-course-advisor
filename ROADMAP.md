@@ -187,7 +187,7 @@
 - [x] 检查推荐课程与 pending schedule 的冲突。
 - [x] 检查 final exam 冲突。
 - [x] 检查 Lec/Dis/Lab pairing 是否完整。
-- [ ] 检查 cancelled、FULL、waitlist 和 section restriction。
+- [x] 检查 cancelled、FULL、waitlist 和 section restriction。
 - [x] 返回结构化结果：`valid / warnings / conflicts / unknowns`。
 - [ ] `propose_recommendation` 和 `/schedule/add` 同时调用该服务。
 

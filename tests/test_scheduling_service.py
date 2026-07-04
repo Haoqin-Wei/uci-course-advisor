@@ -195,6 +195,131 @@ def test_validate_schedule_bundle_accepts_clear_recommendations():
     }
 
 
+def test_validate_schedule_bundle_reports_cancelled_and_full_sections_as_conflicts():
+    result = validate_schedule_bundle(
+        [
+            {
+                "course_id": "COMPSCI161",
+                "primary_code": "10000",
+                "sections": [
+                    {
+                        "course_id": "COMPSCI161",
+                        "section_code": "10000",
+                        "section_num": "A",
+                        "status": "OPEN",
+                        "is_cancelled": True,
+                        "days": "MW",
+                        "start_time": "09:00",
+                        "end_time": "10:20",
+                    }
+                ],
+            },
+            {
+                "course_id": "IN4MATX43",
+                "primary_code": "20000",
+                "sections": [
+                    {
+                        "course_id": "IN4MATX43",
+                        "section_code": "20000",
+                        "section_num": "A",
+                        "status": "FULL",
+                        "days": "TuTh",
+                        "start_time": "11:00",
+                        "end_time": "12:20",
+                    }
+                ],
+            },
+        ]
+    )
+
+    assert result["valid"] is False
+    assert result["warnings"] == []
+    assert result["unknowns"] == []
+    assert result["conflicts"] == [
+        {
+            "type": "section_unavailable",
+            "scope": "bundle",
+            "message": "COMPSCI161 A is cancelled",
+            "sections": [
+                {
+                    "course_id": "COMPSCI161",
+                    "section_code": "10000",
+                    "section_num": "A",
+                    "window": "MW 09:00–10:20",
+                }
+            ],
+        },
+        {
+            "type": "section_unavailable",
+            "scope": "bundle",
+            "message": "IN4MATX43 A is FULL",
+            "sections": [
+                {
+                    "course_id": "IN4MATX43",
+                    "section_code": "20000",
+                    "section_num": "A",
+                    "window": "TuTh 11:00–12:20",
+                }
+            ],
+        },
+    ]
+
+
+def test_validate_schedule_bundle_reports_waitlist_and_restrictions_as_warnings():
+    result = validate_schedule_bundle(
+        [
+            {
+                "course_id": "COMPSCI161",
+                "primary_code": "10000",
+                "sections": [
+                    {
+                        "course_id": "COMPSCI161",
+                        "section_code": "10000",
+                        "section_num": "A",
+                        "status": "Waitl",
+                        "restrictions": "L",
+                        "days": "MW",
+                        "start_time": "09:00",
+                        "end_time": "10:20",
+                    }
+                ],
+            }
+        ]
+    )
+
+    assert result["valid"] is True
+    assert result["conflicts"] == []
+    assert result["unknowns"] == []
+    assert result["warnings"] == [
+        {
+            "type": "section_waitlist",
+            "scope": "bundle",
+            "message": "COMPSCI161 A is waitlist-only",
+            "sections": [
+                {
+                    "course_id": "COMPSCI161",
+                    "section_code": "10000",
+                    "section_num": "A",
+                    "window": "MW 09:00–10:20",
+                }
+            ],
+        },
+        {
+            "type": "section_restriction",
+            "scope": "bundle",
+            "message": "COMPSCI161 A has enrollment restrictions: L",
+            "sections": [
+                {
+                    "course_id": "COMPSCI161",
+                    "section_code": "10000",
+                    "section_num": "A",
+                    "window": "MW 09:00–10:20",
+                }
+            ],
+        },
+    ]
+
+
 def test_validate_schedule_bundle_reports_recommendation_time_conflicts():
     result = validate_schedule_bundle(
         [
