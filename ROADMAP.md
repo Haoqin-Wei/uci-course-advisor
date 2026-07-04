@@ -304,17 +304,17 @@
 
 ### M6.2 模块拆分
 
-- [ ] `styles/tokens.css`
-- [ ] `styles/components.css`
-- [ ] `js/api-client.js`
-- [ ] `js/chat.js`
-- [ ] `js/cards.js`
-- [ ] `js/schedule.js`
-- [ ] `js/sessions.js`
-- [ ] `js/auth.js`
-- [ ] `js/profile-memory.js`
-- [ ] `js/onboarding.js`
-- [ ] 保留原生 HTML/CSS/JS，不在本阶段引入 React/Vue/Svelte。
+- [x] `styles/tokens.css`
+- [x] `styles/components.css`
+- [x] `js/api-client.js`
+- [x] `js/chat.js`
+- [x] `js/cards.js`
+- [x] `js/schedule.js`
+- [x] `js/sessions.js`
+- [x] `js/auth.js`
+- [x] `js/profile-memory.js`
+- [x] `js/onboarding.js`
+- [x] 保留原生 HTML/CSS/JS，不在本阶段引入 React/Vue/Svelte。
 
 ### M6.3 浏览器回归
 

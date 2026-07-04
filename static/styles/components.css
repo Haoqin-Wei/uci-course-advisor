@@ -1,0 +1,3400 @@
+/* ═══════════════════════════════════════════════════════
+   RESET
+   ═══════════════════════════════════════════════════════ */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-size: var(--text-body);
+  line-height: var(--leading-relaxed);
+  font-weight: var(--weight-regular);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+button { font-family: inherit; }
+input { font-family: inherit; }
+
+/* ═══════════════════════════════════════════════════════
+   TYPOGRAPHY UTILITIES
+   ═══════════════════════════════════════════════════════ */
+.t-title    { font-size: var(--text-title); font-weight: var(--weight-semibold); line-height: var(--leading-tight); }
+.t-h1       { font-size: var(--text-h1); font-weight: var(--weight-semibold); line-height: var(--leading-snug); }
+.t-h2       { font-size: var(--text-h2); font-weight: var(--weight-medium); line-height: var(--leading-snug); }
+.t-body     { font-size: var(--text-body); font-weight: var(--weight-regular); line-height: var(--leading-relaxed); }
+.t-secondary{ font-size: var(--text-secondary-size); font-weight: var(--weight-regular); line-height: var(--leading-normal); color: var(--text-secondary); }
+.t-label    {
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-snug);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ═══════════════════════════════════════════════════════
+   TOP BAR
+   ═══════════════════════════════════════════════════════ */
+.topbar {
+  height: 52px;
+  background: var(--bg-shell);
+  border-bottom: 1px solid var(--border-default);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-6);
+  gap: var(--space-5);
+  z-index: 100;
+}
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-h2);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.topbar-brand svg {
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+}
+.topbar-sep {
+  width: 1px;
+  height: 22px;
+  background: var(--border-default);
+}
+.term-select {
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-size: var(--text-secondary-size);
+  font-weight: var(--weight-medium);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  outline: none;
+  transition: all var(--transition);
+}
+.term-select:hover, .term-select:focus {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.term-select option { background: var(--bg-panel); }
+.topbar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.topbar-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+}
+.topbar-status .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.topbar-btn {
+  background: transparent;
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-size: var(--text-secondary-size);
+  font-weight: var(--weight-medium);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.topbar-btn:hover {
+  background: var(--bg-panel-2);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+/* ═══════════════════════════════════════════════════════
+   APP BODY
+   ═══════════════════════════════════════════════════════ */
+.app-body {
+  display: flex;
+  height: calc(100vh - 52px);
+  overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════════════════
+   LEFT PANEL
+   ═══════════════════════════════════════════════════════ */
+.left-panel {
+  width: 240px;
+  min-width: 240px;
+  background: var(--bg-shell);
+  border-right: 1px solid var(--border-default);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-6) var(--space-5);
+}
+.profile-block {
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: var(--space-6);
+}
+
+/* ── New-chat button (Phase 3 R3) ─────────────────── */
+.new-chat-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3) var(--space-3);
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-secondary-size);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+  margin-bottom: var(--space-5);
+}
+.new-chat-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+.new-chat-btn svg { flex-shrink: 0; }
+
+/* ── Session list (Phase 3 R3) ────────────────────── */
+.sessions-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.sessions-label {
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: var(--space-2);
+}
+.sessions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.session-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--text-secondary-size);
+  transition: background-color 100ms ease, color 100ms ease;
+  position: relative;
+}
+.session-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.session-item.is-active {
+  background: var(--bg-panel-2);
+  color: var(--text-primary);
+}
+.session-item-title {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Prevent the title text from sliding under the delete button. */
+  padding-right: var(--space-2);
+}
+.session-item-delete {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: none;             /* hidden until hover */
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0;
+}
+.session-item:hover .session-item-delete { display: inline-flex; }
+.session-item-delete:hover {
+  color: var(--text-primary);
+  background: var(--overlay-medium);
+}
+.sessions-empty {
+  font-size: var(--text-secondary-size);
+  color: var(--text-muted);
+  padding: var(--space-3) var(--space-3);
+  font-style: italic;
+}
+
+/* ── Empty (welcome) state for chat (Phase 3 R3) ──── */
+/*
+   When the conversation hasn't started yet (no real msg-user/msg-ai
+   bubbles have been appended), .chat-scroll only contains the welcome
+   block. We center it vertically in the available space — feels like
+   GPT's blank-canvas start.
+*/
+.chat-scroll.is-empty {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;    /* center vertically */
+}
+.welcome-state {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5);
+  text-align: center;
+}
+.welcome-greeting {
+  font-size: var(--text-h1);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  margin-bottom: var(--space-4);
+  line-height: 1.25;
+}
+.welcome-sub {
+  font-size: var(--text-secondary-size);
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-6);
+}
+.welcome-state .followups {
+  justify-content: center;
+}
+
+.profile-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-secondary-size);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-3);
+}
+.profile-name {
+  font-size: var(--text-h2);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.profile-meta {
+  font-size: var(--text-secondary-size);
+  color: var(--text-tertiary);
+  margin-top: var(--space-1);
+}
+.left-section-label {
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: var(--space-3);
+}
+.left-courses {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+}
+.left-course-tag {
+  font-size: var(--text-secondary-size);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  transition: all var(--transition);
+}
+.left-course-tag:hover {
+  background: var(--bg-panel-2);
+  border-color: var(--border-default);
+}
+.left-course-tag .dot-complete {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.left-course-tag .dot-enrolled {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.left-spacer { flex: 1; }
+.left-footer {
+  font-size: var(--text-label);
+  color: var(--text-muted);
+  line-height: var(--leading-normal);
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+/* ═══════════════════════════════════════════════════════
+   CHAT PANEL
+   ═══════════════════════════════════════════════════════ */
+.chat-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg-app);
+}
+.chat-header {
+  height: 52px;
+  border-bottom: 1px solid var(--border-default);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-8);
+  gap: var(--space-3);
+  background: var(--bg-shell);
+}
+.chat-header-title {
+  font-size: var(--text-h1);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.chat-header-pill {
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  color: var(--success);
+  background: var(--success-soft);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.chat-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* ── Messages ──────────────────────────────────────── */
+/* Default (schedule rail closed): chat bubbles get the full
+   reading width — wider so course cards / sub-cards have room
+   to lay out side-by-side. When the schedule rail opens
+   (body.schedule-open), bubbles shrink back to the narrower
+   form so cards don't fight for space with the day grid. */
+.msg {
+  max-width: 880px;
+  animation: fadeIn 240ms ease;
+  transition: max-width var(--transition);
+}
+body.schedule-open .msg {
+  max-width: 680px;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.msg-user {
+  align-self: flex-end;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-body);
+  line-height: var(--leading-normal);
+}
+
+.msg-ai {
+  /* Centered in the chat column so wide screens leave breathing
+     room on both sides — feels like a reading column, not a wall
+     of text. User messages stay right-aligned (.msg-user keeps
+     flex-end) so the speaker direction still reads correctly. */
+  align-self: center;
+  width: 100%;
+  max-width: 880px;          /* widened with .msg above */
+  transition: max-width var(--transition);
+}
+body.schedule-open .msg-ai { max-width: 680px; }
+.msg-ai-label {
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.msg-ai-body {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+  line-height: var(--leading-relaxed);
+}
+.msg-ai-body strong {
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+}
+
+/* ── Markdown blocks (tables, code, headings, lists) ─
+   Scoped to .msg-ai-body so the advisor reply is the
+   only place they apply — keeps the rest of the UI
+   styling untouched. */
+.msg-ai-body .md-table-wrap {
+  overflow-x: auto;
+  margin: var(--space-3) 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--overlay-soft);
+}
+.msg-ai-body .md-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--text-secondary-size);
+  color: var(--text-secondary);
+  line-height: var(--leading-normal);
+}
+.msg-ai-body .md-table th,
+.msg-ai-body .md-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+.msg-ai-body .md-table th {
+  background: var(--overlay-soft);
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.msg-ai-body .md-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.msg-ai-body .md-table tbody tr:hover {
+  background: var(--overlay-soft);
+}
+.msg-ai-body .md-table strong {
+  color: var(--text-primary);
+}
+
+.msg-ai-body .md-h1,
+.msg-ai-body .md-h2,
+.msg-ai-body .md-h3 {
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+  margin: var(--space-3) 0 var(--space-2);
+  line-height: var(--leading-snug);
+}
+.msg-ai-body .md-h1 { font-size: 18px; }
+.msg-ai-body .md-h2 { font-size: 16px; }
+.msg-ai-body .md-h3 { font-size: 14px; letter-spacing: 0.02em; }
+.msg-ai-body .md-h1:first-child,
+.msg-ai-body .md-h2:first-child,
+.msg-ai-body .md-h3:first-child { margin-top: 0; }
+
+.msg-ai-body .md-pre {
+  background: var(--overlay-soft);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3) var(--space-4);
+  overflow-x: auto;
+  margin: var(--space-3) 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-secondary-size);
+  color: var(--text-secondary);
+  line-height: 1.55;
+  white-space: pre;
+}
+.msg-ai-body .md-pre code {
+  background: none;
+  padding: 0;
+  border: none;
+  font-family: inherit;
+  color: inherit;
+}
+.msg-ai-body .md-code {
+  background: var(--overlay-medium);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--text-primary);
+}
+
+.msg-ai-body .md-ul,
+.msg-ai-body .md-ol {
+  padding-left: 22px;
+  margin: var(--space-2) 0;
+}
+.msg-ai-body .md-ul li,
+.msg-ai-body .md-ol li {
+  margin: 2px 0;
+}
+
+.msg-ai-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: rgba(69, 96, 133, 0.45);
+}
+.msg-ai-body a:hover {
+  text-decoration-color: var(--accent);
+}
+
+.msg-ai-body hr.md-hr {
+  border: none;
+  border-top: 1px solid var(--border-default);
+  margin: var(--space-4) 0;
+}
+
+/* ── Course cards (Phase E2: Stitch-style geometry) ──
+   Strictly token-only — no hardcoded colors in this block.
+   Only the 5 --cat-* tokens (defined in :root) carry the
+   intentional category palette. Everything else uses
+   semantic tokens so the E0 theme swap is a one-file edit.
+*/
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+.cards-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+/* Header strip above the cards: "6 INTELLIGENCE MODULES"
+   on the left, color legend on the right. */
+.cards-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-3) var(--space-2);
+}
+.cards-header-title {
+  font-size: var(--text-label);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.cards-legend {
+  display: flex;
+  gap: var(--space-4);
+  font-size: var(--text-label);
+  color: var(--text-muted);
+}
+.cards-legend-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cards-legend-dot::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--legend-color, var(--text-muted));
+}
+
+/* Card shell + 12-col grid (id / body / prereqs / units) */
+.course-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-6) var(--space-5) calc(var(--space-6) + 4px);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: transform var(--transition), border-color var(--transition), background var(--transition);
+}
+.course-card:hover {
+  transform: translateX(4px);
+  border-color: var(--border-strong);
+  background: var(--bg-panel-2);
+}
+
+/* Left category color stripe — 4px ribbon */
+.course-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--card-stripe, var(--text-muted));
+  transition: background var(--transition);
+}
+.course-card.cat-core      { --card-stripe: var(--cat-core); }
+.course-card.cat-practical { --card-stripe: var(--cat-practical); }
+.course-card.cat-career    { --card-stripe: var(--cat-career); }
+.course-card.cat-advanced  { --card-stripe: var(--cat-advanced); }
+.course-card.cat-elective  { --card-stripe: var(--cat-elective); }
+.course-card.added         { --card-stripe: var(--success); }
+.course-card.added         { border-color: var(--success-soft); }
+
+/* col-3 — module ID block */
+.cc-id-block {
+  grid-column: span 3;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+.cc-id {
+  font-size: 22px;
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  line-height: var(--leading-tight);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cc-title {
+  font-size: var(--text-secondary-size);
+  color: var(--text-muted);
+  margin-top: 4px;
+  line-height: var(--leading-normal);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* Single primary enrollment code chip — the 5-digit WebSoc
+   number for the headline Lecture section in the selected term.
+   Multi-section courses (writing, large lectures) carry the rest
+   on card.enrollment_codes for the eventual section-picker UI,
+   but only this one chip renders inline. */
+.cc-codes {
+  display: flex;
+  align-items: center;
+  margin-top: var(--space-2);
+}
+.cc-code,
+.cc-code-primary {                 /* both class names render the same chip now */
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: var(--weight-semibold);
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  letter-spacing: 0.04em;
+  cursor: default;
+}
+/* "+ Dis required" / "+ Lab required" reminder pill.
+   Warning-tinted so it reads as a constraint, not as a clickable
+   option. Sits next to the primary Lec code with a small gap. */
+.cc-codes {
+  gap: 6px;
+}
+
+/* Enrollment restriction pills (SOC 'Rstr' codes decoded into
+   one-line labels). Sit between the reason and the deadline row.
+   Style sits between "+ Dis required" (warning-tinted) and "Avg GPA"
+   (success-tinted) — restriction-tinted (warning + dashed border) so
+   the user reads them as constraints to satisfy, not features. */
+.cc-rstr {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--space-2);
+}
+.cc-rstr-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 8px 2px 4px;
+  border-radius: 4px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  cursor: help;
+  white-space: nowrap;
+}
+.cc-rstr-code {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--warning);
+  color: var(--bg-panel);     /* contrast against the saturated warning */
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0;
+}
+
+/* Per-term deadline footer — reads under the reason as a quiet
+   monospace line: "Free add/drop · Oct 9 · Drop w/o W · Nov 6".
+   Hover any piece for the full explanation. Designed to be calm —
+   not action-required, just a reference so the user doesn't have
+   to open the academic calendar in a new tab. */
+.cc-deadlines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: var(--space-2);
+  font-size: var(--text-micro);
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+.cc-deadlines b {
+  color: var(--text-tertiary);
+  font-weight: var(--weight-semibold);
+}
+.cc-deadlines-sep {
+  color: var(--text-disabled);
+}
+
+/* "Show sections ▾" toggle — a tiny inline-button that sits at the
+   bottom of cc-body. Reveals the section-groups sub-table below the
+   card. Restrained styling so it reads as "more detail available"
+   rather than a primary action. */
+.cc-sg-toggle {
+  align-self: flex-start;
+  margin-top: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px 2px 10px;
+  color: var(--text-tertiary);
+  font-family: var(--font-sans);
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+.cc-sg-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+.cc-sg-toggle .material-symbols-outlined {
+  font-size: 18px;
+}
+
+/* Section-groups panel — wraps a horizontal row of sub-cards
+   (one per Lec letter group). Spans all 12 grid columns so the
+   parent card's layout above doesn't squeeze it.
+
+   Collapsed by default. The `.open` modifier (added by
+   `toggleSectionGroups()` / `cardClickHandler()`) animates the
+   panel in with a max-height + opacity + padding tween. We avoid
+   `display: none` so the transition can actually run — `display`
+   isn't animatable. The collapsed `max-height: 0` collapses the
+   panel to nothing visually while still letting CSS interpolate.
+
+   The `--cc-sg-max` token lets the JS bump the upper bound at
+   open-time if a particular card has many groups; otherwise the
+   default 2400px comfortably fits 3-4 sub-cards stacked or wrapped. */
+.cc-sg-wrap {
+  grid-column: 1 / -1;
+  --cc-sg-max: 2400px;
+  background: var(--bg-app);            /* tinted off-white so the white sub-cards inside pop */
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  /* Collapsed state */
+  max-height: 0;
+  opacity: 0;
+  margin-top: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: var(--space-3);
+  padding-right: var(--space-3);
+  overflow: hidden;
+  pointer-events: none;                  /* prevent stray hover on collapsed panel */
+  border-color: transparent;
+  transition:
+    max-height       320ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity          200ms ease 60ms,    /* fade catches up after height starts */
+    margin-top       240ms ease,
+    padding-top      240ms ease,
+    padding-bottom   240ms ease,
+    border-color     200ms ease;
+}
+.cc-sg-wrap.open {
+  max-height: var(--cc-sg-max);
+  opacity: 1;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-color: var(--border-default);
+  pointer-events: auto;
+}
+.cc-sg-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+
+/* Pointer affordance on the parent card — clicking the body
+   toggles the section panel. Interactive children (add button,
+   chips, etc.) stop the click via cardClickHandler's `.closest`
+   filter, so this doesn't fight schedule-add etc. */
+.course-card {
+  cursor: pointer;
+}
+.course-card .cc-add-btn,
+.course-card .cc-sg-toggle,
+.course-card .cc-sg-wrap {
+  cursor: auto;                          /* nested interactive surfaces keep their own cursor */
+}
+
+/* Individual Lec sub-card — pure white panel with subtle border,
+   matching the same "surface-container-lowest" feel as the
+   recommendation cards themselves. */
+.cc-sg-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  min-width: 0;
+}
+.cc-sg-card.cc-sg-orphan {
+  border-style: dashed;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.cc-sg-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  flex-wrap: wrap;
+}
+.cc-sg-spacer { flex: 1; }                /* pushes the + button to the head row's right edge */
+
+/* The row-add cell gives the + button a fixed-width landing pad so
+   the table doesn't reflow when the hover-only button appears. */
+.cc-sg-row-add {
+  width: 36px;
+  text-align: right;
+  padding-right: 2px !important;
+}
+.cc-sg-letter {
+  font-family: var(--font-sans);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  text-transform: uppercase;
+}
+.cc-sg-code {
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+/* Professor + RMP rating row */
+.cc-sg-profs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cc-sg-prof {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-secondary-size);
+  color: var(--text-secondary);
+}
+.cc-sg-prof-name {
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* RMP rating chip — color is driven by the prof's tier slug
+   (mostly_positive / mixed / mostly_negative / insufficient_data /
+   unrated). Default color is overridden by the tier modifier classes
+   so the base block here just defines geometry + typography. */
+.cc-sg-rmp {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: var(--weight-semibold);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--overlay-medium);
+  color: var(--text-tertiary);          /* neutral if no tier class is applied */
+  white-space: nowrap;
+}
+.cc-sg-rmp .material-symbols-outlined { font-size: 14px; }
+.cc-sg-rmp-n {
+  font-family: var(--font-sans);
+  font-weight: var(--weight-regular);
+  font-size: var(--text-micro);
+  opacity: 0.7;
+}
+
+/* Tier modifiers — vivid traffic-light fills so red / yellow /
+   green pop apart at a glance (the previous soft-tint version was
+   too washed-out on a warm-gray surface, with red and yellow
+   nearly indistinguishable). The star icon inherits the chip's
+   color so it's automatically white on red/green, dark on yellow. */
+.cc-sg-rmp-positive {
+  background: var(--rmp-positive);
+  color: #ffffff;
+}
+.cc-sg-rmp-mixed {
+  background: var(--rmp-mixed);
+  color: var(--rmp-mixed-text);
+}
+.cc-sg-rmp-negative {
+  background: var(--rmp-negative);
+  color: #ffffff;
+}
+.cc-sg-rmp-insufficient {
+  background: var(--text-muted);
+  color: #ffffff;
+}
+/* The "(N reviews)" subscript needs a tweak too: on a saturated
+   fill, the previous opacity:0.7 reads as muddy. Bump to 0.85 +
+   keep currentColor so it adapts to whichever text color the
+   tier picked. */
+.cc-sg-rmp-positive .cc-sg-rmp-n,
+.cc-sg-rmp-negative .cc-sg-rmp-n,
+.cc-sg-rmp-insufficient .cc-sg-rmp-n {
+  opacity: 0.85;
+}
+.cc-sg-rmp-mixed .cc-sg-rmp-n {
+  opacity: 0.7;     /* on yellow, dark text + lower opacity reads as supporting text */
+}
+.cc-sg-rmp-na {
+  background: var(--overlay-medium);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+}
+
+/* Facts list: time / room / final exam */
+.cc-sg-facts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cc-sg-fact {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: var(--text-label);
+  color: var(--text-secondary);
+  line-height: var(--leading-normal);
+}
+.cc-sg-fact .material-symbols-outlined {
+  font-size: 16px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.cc-sg-fact dd {
+  margin: 0;
+  min-width: 0;
+  word-break: break-word;
+}
+
+/* Secondary (Dis/Lab) chips block at the bottom of each sub-card */
+.cc-sg-secs-block {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+.cc-sg-secs-label {
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+}
+/* Secondary (Dis/Lab) compact data-table.
+   Each row carries num · code · instructor (+RMP) · time · room ·
+   status. Rendered as a real <table> so the columns line up across
+   Dis sections (A1, A2, A3 align by column even when times differ).
+   On narrow screens (<480px the parent card itself collapses) we let
+   the table go horizontal-scroll so info isn't lost. */
+.cc-sg-sec-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-label);
+  color: var(--text-secondary);
+  line-height: var(--leading-normal);
+}
+.cc-sg-sec-table td {
+  padding: 4px 6px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.cc-sg-sec-table tr.cc-sg-row {
+  border-top: 1px solid var(--border-subtle);
+}
+.cc-sg-sec-table tr.cc-sg-row:first-child {
+  border-top: none;
+}
+.cc-sg-rownum {
+  display: inline-block;
+  font-family: var(--font-sans);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  text-transform: uppercase;
+}
+.cc-sg-row-code {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+.cc-sg-row-instcell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.cc-sg-row-inst {
+  color: var(--text-primary);
+  font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cc-sg-row-staff {
+  font-family: var(--font-sans);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--overlay-medium);
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.cc-sg-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+}
+.cc-sg-row-meta .material-symbols-outlined {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.cc-sg-row-status {
+  text-align: right;
+}
+
+/* Status / availability badges — reused everywhere a section is shown */
+.cc-sg-badge {
+  font-family: var(--font-sans);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.cc-sg-badge.danger  { background: var(--danger-soft);  color: var(--danger); }
+.cc-sg-badge.warning { background: var(--warning-soft); color: var(--warning); }
+.cc-sg-badge.muted   { background: var(--overlay-medium); color: var(--text-muted); }
+
+.cc-code-secondary {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-sans);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: help;
+  white-space: nowrap;
+}
+
+/* col-5 — badges + reason */
+.cc-body {
+  grid-column: span 5;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  justify-content: center;
+  min-width: 0;
+}
+.cc-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.cc-badge {
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--bg-elevated);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.cc-badge-cat-core      { background: var(--cat-core-soft);      color: var(--cat-core); }
+.cc-badge-cat-practical { background: var(--cat-practical-soft); color: var(--cat-practical); }
+.cc-badge-cat-career    { background: var(--cat-career-soft);    color: var(--cat-career); }
+.cc-badge-cat-advanced  { background: var(--cat-advanced-soft);  color: var(--cat-advanced); }
+.cc-badge-cat-elective  { background: var(--cat-elective-soft);  color: var(--cat-elective); }
+.cc-badge-priority-high { background: var(--accent-soft);        color: var(--accent); }
+.cc-badge-warning       { background: var(--warning-soft);       color: var(--warning); }
+.cc-badge-danger        { background: var(--danger-soft);        color: var(--danger); }
+.cc-badge-success       { background: var(--success-soft);       color: var(--success); }
+.cc-reason {
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+  line-height: var(--leading-normal);
+  font-weight: var(--weight-medium);
+}
+
+/* col-3 — prereq chips with lock icons */
+.cc-prereqs {
+  grid-column: span 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  align-content: center;
+}
+.cc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  padding: 4px 10px 4px 8px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.cc-chip-met { color: var(--success); background: var(--success-soft); }
+.cc-chip .material-symbols-outlined {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.cc-chip-met .material-symbols-outlined { color: var(--success); }
+
+/* col-1 — units */
+.cc-units-block {
+  grid-column: span 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.cc-units {
+  font-size: 18px;
+  font-weight: var(--weight-semibold);
+  color: var(--text-tertiary);
+  letter-spacing: -0.02em;
+  /* Stitch shows units in Inter (matching the module ID). */
+}
+
+/* Apple Store–style + → ✓ button. Lives on each Lec sub-card head
+   (always visible) and on each Dis/Lab row (revealed on row hover).
+
+   Mechanic: two Material Symbols stacked at the same position;
+   default state shows `add`, the `.added` modifier crossfades to
+   `check` with a small bounce and the background flips from accent
+   to success-green — mimicking the App Store "Buy → ✓" beat.
+
+   `.cc-sg-add-hover` is the hover-only variant for Dis rows; the
+   row's :hover reveals it. */
+.cc-sg-add {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  background: var(--bg-panel);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition:
+    background    260ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-color  260ms ease,
+    color         260ms ease,
+    transform     180ms ease;
+}
+.cc-sg-add:hover {
+  background: var(--accent-soft);
+  transform: scale(1.06);
+}
+.cc-sg-add:active {
+  transform: scale(0.94);
+}
+.cc-sg-add .material-symbols-outlined {
+  position: absolute;
+  font-size: 18px;
+  line-height: 1;
+  /* Spring-curve so the swap feels alive, not just a fade. */
+  transition:
+    opacity    220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform  280ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.cc-sg-add .icon-add   { opacity: 1; transform: rotate(0)     scale(1); }
+.cc-sg-add .icon-check { opacity: 0; transform: rotate(-90deg) scale(0.3); }
+.cc-sg-add.added {
+  background: var(--success);
+  border-color: var(--success);
+  color: var(--bg-panel);
+  /* On the transition INTO added, give the whole button a small
+     pop via the keyframe so it reads as a confirmation moment. */
+  animation: cc-sg-add-pop 380ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.cc-sg-add.added:hover {
+  background: var(--success);
+  filter: brightness(0.96);
+}
+.cc-sg-add.added .icon-add   { opacity: 0; transform: rotate(90deg) scale(0.3); }
+.cc-sg-add.added .icon-check { opacity: 1; transform: rotate(0)     scale(1); }
+@keyframes cc-sg-add-pop {
+  0%   { transform: scale(1);    }
+  45%  { transform: scale(1.18); }
+  100% { transform: scale(1);    }
+}
+
+/* Hover-only variant: applied to the Dis/Lab row buttons so the
+   page isn't littered with 30 + signs at rest. */
+.cc-sg-add-hover {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease,
+              background 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+tr.cc-sg-row:hover .cc-sg-add-hover,
+tr.cc-sg-row:focus-within .cc-sg-add-hover {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Once added, keep the + visible even when not hovering — otherwise
+   the user can't tell at a glance which Dis they picked. */
+tr.cc-sg-row .cc-sg-add-hover.added {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Stub card for course IDs the catalog didn't recognise. */
+.course-card.not-found {
+  opacity: 0.7;
+  border-style: dashed;
+}
+.course-card.not-found .cc-id { color: var(--text-tertiary); }
+
+/* Mobile: collapse the grid into a single column */
+@media (max-width: 700px) {
+  .course-card {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
+  }
+  .cc-id-block,
+  .cc-body,
+  .cc-prereqs,
+  .cc-units-block { grid-column: span 1; }
+  .cc-units-block { justify-content: flex-start; }
+  .cc-add-btn { display: none; }     /* tap whole card instead */
+}
+
+/* ── Follow-up chips ───────────────────────────────── */
+.followups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+.followup-chip {
+  font-size: var(--text-secondary-size);
+  font-weight: var(--weight-medium);
+  background: transparent;
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  padding: var(--space-2) var(--space-4);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.followup-chip:hover {
+  background: var(--bg-panel-2);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+/* ── Agent tool-call status chips ──────────────────── */
+/*
+   While the agent is mid-loop (calling get_sections, check_conflict,
+   etc.), each tool dispatch gets a chip here so the user knows what's
+   happening during the silent stretch before the final answer streams.
+   Active chip pulses; done chip greys out; errored chip turns red.
+*/
+.tool-calls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 var(--space-3) 0;
+}
+.tool-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: var(--weight-medium);
+  border: 1px solid var(--border-default);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  transition: opacity 180ms ease, color 180ms ease;
+}
+.tool-chip .tool-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.tool-chip.is-active {
+  border-color: var(--warning);
+  color: var(--warning);
+  background: rgba(217, 119, 6, 0.08);
+}
+.tool-chip.is-active .tool-dot {
+  background: var(--warning);
+  animation: tool-chip-pulse 1.2s ease-in-out infinite;
+}
+.tool-chip.is-done {
+  opacity: 0.65;
+}
+.tool-chip.is-done .tool-dot {
+  background: var(--success);
+}
+.tool-chip.is-error {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: rgba(220, 38, 38, 0.08);
+  opacity: 1;
+}
+.tool-chip.is-error .tool-dot {
+  background: var(--danger);
+  animation: none;
+}
+@keyframes tool-chip-pulse {
+  0%, 100% { opacity: 1;   transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.85); }
+}
+
+/* ── Limit-reached banner + Continue button ────────── */
+/*
+   When the agent loop hits MAX_ITERATIONS or MAX_TOTAL_TOOLS, the
+   backend stashes the conversation, emits a fallback answer, and
+   sends a continuation_id. We render this banner under the message
+   so the user can opt in to extending the budget.
+*/
+.limit-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: rgba(217, 119, 6, 0.06);
+  border: 1px solid rgba(217, 119, 6, 0.25);
+  border-radius: var(--radius-md);
+  font-size: var(--text-secondary-size);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.limit-notice-text { flex: 1; }
+.continue-btn {
+  font-size: var(--text-secondary-size);
+  font-weight: var(--weight-medium);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.continue-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--text-tertiary);
+}
+.continue-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+
+/* ── Typing indicator ──────────────────────────────── */
+.typing-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  width: fit-content;
+}
+.typing-bar span {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: pulse 700ms infinite alternate;
+}
+.typing-bar span:nth-child(2) { animation-delay: 150ms; }
+.typing-bar span:nth-child(3) { animation-delay: 300ms; }
+@keyframes pulse { to { opacity: 0.25; } }
+
+/* ── Input area ────────────────────────────────────── */
+.input-area {
+  border-top: 1px solid var(--border-default);
+  padding: var(--space-5) var(--space-8);
+  background: var(--bg-shell);
+}
+/* Composer width follows the message-bubble max-width pattern:
+   1100px by default so it lines up with the wider chat layout,
+   shrinks to 760px when the schedule rail opens (body.schedule-open
+   gets set by openSchedule / toggleSchedule). The transition keeps
+   it in lockstep with .msg / .msg-ai. */
+.input-row {
+  display: flex;
+  gap: var(--space-3);
+  max-width: 880px;
+  transition: max-width var(--transition);
+}
+body.schedule-open .input-row {
+  max-width: 680px;
+}
+.input-field {
+  flex: 1;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  font-size: var(--text-body);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  outline: none;
+  transition: border-color var(--transition);
+}
+.input-field:focus { border-color: var(--accent); }
+.input-field::placeholder { color: var(--text-muted); }
+.send-btn {
+  background: var(--accent-strong);
+  border: none;
+  color: white;
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-secondary-size);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: filter var(--transition);
+  letter-spacing: 0.02em;
+}
+.send-btn:hover { filter: brightness(1.1); }
+.send-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ═══════════════════════════════════════════════════════
+   SCHEDULE PANEL
+   ═══════════════════════════════════════════════════════ */
+.schedule-panel {
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--bg-shell);
+  border-left: 1px solid var(--border-default);
+  transition: width var(--transition-slow) cubic-bezier(0.25, 0.8, 0.25, 1);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.schedule-panel.open {
+  width: var(--sched-default);
+  min-width: var(--sched-min);
+}
+.schedule-panel.resizing {
+  transition: none;
+  user-select: none;
+}
+
+.resize-handle {
+  position: absolute;
+  top: 0; left: 0;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 20;
+  background: transparent;
+  transition: background var(--transition);
+}
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 2px;
+  height: 32px;
+  background: var(--border-default);
+  border-radius: 2px;
+  transform: translateY(-50%);
+  transition: background var(--transition);
+}
+.resize-handle:hover::after,
+.schedule-panel.resizing .resize-handle::after {
+  background: var(--accent);
+  height: 48px;
+}
+.schedule-panel:not(.open) .resize-handle { display: none; }
+
+.schedule-header {
+  height: 52px;
+  border-bottom: 1px solid var(--border-default);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-5) 0 var(--space-6);
+  gap: var(--space-3);
+  flex-shrink: 0;
+  background: var(--bg-shell);
+}
+.schedule-header-title {
+  font-size: var(--text-h1);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.schedule-header .pill {
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  color: var(--text-tertiary);
+  background: var(--bg-elevated);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.02em;
+}
+.schedule-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition);
+}
+.schedule-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-panel-2);
+}
+
+/* Clear button — escape hatch for sessions stuck in legacy state.
+   Pushed against the close button on the right, but visually less
+   prominent (ghost style) so users don't fat-finger a wipe. */
+.schedule-clear {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  line-height: 1;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: all var(--transition);
+}
+.schedule-clear:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.schedule-clear:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.schedule-body {
+  flex: 1;
+  overflow: auto;
+  background: var(--bg-app);
+}
+.schedule-grid {
+  display: grid;
+  grid-template-columns: 56px repeat(5, 1fr);
+  /* DO NOT set min-height: 100% here — it stretches the grid rows
+     to fill the body, breaking the JS topOffset math (which assumes
+     a fixed ROW_HEIGHT) and putting events in the wrong row. The
+     grid's natural height is HEADER_HEIGHT + N × ROW_HEIGHT; if
+     content exceeds .schedule-body's height, the body's overflow:
+     auto handles the scroll. */
+  position: relative;
+}
+.sg-corner {
+  background: var(--bg-shell);
+  border-bottom: 1px solid var(--border-default);
+  border-right: 1px solid var(--border-subtle);
+}
+.sg-day-header {
+  text-align: center;
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  color: var(--text-tertiary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  /* Locked height: must match the JS HEADER_HEIGHT constant so
+     absolute-positioned event tiles land in the right row. */
+  height: 40px;            /* 40 + 1px border = 41 visual */
+  line-height: 40px;       /* center text vertically without padding */
+  padding: 0;
+  background: var(--bg-shell);
+  border-bottom: 1px solid var(--border-default);
+  border-right: 1px solid var(--border-subtle);
+  box-sizing: border-box;
+}
+.sg-day-header:last-child { border-right: none; }
+.sg-time-label {
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+  text-align: right;
+  padding: var(--space-1) var(--space-2) 0 0;
+  border-right: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  height: 52px;
+  font-family: var(--font-mono);
+}
+.sg-cell {
+  border-right: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  height: 52px;
+  position: relative;
+}
+.sg-cell:last-child { border-right: none; }
+
+/* Hour-band striping — every other hour row gets a faint overlay
+   tint, matching AntAlmanac's .rbc-timeslot-group:nth-child(odd)
+   pattern. Subtle enough to read as rhythm, not contrast. */
+.sg-time-label.sg-band,
+.sg-cell.sg-band {
+  background: var(--overlay-soft);
+}
+
+/* ── Event tile (AntAlmanac-inspired 2-row layout) ──
+   Row 1: course_id + section_num | section_type badge
+   Row 2: meeting time            | location (when tall enough)
+   Row 3 (footer): 5-digit registrar code  */
+.sg-event {
+  position: absolute;
+  border-radius: var(--radius-sm);
+  padding: 4px 8px 4px 10px;
+  font-size: var(--text-label);
+  line-height: var(--leading-snug);
+  overflow: hidden;
+  z-index: 2;
+  cursor: pointer;
+  border-left: 3px solid;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  transition:
+    transform   180ms ease,
+    box-shadow  220ms ease,
+    filter      var(--transition);
+}
+.sg-event:hover {
+  filter: brightness(1.06);
+  transform: translate(1px, -1px);
+  box-shadow: var(--shadow-panel);
+  z-index: 5;
+}
+.sg-event-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+}
+.sg-event-id {
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-secondary-size);
+  color: inherit;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sg-event-type {
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.78;
+  flex-shrink: 0;
+}
+.sg-event-bot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: var(--text-micro);
+  font-weight: var(--weight-medium);
+  opacity: 0.85;
+}
+.sg-event-time {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.sg-event-room {
+  font-size: var(--text-micro);
+  opacity: 0.78;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sg-event-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  opacity: 0.72;
+  margin-top: auto;
+  letter-spacing: 0.02em;
+}
+
+/* Empty-state polish: centered icon + 2-line message */
+.schedule-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: center;
+  padding: var(--space-12) var(--space-6);
+  color: var(--text-muted);
+  font-size: var(--text-secondary-size);
+  line-height: var(--leading-relaxed);
+}
+.schedule-empty-icon {
+  font-size: 48px;
+  color: var(--text-disabled);
+}
+.schedule-empty-title {
+  font-size: var(--text-h2);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+.schedule-empty-sub {
+  color: var(--text-muted);
+}
+.schedule-empty-sub b {
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+
+/* ═══════════════════════════════════════════════════════
+   SCROLLBARS
+   ═══════════════════════════════════════════════════════ */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--bg-elevated);
+  border-radius: 4px;
+  border: 2px solid var(--bg-app);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--gray-600); }
+
+/* ═══════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════ */
+@media (max-width: 1100px) {
+  .schedule-panel.open { width: 460px; min-width: 420px; }
+}
+@media (max-width: 900px) {
+  .left-panel { display: none; }
+  .schedule-panel.open { width: 420px; min-width: 360px; }
+}
+@media (max-width: 680px) {
+  .schedule-panel.open {
+    width: 100% !important;
+    min-width: 0;
+    position: absolute;
+    right: 0; top: 52px; bottom: 0;
+    z-index: 50;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   ADDITIONS: stop button, settings modal, validation footer
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Topbar gear icon ─────────────────────────────────── */
+.topbar-icon-btn {
+  padding: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.topbar-icon-btn svg {
+  width: 16px;
+  height: 16px;
+  opacity: 0.9;
+}
+
+/* ── Generation indicators ──────────────────────────── */
+/* Pre-token "thinking" state — shimmer light sweeps across the word */
+.msg-ai-body.thinking {
+  display: inline-block;
+  font-style: italic;
+  background: linear-gradient(
+    90deg,
+    var(--text-muted) 0%,
+    var(--text-muted) 25%,
+    var(--text-primary) 50%,
+    var(--text-muted) 75%,
+    var(--text-muted) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: shimmer 1.6s linear infinite;
+}
+@keyframes shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* Token-streaming state — small pulsing dot after the last char */
+.msg-ai-body.streaming::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background-color: var(--accent);
+  vertical-align: 1px;
+  animation: dot-pulse 1.05s ease-in-out infinite;
+}
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1;    transform: scale(1);    }
+  50%      { opacity: 0.25; transform: scale(0.65); }
+}
+
+/* ── Stop button ─────────────────────────────────────── */
+.stop-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-secondary-size);
+  font-weight: var(--weight-medium);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+  height: 100%;
+}
+.stop-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+.stop-btn svg {
+  color: var(--accent);
+}
+
+/* ── Modal backdrop / panel ──────────────────────────── */
+.modal-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(45, 52, 53, 0.45);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  backdrop-filter: blur(2px);
+}
+.modal-backdrop.open {
+  display: flex;
+}
+.modal-panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  width: 100%;
+  max-width: 760px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 60px rgba(45, 52, 53, 0.45);
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.modal-title {
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  flex: 1;
+}
+.modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 16px;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.modal-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.modal-body {
+  padding: var(--space-4) var(--space-5);
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.modal-hint {
+  font-size: var(--text-label);
+  color: var(--text-tertiary);
+  line-height: 1.55;
+  margin: 0;
+}
+.modal-hint em {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+.modal-textarea {
+  width: 100%;
+  min-height: 240px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  padding: var(--space-3);
+  resize: vertical;
+  outline: none;
+}
+.modal-textarea:focus {
+  border-color: var(--accent);
+}
+.modal-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.modal-footer {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+  align-items: center;
+}
+.modal-footer-spacer { flex: 1; }
+.modal-btn {
+  background: transparent;
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-secondary-size);
+  font-weight: var(--weight-medium);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.modal-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.modal-btn-primary {
+  background: var(--accent-medium);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+.modal-btn-primary:hover {
+  background: var(--accent);
+  color: #ffffff;
+}
+.modal-btn-ghost {
+  border-color: transparent;
+  color: var(--text-tertiary);
+}
+.modal-btn-ghost:hover {
+  border-color: var(--border-default);
+}
+
+/* ── Validation footer (inside AI message) ───────────── */
+.validation-footer {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--border-default);
+  font-size: var(--text-label);
+  color: var(--text-tertiary);
+}
+.validation-footer-header {
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1);
+  letter-spacing: 0.02em;
+}
+.validation-issue {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  line-height: 1.55;
+  padding: 2px 0;
+}
+.validation-issue-icon {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+}
+.validation-issue-error    .validation-issue-icon { color: var(--danger); }
+.validation-issue-warn     .validation-issue-icon { color: var(--warning); }
+.validation-issue-info     .validation-issue-icon { color: var(--accent); }
+.validation-issue code {
+  background: var(--bg-elevated);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+/* ═══════════════════════════════════════════════════════
+   Profile popover + Memory modal (Phase 3.1)
+   ═══════════════════════════════════════════════════════ */
+
+/* Layout: make left-panel a flex column so we can pin the avatar bar
+   to the bottom while existing content scrolls. */
+.left-panel {
+  display: flex;
+  flex-direction: column;
+}
+.left-panel-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.user-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  margin: var(--space-3) calc(var(--space-3) * -1) calc(var(--space-3) * -1);
+  border-top: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: background 0.12s;
+  position: relative;
+}
+.user-bar:hover { background: var(--bg-elevated); }
+.user-bar-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+.user-bar-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-bar-chev {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  opacity: 0.6;
+}
+
+/* Popover menu — appears above the user-bar when clicked */
+.user-popover {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: var(--space-3);
+  right: var(--space-3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(45, 52, 53, 0.18);
+  padding: var(--space-2);
+  display: none;
+  z-index: 100;
+}
+.user-popover.open { display: block; }
+.user-popover-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  transition: background 0.1s;
+}
+.user-popover-item:hover { background: var(--bg-primary); }
+.user-popover-item svg {
+  width: 14px;
+  height: 14px;
+  opacity: 0.8;
+}
+.user-popover-sep {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: var(--space-2) 0;
+}
+.user-popover-email {
+  padding: var(--space-2) var(--space-3);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+/* ── Memory modal ──────────────────────────────────────── */
+.memory-modal-content {
+  width: min(92vw, 560px);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.memory-section {
+  padding: var(--space-4) 0;
+}
+.memory-section + .memory-section {
+  border-top: 1px solid var(--border-subtle);
+}
+.memory-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-3);
+}
+
+/* About-you summary line */
+.memory-about {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: 13px;
+}
+.memory-about-line {
+  color: var(--text-secondary);
+}
+.memory-about-line strong {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* Major-progress block */
+.memory-progress-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: var(--space-3);
+}
+.memory-progress-bar {
+  height: 6px;
+  background: var(--bg-elevated);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: var(--space-3);
+}
+.memory-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+.memory-progress-rows {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2) var(--space-3);
+  font-size: 12px;
+}
+.memory-progress-rows .label   { color: var(--text-secondary); }
+.memory-progress-rows .count   { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.memory-progress-rows .done    { color: var(--success); }
+
+/* Preferences list */
+.memory-pref-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.memory-pref-row:last-child { border-bottom: 0; }
+.memory-pref-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: var(--leading-normal);
+}
+.memory-pref-when {
+  display: block;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+.memory-pref-forget {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-tertiary);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  transition: color 0.1s, background 0.1s;
+}
+.memory-pref-forget:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.memory-empty {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  font-style: italic;
+  padding: var(--space-2) 0;
+}
+.memory-forget-all {
+  margin-top: var(--space-4);
+  width: 100%;
+  padding: var(--space-3);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.memory-forget-all:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* ── Sidebar stats card (clickable; opens Profile) ───── */
+.sb-stats {
+  display: flex;
+  justify-content: space-around;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  margin: var(--space-3) 0;
+  background: var(--bg-elevated);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+  width: 100%;
+  text-align: inherit;
+  color: inherit;
+  font: inherit;
+}
+.sb-stats:hover {
+  border-color: var(--border-subtle);
+  background: var(--bg-primary);
+}
+.sb-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 9px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  letter-spacing: 0.08em;
+  flex: 1;
+}
+.sb-stat-num {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 2px;
+  line-height: 1;
+}
+
+/* Waitlist dot — yellow-ish, in between "in progress" and "not yet". */
+.dot-waitlist {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warning);
+  margin-right: var(--space-2);
+  vertical-align: middle;
+}
+
+/* ── Profile modal ────────────────────────────────────── */
+.profile-modal-content {
+  width: min(92vw, 600px);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.profile-course-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.profile-course-grid .left-course-tag {
+  margin: 0;
+  white-space: nowrap;
+}
+.profile-section-count {
+  display: inline-block;
+  margin-left: var(--space-2);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+/* ── Auth modal (login / register) ──────────────────────
+   Shown on boot if /api/auth/me is 401. Two tabs (Login /
+   Register) plus a "Continue as guest" escape hatch so testers
+   can poke at the demo without registering. */
+.auth-tabs {
+  display: flex;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+  margin: 0 calc(-1 * var(--space-5)) var(--space-3);
+  padding: 0 var(--space-5);
+}
+.auth-tab {
+  background: transparent;
+  border: none;
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  color: var(--text-tertiary);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  position: relative;
+  transition: color var(--transition);
+}
+.auth-tab.is-active {
+  color: var(--text-primary);
+}
+.auth-tab.is-active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+}
+.auth-pane {
+  display: none;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.auth-pane.is-active {
+  display: flex;
+}
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.auth-label {
+  font-size: var(--text-label);
+  color: var(--text-secondary);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.02em;
+}
+.auth-input {
+  font: inherit;
+  font-size: var(--text-secondary-size);
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color var(--transition);
+}
+.auth-input:focus {
+  border-color: var(--text-tertiary);
+}
+.auth-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.auth-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+}
+.auth-btn {
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+  border: 1px solid var(--border-strong);
+  background: var(--accent);
+  color: #ffffff;
+}
+.auth-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.auth-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.auth-btn.secondary {
+  background: var(--bg-panel-2);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+.auth-btn.secondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.auth-hint {
+  font-size: var(--text-label);
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+.auth-error {
+  font-size: var(--text-secondary-size);
+  color: var(--danger);
+  padding: var(--space-2) var(--space-3);
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  border-radius: var(--radius-sm);
+  display: none;
+}
+.auth-error.is-visible { display: block; }
+.auth-guest-link {
+  text-align: center;
+  font-size: var(--text-label);
+  color: var(--text-tertiary);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+.auth-guest-link a {
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.auth-guest-link a:hover {
+  color: var(--text-primary);
+}
+.auth-step-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+  font-size: var(--text-label);
+  color: var(--text-tertiary);
+}
+.auth-step-divider::before,
+.auth-step-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
+}
+.auth-register-step2 {
+  display: none;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.auth-register-step2.is-visible { display: flex; }
+
+
+/* ── Phase C: onboarding wizard ────────────────────────
+   Full-screen overlay that gates the chat for a newly-authenticated
+   user whose profile is still empty. 4 steps:
+     1. School  →  2. Year  →  3. Major  →  4. Completed courses
+   Visual layout borrowed from a Stitch mock (card grid + sticky
+   footer + selection chips); colors adapted to the existing dark
+   theme so the wizard feels like part of the app, not a graft. */
+.wizard-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  /* Darker than --bg-app so the #262626 cards visibly pop. The
+     wizard is its own world; the rest of the app keeps its own bg. */
+  background: var(--bg-app);
+  flex-direction: column;
+  overflow: hidden;
+}
+.wizard-overlay.open { display: flex; }
+
+.wizard-main {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-8) var(--space-10) 0;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* Step header ── tiny progress label + big question + subtitle */
+.wizard-step-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.wizard-step-num {
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+.wizard-step-divider {
+  height: 1px;
+  width: 40px;
+  background: var(--overlay-strong);
+}
+.wizard-step-name {
+  color: var(--text-secondary);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+.wizard-headline {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  margin-bottom: var(--space-3);
+}
+.wizard-sub {
+  color: var(--text-secondary);
+  font-size: var(--text-secondary-size);
+  line-height: 1.55;
+  max-width: 640px;
+}
+
+.wizard-header { flex-shrink: 0; margin-bottom: var(--space-6); }
+.wizard-content { flex: 1; overflow: hidden; position: relative; }
+
+/* Every step panel needs to be a flex column so its inner grid-wrap
+   (flex:1) actually receives the leftover vertical space and can
+   scroll. Otherwise the panel collapses to content-height and the
+   sticky footer overlaps the last row. JS toggles inline display:none
+   to hide; when display is cleared the CSS rule below takes effect. */
+.wizard-content > [id^="wizardStep"] {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Selection matrix (step 4 — selected courses preview chips) */
+.wizard-matrix-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-2);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.wizard-matrix-clear {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+.wizard-matrix-clear.is-visible { opacity: 1; }
+.wizard-matrix-clear:hover { color: var(--text-primary); text-decoration: underline; }
+.wizard-matrix {
+  min-height: 52px;
+  background: var(--overlay-soft);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  margin-bottom: var(--space-4);
+}
+.wizard-matrix-empty {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-style: italic;
+  padding: 0 var(--space-2);
+}
+.wizard-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 10px;
+  background: var(--accent);
+  color: #ffffff;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  animation: fadeInUp 240ms cubic-bezier(0.4,0,0.2,1);
+}
+.wizard-chip button {
+  background: var(--overlay-strong);
+  border: none;
+  color: #ffffff;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+}
+.wizard-chip button:hover { background: rgba(45, 52, 53,0.32); }
+
+/* Search bar (step 4) */
+.wizard-search {
+  position: relative;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+  transition: border-color var(--transition), background var(--transition);
+}
+.wizard-search:focus-within {
+  border-color: var(--text-tertiary);
+  background: var(--bg-panel);
+}
+.wizard-search input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 14px;
+  padding: 12px 16px;
+}
+.wizard-search input::placeholder { color: var(--text-tertiary); }
+
+/* Scrollable card grid */
+.wizard-grid-wrap {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+  padding-bottom: 24px;
+}
+.wizard-grid-wrap::-webkit-scrollbar { width: 6px; }
+.wizard-grid-wrap::-webkit-scrollbar-track { background: transparent; }
+.wizard-grid-wrap::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 3px; }
+.wizard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+.wizard-card {
+  /* Bumped from --bg-panel (#1f1f1f) to --bg-panel-2 (#262626) plus a
+     light hairline border. On the new var(--bg-app) wizard bg this gives a
+     clearly readable card surface without blowing out the contrast. */
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 18px;
+  cursor: pointer;
+  transition: all 200ms cubic-bezier(0.4,0,0.2,1);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 120px;
+  animation: fadeInUp 400ms cubic-bezier(0.4,0,0.2,1) backwards;
+}
+.wizard-card:hover {
+  border-color: var(--text-muted);
+  background: var(--bg-elevated);
+  transform: translateY(-2px);
+}
+.wizard-card.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);   /* rgba(69, 96, 133,0.12) — visible blue wash */
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.wizard-card .cat {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);   /* up from --text-tertiary (0.58) for context labels */
+}
+.wizard-card.selected .cat { color: var(--accent); }
+.wizard-card .code {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
+}
+.wizard-card .title {
+  font-size: 12px;
+  color: var(--text-secondary);   /* explicit instead of var so it survives selected-state */
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.wizard-card.selected .title { color: var(--text-primary); }
+.wizard-card .check {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #ffffff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: all 220ms cubic-bezier(0.4,0,0.2,1);
+}
+.wizard-card.selected .check { opacity: 1; transform: scale(1); }
+
+.wizard-empty {
+  padding: 60px 0;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 14px;
+}
+.wizard-loading {
+  padding: 60px 0;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Sticky footer with Back / Skip / Continue */
+.wizard-footer {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-shell);
+  border-top: 1px solid var(--border-default);
+  padding: 16px 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 2;
+}
+.wizard-footer-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.wizard-footer-info .count {
+  font-weight: 700;
+  color: var(--accent);
+}
+.wizard-actions { display: flex; gap: 10px; }
+.wizard-btn {
+  padding: 10px 22px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  cursor: pointer;
+  border: 1px solid var(--border-strong);
+  transition: all var(--transition);
+}
+.wizard-btn.ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.wizard-btn.ghost:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.wizard-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+.wizard-btn.primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+.wizard-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Step-specific tweaks */
+.wizard-school-grid,
+.wizard-year-grid,
+.wizard-major-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+  padding-bottom: var(--space-6);
+}
+.wizard-school-grid .wizard-card,
+.wizard-year-grid .wizard-card,
+.wizard-major-grid .wizard-card {
+  min-height: 96px;
+}
+.wizard-school-grid .wizard-card .title,
+.wizard-major-grid .wizard-card .title { -webkit-line-clamp: 3; line-clamp: 3; }
+
+/* Profile modal — reopen-wizard banner sits at top of the body */
+.profile-wizard-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-medium);
+  border-radius: var(--radius-md);
+}
+.profile-wizard-cta-text { flex: 1; }
+.profile-wizard-cta-title {
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.profile-wizard-cta-sub {
+  font-size: var(--text-label);
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+/* Step 0 — intro / welcome screen
+   Shown once on first auto-trigger. The wizard-header (step number +
+   headline) is hidden via .is-intro on the overlay so this hero gets
+   the full vertical real estate. */
+.wizard-overlay.is-intro .wizard-header { display: none; }
+.wizard-overlay.is-intro .wizard-main {
+  padding-top: var(--space-6);
+  position: relative;
+}
+.wizard-overlay.is-intro .wizard-content {
+  overflow-y: auto;
+  position: relative;
+}
+.wizard-overlay.is-intro #wizardStep0 {
+  justify-content: center;       /* vertical-center the hero */
+  min-height: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+/* Ambient mouse-tracking glow behind the hero. JS sets --mx / --my
+   on the overlay; the radial wash follows the cursor at low opacity
+   so it feels like the page is breathing as you move the mouse. */
+.wizard-overlay.is-intro .wizard-main::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(720px circle at var(--mx, 50%) var(--my, 35%),
+                    rgba(69, 96, 133, 0.10), transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+  transition: background 240ms ease-out;
+}
+
+.wizard-intro {
+  max-width: 720px;
+  margin: 0 auto;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-6) 0;
+}
+.wizard-intro-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 6px 14px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+}
+.wizard-intro-eyebrow .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: introPulse 2.4s ease-in-out infinite;
+}
+@keyframes introPulse {
+  0%, 100% { opacity: 1;   box-shadow: 0 0 8px var(--accent); }
+  50%      { opacity: 0.55; box-shadow: 0 0 14px var(--accent); }
+}
+
+/* Decorative 3-line architecture motif between eyebrow and headline.
+   Same idea as the Stitch reference — quiet structural detail that
+   reinforces the "architect" framing without competing with the type. */
+.wizard-intro-architect {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 38px;
+  height: 64px;
+  margin: 0;
+}
+.wizard-intro-architect .line {
+  width: 1px;
+  background: linear-gradient(to top, var(--accent), transparent);
+}
+.wizard-intro-architect .line:nth-child(1) { height: 38px; opacity: 0.45; }
+.wizard-intro-architect .line:nth-child(2) { height: 60px; opacity: 0.70; }
+.wizard-intro-architect .line:nth-child(3) { height: 28px; opacity: 0.45; }
+.wizard-intro-headline {
+  font-size: clamp(36px, 5vw, 56px);
+  line-height: 1.08;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  margin: 0;
+}
+.wizard-intro-accent {
+  color: var(--accent);
+  font-weight: 600;
+}
+.wizard-intro-sub {
+  font-size: 14.5px;
+  line-height: 1.78;
+  letter-spacing: 0.005em;
+  color: var(--text-primary);
+  max-width: 620px;
+  margin: 0 auto;
+  /* Pre-wrap so the JS-typed \n turns into a real line break instead
+     of collapsing into a space. Centered text: each line recenters as
+     characters are added, which gives the typewriter a gentle "settling"
+     motion (existing chars drift left as new ones arrive). */
+  white-space: pre-wrap;
+  text-align: center;
+  /* Reserve vertical space for the typed-out text so the value-blocks
+     below don't reflow upward while typing. ~6 lines covers the
+     trimmed copy + paragraph gap comfortably. */
+  min-height: calc(14.5px * 1.78 * 6);
+  font-family: var(--font-mono, 'JetBrains Mono', ui-monospace, 'SF Mono', monospace);
+}
+
+/* Terminal-style cursor — solid bar that follows the typed text.
+   When typing finishes JS adds .is-blinking and the cursor breathes. */
+.wizard-cursor {
+  display: inline-block;
+  width: 0.55ch;
+  height: 1.05em;
+  background: var(--accent);
+  vertical-align: text-bottom;
+  margin-left: 1px;
+  opacity: 1;
+  border-radius: 1px;
+}
+.wizard-cursor.is-blinking {
+  animation: wizardCursorBlink 1.05s steps(2, jump-none) infinite;
+}
+@keyframes wizardCursorBlink {
+  0%, 50%      { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+.wizard-intro-values {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+  width: 100%;
+  margin-top: var(--space-4);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-default);
+}
+.wizard-intro-value {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0 var(--space-3);
+  text-align: center;
+}
+.wizard-intro-value svg {
+  width: 28px;
+  height: 28px;
+  color: var(--accent);
+  opacity: 0.9;
+  transition: transform 400ms cubic-bezier(0.4,0,0.2,1);
+}
+.wizard-intro-value:hover svg { transform: scale(1.08); }
+.wizard-intro-value h3 {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  margin: 0;
+}
+.wizard-intro-value p {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-tertiary);
+  margin: 0;
+  font-weight: 300;
+}
+@media (max-width: 720px) {
+  .wizard-intro-values { grid-template-columns: 1fr; gap: var(--space-3); }
+  .wizard-intro-values { border-top: none; }
+}
+
+/* ── Cinematic intro entrance ──────────────────────────
+   Each piece fades up with a staggered delay so the hero
+   "assembles" itself. The headline gets a special keyframe
+   that starts with wide letter-spacing and tightens — the
+   text settles into place like a print job aligning. */
+@keyframes introFadeUp {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes introHeadlineSettle {
+  0% {
+    opacity: 0;
+    transform: translateY(28px);
+    letter-spacing: 0.18em;
+    filter: blur(2px);
+  }
+  60% {
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    letter-spacing: -0.02em;
+    filter: blur(0);
+  }
+}
+@keyframes introLineGrow {
+  from { transform: scaleY(0); opacity: 0; }
+  to   { transform: scaleY(1); opacity: 1; }
+}
+
+.wizard-intro-eyebrow,
+.wizard-intro-architect,
+.wizard-intro-headline,
+.wizard-intro-value {
+  opacity: 0;
+  animation-fill-mode: forwards;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+.wizard-intro-eyebrow {
+  animation-name: introFadeUp;
+  animation-duration: 1.4s;
+  animation-delay: 0.10s;
+}
+.wizard-intro-architect {
+  animation-name: introFadeUp;
+  animation-duration: 1.4s;
+  animation-delay: 0.30s;
+}
+.wizard-intro-architect .line {
+  transform-origin: bottom;
+  animation: introLineGrow 1.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.wizard-intro-architect .line:nth-child(1) { animation-delay: 0.45s; }
+.wizard-intro-architect .line:nth-child(2) { animation-delay: 0.55s; }
+.wizard-intro-architect .line:nth-child(3) { animation-delay: 0.65s; }
+
+.wizard-intro-headline {
+  animation-name: introHeadlineSettle;
+  animation-duration: 2.0s;
+  animation-delay: 0.55s;
+}
+/* Subtitle: visible-but-empty so JS can type into it. The typing
+   itself is its entrance. */
+.wizard-intro-sub { opacity: 1; }
+
+/* Value blocks fade up AFTER the typewriter finishes (~5.4s from open). */
+.wizard-intro-value {
+  animation-name: introFadeUp;
+  animation-duration: 1.2s;
+}
+.wizard-intro-value:nth-child(1) { animation-delay: 5.55s; }
+.wizard-intro-value:nth-child(2) { animation-delay: 5.70s; }
+.wizard-intro-value:nth-child(3) { animation-delay: 5.85s; }
+
+/* Bouncy primary CTA when the wizard is in intro mode — draws the eye */
+.wizard-overlay.is-intro .wizard-btn.primary {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.wizard-overlay.is-intro .wizard-btn.primary::before {
+  content: '';
+  position: absolute;
+  inset: 0 -50% 0 -50%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(45, 52, 53,0.18),
+    transparent
+  );
+  transform: translateX(-100%);
+  transition: transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+.wizard-overlay.is-intro .wizard-btn.primary:hover::before {
+  transform: translateX(100%);
+}
+.wizard-overlay.is-intro .wizard-btn.primary:hover {
+  box-shadow: 0 12px 28px -8px rgba(69, 96, 133, 0.45);
+  transform: translateY(-2px);
+}
+
+/* Respect reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .wizard-intro-eyebrow,
+  .wizard-intro-architect,
+  .wizard-intro-headline,
+  .wizard-intro-sub,
+  .wizard-intro-value,
+  .wizard-intro-architect .line,
+  .wizard-intro-eyebrow .dot {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    letter-spacing: -0.02em !important;
+    filter: none !important;
+  }
+}
+
+/* Department-group header (UCI WebSoc index style):
+   CODE · Course Department Name        N COURSES                       */
+.wizard-dept-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: var(--space-5) 0 var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-strong);
+  scroll-margin-top: 8px;
+}
+.wizard-dept-header:first-child { margin-top: 0; }
+.wizard-dept-header .dept-code {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+}
+.wizard-dept-header .dept-sep {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.wizard-dept-header .dept-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.wizard-dept-header .count {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-left: auto;
+}
+
+/* Step 4 body holds the scrolling card grid on the left and the
+   sticky A-Z navigation strip on the right. */
+.wizard-step4-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  gap: var(--space-3);
+  min-height: 0;     /* required so the inner scroll container actually scrolls */
+}
+.wizard-step4-body .wizard-grid-wrap { flex: 1; }
+
+.wizard-letter-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 4px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  overflow-y: auto;
+  flex-shrink: 0;
+  align-self: stretch;
+  scrollbar-width: none;
+}
+.wizard-letter-nav::-webkit-scrollbar { display: none; }
+.wizard-letter-nav button {
+  width: 30px;
+  height: 26px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 140ms, color 140ms;
+}
+.wizard-letter-nav button:hover {
+  background: var(--overlay-medium);
+  color: #ffffff;
+}
+.wizard-letter-nav button.is-active {
+  background: var(--accent-medium);
+  color: var(--accent);
+}
+
+/* Hide-via-class for the search filter: avoid re-rendering 9000 cards
+   on each keystroke. Dept headers + A-Z nav buttons that lose all
+   their visible children get hidden too. */
+.wizard-card.is-hidden,
+.wizard-dept-header.is-hidden,
+.wizard-letter-nav button.is-hidden { display: none !important; }
