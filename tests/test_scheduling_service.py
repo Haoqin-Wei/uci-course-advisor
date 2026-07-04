@@ -309,6 +309,96 @@ def test_validate_schedule_bundle_reports_pending_schedule_conflicts():
     ]
 
 
+def test_validate_schedule_bundle_reports_missing_required_secondary_pairing():
+    result = validate_schedule_bundle(
+        [
+            {
+                "course_id": "COMPSCI161",
+                "primary_code": "10000",
+                "requires_secondary": True,
+                "secondary_type": "Dis",
+                "sections": [
+                    {
+                        "course_id": "COMPSCI161",
+                        "section_code": "10000",
+                        "section_num": "A",
+                        "section_type": "Lec",
+                        "days": "MW",
+                        "start_time": "09:00",
+                        "end_time": "10:20",
+                    },
+                    {
+                        "course_id": "COMPSCI161",
+                        "section_code": "10001",
+                        "section_num": "A1",
+                        "section_type": "Dis",
+                        "days": "F",
+                        "start_time": "09:00",
+                        "end_time": "09:50",
+                    },
+                ],
+            }
+        ]
+    )
+
+    assert result["valid"] is False
+    assert result["unknowns"] == []
+    assert result["conflicts"] == [
+        {
+            "type": "incomplete_pairing",
+            "scope": "bundle",
+            "message": "COMPSCI161 requires Lec plus Dis, but no Dis section is selected",
+            "sections": [
+                {
+                    "course_id": "COMPSCI161",
+                    "section_code": "10000",
+                    "section_num": "A",
+                    "window": "MW 09:00–10:20",
+                }
+            ],
+        }
+    ]
+
+
+def test_validate_schedule_bundle_accepts_complete_primary_secondary_pairing():
+    result = validate_schedule_bundle(
+        [
+            {
+                "course_id": "COMPSCI161",
+                "requires_secondary": True,
+                "secondary_type": "Dis",
+                "selected_sections": [
+                    {
+                        "course_id": "COMPSCI161",
+                        "section_code": "10000",
+                        "section_num": "A",
+                        "section_type": "Lec",
+                        "days": "MW",
+                        "start_time": "09:00",
+                        "end_time": "10:20",
+                    },
+                    {
+                        "course_id": "COMPSCI161",
+                        "section_code": "10001",
+                        "section_num": "A1",
+                        "section_type": "Dis",
+                        "days": "F",
+                        "start_time": "09:00",
+                        "end_time": "09:50",
+                    },
+                ],
+            }
+        ]
+    )
+
+    assert result == {
+        "valid": True,
+        "warnings": [],
+        "conflicts": [],
+        "unknowns": [],
+    }
+
+
 def test_validate_schedule_bundle_reports_tba_as_unknown_not_clear():
     result = validate_schedule_bundle(
         [

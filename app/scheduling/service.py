@@ -21,6 +21,8 @@ DAY_CODE_TO_NAME: dict[str, str] = {
     "Su": "Sun",
 }
 _DAY_TOKENS: tuple[str, ...] = ("Tu", "Th", "Sa", "Su", "M", "W", "F")
+_PRIMARY_SECTION_PREFIXES: tuple[str, ...] = ("lec", "sem")
+_SECONDARY_SECTION_PREFIXES: tuple[str, ...] = ("dis", "lab", "stu", "act", "tut", "fld")
 SectionTimeStatus = Literal["conflict", "clear", "unknown"]
 FinalExamStatus = Literal["conflict", "clear", "unknown"]
 
@@ -154,6 +156,10 @@ def _section_num(section: dict) -> str:
     return str(section.get("section_num") or section.get("sectionNum") or "")
 
 
+def _section_type(section: dict) -> str:
+    return str(section.get("section_type") or section.get("sectionType") or "").strip()
+
+
 def _course_id(section: dict) -> str:
     return str(section.get("course_id") or section.get("courseId") or "")
 
@@ -188,6 +194,90 @@ def _with_course_id(section: dict, course_id: str) -> dict:
     if course_id and not _course_id(copied):
         copied["course_id"] = course_id
     return copied
+
+
+def _is_primary_section(section: dict, item: dict | None = None) -> bool:
+    section_type = _section_type(section).lower()
+    if section_type.startswith(_PRIMARY_SECTION_PREFIXES):
+        return True
+    if item:
+        primary_code = str(item.get("primary_code") or "").strip()
+        if primary_code and (
+            _section_code(section) == primary_code
+            or _section_num(section) == primary_code
+        ):
+            return True
+    return False
+
+
+def _is_secondary_section(section: dict) -> bool:
+    return _section_type(section).lower().startswith(_SECONDARY_SECTION_PREFIXES)
+
+
+def _secondary_type_label(item: dict, selected_sections: list[dict]) -> str:
+    explicit = str(item.get("secondary_type") or "").strip()
+    if explicit:
+        return explicit
+
+    secondary_codes = item.get("secondary_codes")
+    if isinstance(secondary_codes, list):
+        for secondary in secondary_codes:
+            if isinstance(secondary, dict):
+                section_type = str(secondary.get("type") or "").strip()
+                if section_type:
+                    return section_type
+
+    for section in selected_sections:
+        if _is_secondary_section(section):
+            section_type = _section_type(section)
+            if section_type:
+                return section_type
+    return "secondary"
+
+
+def _item_requires_secondary(item: dict) -> bool:
+    if item.get("requires_secondary") is True:
+        return True
+    if item.get("secondary_type"):
+        return True
+    secondary_codes = item.get("secondary_codes")
+    return isinstance(secondary_codes, list) and bool(secondary_codes)
+
+
+def _incomplete_pairing_conflict(item: dict, selected_sections: list[dict]) -> dict | None:
+    if not _item_requires_secondary(item):
+        return None
+
+    course_id = str(item.get("course_id") or "")
+    secondary_label = _secondary_type_label(item, selected_sections)
+    has_primary = any(_is_primary_section(section, item) for section in selected_sections)
+    has_secondary = any(_is_secondary_section(section) for section in selected_sections)
+
+    if has_primary and has_secondary:
+        return None
+
+    if has_primary:
+        message = (
+            f"{course_id} requires Lec plus {secondary_label}, "
+            f"but no {secondary_label} section is selected"
+        )
+    elif has_secondary:
+        message = (
+            f"{course_id} requires a primary section plus {secondary_label}, "
+            "but no primary section is selected"
+        )
+    else:
+        message = (
+            f"{course_id or 'This course'} requires a primary section plus "
+            f"{secondary_label}, but the selected section type is unclear"
+        )
+
+    return {
+        "type": "incomplete_pairing",
+        "scope": "bundle",
+        "message": message,
+        "sections": [_section_summary(section) for section in selected_sections],
+    }
 
 
 def _selected_sections_for_item(item: dict) -> list[dict]:
@@ -376,6 +466,7 @@ def validate_schedule_bundle(
       - proposed recommendation sections vs already-resolved pending sections
       - TBA/missing time is reported as ``unknown`` instead of treated as clear
       - scheduled final-exam conflicts are reported alongside time conflicts
+      - required primary/secondary pairings must include both halves
 
     The function is intentionally pure: callers resolve persisted
     ``pending_schedule`` entries into concrete section dicts before calling.
@@ -394,6 +485,9 @@ def validate_schedule_bundle(
             unknowns.append(_missing_section_unknown(course_id))
             continue
         bundle_sections.extend(selected_sections)
+        pairing_conflict = _incomplete_pairing_conflict(item, selected_sections)
+        if pairing_conflict:
+            conflicts.append(pairing_conflict)
         for section in selected_sections:
             if _section_has_unknown_time(section):
                 unknowns.append(
