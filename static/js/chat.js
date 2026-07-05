@@ -71,7 +71,7 @@ async function sendMessage(text) {
         // Agent loop dispatched a tool — show a status chip in the
         // AI bubble so the user sees what's happening during the
         // silent stretch before the answer streams.
-        startToolChip(aiMsg, event.label || event.name);
+        startToolChip(aiMsg, event.label || event.name, event.name);
       },
       tool_call_done(event) {
         finishToolChip(aiMsg, event.ok !== false);
@@ -172,7 +172,7 @@ function startAiMessage() {
   return wrap;
 }
 
-function startToolChip(wrap, label) {
+function startToolChip(wrap, label, toolName) {
   // Lazy-create the chips container above the body. We don't want it
   // on every AI message — only when the agent actually uses tools.
   let container = wrap.querySelector(':scope > .tool-calls');
@@ -184,6 +184,10 @@ function startToolChip(wrap, label) {
   }
   const chip = document.createElement('div');
   chip.className = 'tool-chip is-active';
+  if (toolName) {
+    chip.dataset.toolName = toolName;
+    if (toolName === 'web_search') chip.classList.add('tool-chip-web-search');
+  }
   chip.innerHTML = '<span class="tool-dot"></span><span class="tool-label"></span>';
   chip.querySelector('.tool-label').textContent = label || '调用工具';
   container.appendChild(chip);
@@ -345,7 +349,7 @@ async function continueAgent(wrap, continuationId, btn) {
       tool_call_start(event) {
         // Reuse the existing chip container on `wrap`. Pass the
         // real wrap, not the shell, so chips land in the right DOM.
-        startToolChip(wrap, event.label || event.name);
+        startToolChip(wrap, event.label || event.name, event.name);
       },
       tool_call_done(event) {
         finishToolChip(wrap, event.ok !== false);

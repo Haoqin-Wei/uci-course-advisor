@@ -26,6 +26,7 @@ from typing import Any, Callable, Optional
 
 from app import observability
 from app.data import db
+from app.data import web_search as web_search_data
 from app.scheduling import (
     resolve_pending_schedule_sections,
     sections_overlap,
@@ -473,6 +474,49 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "web_search",
+            "description": (
+                "Controlled web search for cases where local DB tools are "
+                "missing, partial, stale, unavailable, or the user explicitly "
+                "asks to search/look up current external information. Use "
+                "local DB tools first whenever they can verify the fact. "
+                "Returns search-result records only (title, URL, domain, "
+                "snippet, source_class, trust_level); does not fetch full pages."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Concrete search query. Do not include sensitive profile details.",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": (
+                            "Required. One sentence explaining why web search is "
+                            "needed instead of relying only on local DB data."
+                        ),
+                    },
+                    "preferred_domains": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Optional domain filters/hints such as 'uci.edu', "
+                            "'reg.uci.edu', or 'catalogue.uci.edu'."
+                        ),
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Number of results to return, 1-10. Defaults to 5.",
+                    },
+                },
+                "required": ["query", "reason"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "propose_recommendation",
             "description": (
                 "REQUIRED when recommending a SET of courses for a specific term "
@@ -809,6 +853,31 @@ def _tool_get_student_profile(*, context: dict) -> dict:
         except Exception as e:
             logger.debug("preferences enrichment skipped: %s", e)
     return result
+
+
+def _tool_web_search(
+    query: str,
+    reason: str,
+    *,
+    context: dict,
+    preferred_domains: Optional[list[str]] = None,
+    max_results: Optional[int] = None,
+) -> dict:
+    """Controlled web-search tool.
+
+    This wrapper keeps agent context out of the query itself. The data
+    layer owns provider choice, rate limiting, URL classification, and
+    structured errors.
+    """
+
+    subject = str(context.get("user_id") or "anonymous")
+    return web_search_data.search_web(
+        query=query,
+        reason=reason,
+        preferred_domains=preferred_domains,
+        max_results=max_results,
+        subject=subject,
+    )
 
 
 def _tool_propose_recommendation(
@@ -1584,6 +1653,7 @@ DISPATCH: dict[str, Callable[..., dict]] = {
     "check_section_conflict":   _tool_check_section_conflict,
     "get_student_profile":      _tool_get_student_profile,
     "get_policy":               _tool_get_policy,
+    "web_search":               _tool_web_search,
     "propose_recommendation":   _tool_propose_recommendation,
 }
 
@@ -1678,6 +1748,9 @@ def humanize_tool_call(name: str, args: dict) -> str:
     if name == "get_policy":
         topic = a.get("topic")
         return f"查询学校政策 · {topic}" if topic else "列出学校政策主题"
+    if name == "web_search":
+        query = (a.get("query") or "").strip()
+        return f"联网搜索 · {query}" if query else "联网搜索"
     if name == "propose_recommendation":
         n = len(a.get("items") or [])
         return f"准备 {n} 张推荐卡片{term_suffix}"

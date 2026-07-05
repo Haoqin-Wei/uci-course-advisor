@@ -33,6 +33,15 @@ const CATEGORY_LABELS = {
   elective:  'Elective',
 };
 
+const SOURCE_BADGE_LABELS = {
+  db_verified: 'DB Verified',
+  official_uci: 'Official UCI',
+  official_web: 'Official Web',
+  external_web: 'External Web',
+  anecdotal: 'Anecdotal',
+  unverified: 'Unverified',
+};
+
 function _catSlug(card) {
   const c = (card?.category || 'elective').toLowerCase();
   return CATEGORY_LABELS[c] ? c : 'elective';
@@ -64,6 +73,22 @@ function _renderCardBadges(card, cat) {
     out.push(`<span class="cc-badge cc-badge-success">Avg GPA ${gpa.toFixed(1)}</span>`);
   }
   return out.join('');
+}
+
+function _renderCardSourceBadges(card) {
+  // Optional future extension for field-level web provenance. Existing
+  // card DB fields (`course_source`, `course_provenance`,
+  // `section_source`) remain untouched; web badges must arrive in this
+  // separate field so web evidence never masquerades as DB verified.
+  const badges = card?.field_source_badges || [];
+  if (!Array.isArray(badges) || badges.length === 0) return '';
+  return badges.map((raw) => {
+    const key = (typeof raw === 'string' ? raw : raw?.kind || raw?.source_class || '')
+      .toLowerCase();
+    const label = SOURCE_BADGE_LABELS[key] || SOURCE_BADGE_LABELS.unverified;
+    const css = key && SOURCE_BADGE_LABELS[key] ? key : 'unverified';
+    return `<span class="cc-badge cc-source-badge cc-source-${escAttr(css)}">${label}</span>`;
+  }).join('');
 }
 
 /* Section enrollment row: the primary (Lec) code as the headline
@@ -652,7 +677,7 @@ function renderCard(card) {
       ${_renderCodeRow(card)}
     </div>
     <div class="cc-body">
-      <div class="cc-badges">${_renderCardBadges(card, cat)}</div>
+      <div class="cc-badges">${_renderCardBadges(card, cat)}${_renderCardSourceBadges(card)}</div>
       ${reason ? `<p class="cc-reason">${escHTML(reason)}</p>` : ''}
       ${_renderRestrictionChips(card)}
       ${_renderDeadlineRow(card)}

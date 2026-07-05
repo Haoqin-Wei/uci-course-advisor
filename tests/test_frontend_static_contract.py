@@ -58,6 +58,7 @@ def test_frontend_assets_are_split_into_roadmap_modules() -> None:
 
 def test_key_browser_regression_flows_are_wired() -> None:
     chat = (STATIC / "js" / "chat.js").read_text(encoding="utf-8")
+    cards = (STATIC / "js" / "cards.js").read_text(encoding="utf-8")
     schedule = (STATIC / "js" / "schedule.js").read_text(encoding="utf-8")
     auth = (STATIC / "js" / "auth.js").read_text(encoding="utf-8")
     onboarding = (STATIC / "js" / "onboarding.js").read_text(encoding="utf-8")
@@ -74,8 +75,18 @@ def test_key_browser_regression_flows_are_wired() -> None:
 
     assert "/api/chat/stream" in chat
     assert "function startToolChip(" in chat
+    assert "tool-chip-web-search" in chat
+    assert 'event.label || event.name, event.name' in chat
     assert "function renderContinueBanner(" in chat
     assert "/api/chat/continue" in chat
+    assert '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>' in chat
+
+    assert "SOURCE_BADGE_LABELS" in cards
+    assert "DB Verified" in cards
+    assert "Official UCI" in cards
+    assert "External Web" in cards
+    assert "field_source_badges" in cards
+    assert "course_provenance" in cards
 
     assert "/api/schedule/add" in schedule
     assert "/api/schedule/remove" in schedule

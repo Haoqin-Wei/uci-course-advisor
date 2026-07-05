@@ -17,7 +17,12 @@ if TYPE_CHECKING:
 
 
 FIXTURES_ROOT = Path(__file__).parent / "fixtures"
-EXTERNAL_ENV_KEYS = ("DEEPSEEK_API_KEY", "ANTEATER_API_KEY", "RESEND_API_KEY")
+EXTERNAL_ENV_KEYS = (
+    "DEEPSEEK_API_KEY",
+    "ANTEATER_API_KEY",
+    "RESEND_API_KEY",
+    "WEB_SEARCH_API_KEY",
+)
 _ORIGINAL_EXTERNAL_ENV = {key: os.environ.get(key) for key in EXTERNAL_ENV_KEYS}
 
 
@@ -157,6 +162,8 @@ def isolated_test_environment(
     else:
         for key in EXTERNAL_ENV_KEYS:
             monkeypatch.setenv(key, "")
+        monkeypatch.setenv("WEB_SEARCH_ENABLED", "false")
+        monkeypatch.setenv("WEB_SEARCH_PROVIDER", "disabled")
     monkeypatch.setenv(
         "AUTH_SESSION_SECRET",
         "test-only-session-secret-not-for-production",
@@ -213,7 +220,7 @@ def isolated_test_environment(
     monkeypatch.setattr(memory_manager, "_manager", fresh_memory_manager)
 
     from app.agent import loop as agent_loop
-    from app.data import anteater, db
+    from app.data import anteater, db, web_search
     from app.data.uci_general import anteater_programs
     agent_loop._continuation_store.clear()
     db._course_info_cache.clear()
@@ -226,11 +233,13 @@ def isolated_test_environment(
     anteater_programs._ext_req_cache.clear()
     anteater_programs._courses_cache.clear()
     anteater_programs._all_courses_cache = None
+    web_search.clear_web_search_state()
 
     yield runtime_paths
 
     fresh_memory_manager.shutdown()
     agent_loop._continuation_store.clear()
+    web_search.clear_web_search_state()
     rate_limit.clear_rate_limits()
     observability.clear_metrics()
 

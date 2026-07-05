@@ -8,6 +8,7 @@ This project is not an official UCI advisor, degree audit, or enrollment system.
 
 - Streaming chat through `/api/chat/stream` with SSE events, tool chips, limit-reached continuation, and persisted history.
 - Tool-backed course, section, professor, grade, prerequisite, policy, and schedule-conflict lookups.
+- Controlled `web_search` agent tool with source classification, default-off safety, fake-provider tests, and markdown citations for web-sourced facts.
 - Structured recommendation cards with validation before they can be added to the weekly schedule.
 - Authenticated sessions, isolated guest identities, onboarding, profile memory, preferences, and cross-session restoration.
 - Local catalog coverage manifest that distinguishes `complete`, `partial`, `stale`, and `unavailable` data.
@@ -21,7 +22,7 @@ flowchart LR
   Browser["Native frontend<br/>static/index.html + static/js + static/styles"]
   API["FastAPI routers<br/>chat, auth, memory, sessions, onboarding, health"]
   Agent["Agent loop<br/>streaming LLM + tool calls + continuation budget"]
-  Tools["Agent tools<br/>course, sections, grades, professors, prereqs, schedule"]
+  Tools["Agent tools<br/>course, sections, grades, professors, prereqs, schedule, web_search"]
   Data["Data layer<br/>local CSV/SQLite + optional Anteater fallback"]
   Memory["Persistent state<br/>sessions, profile, facts, preferences, schedule"]
   Validation["Validation<br/>grounding, term/source checks, card blocking"]
@@ -91,6 +92,7 @@ For production/runtime-only installs, use `requirements.txt` instead of `require
 - `AUTH_SESSION_SECRET`: required in production; use a long random value generated outside the repo.
 - `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL`: enable live LLM mode.
 - `ANTEATER_API_KEY`: optional external UCI API fallback.
+- `WEB_SEARCH_ENABLED`, `WEB_SEARCH_PROVIDER`, `WEB_SEARCH_API_KEY`, `WEB_SEARCH_MAX_RESULTS`, `WEB_SEARCH_TIMEOUT_SECONDS`: controlled web-search mode. It is disabled by default; the current build supports the `fake` provider for offline tests/dev and returns structured unavailable errors for unimplemented real providers.
 - `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_SUBJECT`: optional email verification delivery.
 - `ALLOW_SHARED_DEMO`, `ALLOW_GUEST_USERS`, `COOKIE_SECURE`, `CSRF_PROTECTION`, `ALLOWED_ORIGINS`, `ALLOW_CUSTOM_SYSTEM_PROMPT`: private-beta safety switches.
 - `LLM_INPUT_USD_PER_1K`, `LLM_OUTPUT_USD_PER_1K`: optional estimated cost rates for observability logs.
@@ -165,13 +167,16 @@ GitHub Actions runs install, syntax lint, dependency graph validation, and offli
 
 - Offline mode: no API keys. The app uses local data, deterministic fallbacks, and test doubles. This is the default development/test mode.
 - External API fallback: set `ANTEATER_API_KEY` if you want live UCI API fallback when local term data is unavailable. Partial/stale local data is surfaced as uncertain instead of silently overruled.
+- Controlled web search: set `WEB_SEARCH_ENABLED=true` and a provider. In the current build, `WEB_SEARCH_PROVIDER=fake` is the supported deterministic provider for tests/dev; unimplemented real providers fail closed with a structured `provider_unimplemented` response. Web search results are never written into the local DB and are labeled with URL, domain, retrieved date, source class, and trust level.
 - Live LLM mode: set `DEEPSEEK_API_KEY`. The adapter uses an OpenAI-compatible DeepSeek endpoint and streams through the agent loop.
 - Email delivery: set `RESEND_API_KEY` and sender variables. Without this, development can still exercise auth flows without logging verification codes.
 
 ## Correctness boundaries
 
 - The assistant is strongest for catalog, schedule, prerequisite, professor, and course-planning questions covered by the local data and implemented tools.
+- Local DB/tool data is the default highest-trust source. Web-sourced facts must be linked and shown separately; complete local DB data is not overridden by external web pages unless the answer explicitly describes the conflict.
 - Degree Audit is not implemented. Major requirement support is limited and should not be treated as official degree certification.
 - `partial`, `stale`, and `unavailable` coverage states mean the assistant must say it cannot confirm a fact rather than inventing certainty.
+- Web source classes are `official_uci`, `official_university`, `government`, `professor_page`, `rmp`, `reddit`, `commercial`, `news`, and `unknown`. Reddit/forum/social results are anecdotal, and any web claim without a URL is not usable as a factual source.
 - Recommendation cards are validation-gated, but validation is not a substitute for official UCI enrollment rules.
 - Always verify add/drop deadlines, restrictions, prerequisites, waitlists, exams, and degree progress through official UCI systems.

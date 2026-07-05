@@ -1,8 +1,8 @@
 # UCI Course Advisor Roadmap
 
-> 更新日期：2026-07-03
+> 更新日期：2026-07-05
 >
-> 当前目标：把功能丰富的本地 Demo 收敛成可验证、可持续开发的私测版本。
+> 当前目标：在已完成私测版基础上，增加受控联网搜索能力，并把数据库信息、官方网页信息和外部网页信息明确区分。
 >
 > 执行规则：严格按阶段推进。每一阶段通过验收后，再进入下一阶段；README 在全部工程调整完成后最后更新。
 
@@ -75,6 +75,7 @@
 | M6 | 前端收敛与性能优化 | 4–7 天 | M5 |
 | M7 | 私测安全与工程化 | 3–5 天 | M1–M6 |
 | M8 | Roadmap 收尾与 README | 1 天 | M7 |
+| M9 | 联网搜索与证据链 | 4–7 天 | M4、M5、M7 |
 
 工作量按 1 名开发者估算，不是发布日期承诺。
 
@@ -400,19 +401,270 @@
 - 新开发者只按 README 可以在干净环境启动应用并运行离线测试。
 - README、代码、应用版本和 Roadmap 状态一致。
 
-## 13. 跨阶段 Definition of Done
+## 13. M9 — 联网搜索与证据链
+
+目标：当本地数据库没有信息、数据不完整、或用户明确要求联网时，Agent 可以调用受控搜索工具；但所有联网信息必须和本地数据库信息分层展示，不能让用户误以为外部网页等同于数据库验证。
+
+本阶段不做 Future Planning，不扩 Degree Audit。重点只解决问答式体验中的“数据库没有覆盖的问题怎么回答”和“用户如何知道信息来源”。
+
+### M9.1 搜索触发规则
+
+- [x] 新增 Search Skill / prompt block，明确什么时候允许调用搜索工具。
+- [x] 允许搜索的情况：
+  - 用户明确要求“上网查 / search / look up / 最新信息”。
+  - 本地 DB tool 返回 `found=false`。
+  - term coverage 是 `partial / stale / unavailable`。
+  - 问题依赖近期变化：deadline、department restriction、department announcement、政策更新、教授页面。
+  - 用户问的是本地数据库之外的信息，例如 department 网页、官方 announcement、外部教授评价。
+- [x] 不应搜索的情况：
+  - 本地 DB 已经确认事实，且 coverage 是 `complete`。
+  - 普通推荐流程已有足够本地数据。
+  - 只是为了让回答看起来更丰富。
+  - 每轮默认搜索。
+- [x] Agent 必须先使用本地 DB 工具；只有触发条件满足时才调用 web search。
+- [x] 如果用户显式要求联网，则即使 DB 有结果，也可以搜索，但回答必须分别标注 DB 与 Web。
+
+### M9.2 新增后端搜索工具
+
+- [x] 新增 `app/data/web_search.py`。
+- [x] 工具名使用 `web_search`，不使用 `web_search_official`，因为允许全网搜索。
+- [x] 第一版搜索 API 只返回网页搜索结果，不做浏览器深度抓取。
+- [x] 每次调用必须记录：
+  - `query`
+  - `reason`
+  - `searched_at`
+  - `max_results`
+  - `preferred_domains`
+  - `results`
+- [x] 返回结果统一结构：
+
+```json
+{
+  "ok": true,
+  "query": "ART department major restriction release date UCI",
+  "reason": "local policy data does not contain department-specific restriction release timing",
+  "searched_at": "2026-07-05T00:00:00Z",
+  "results": [
+    {
+      "title": "string",
+      "url": "https://...",
+      "domain": "uci.edu",
+      "snippet": "string",
+      "published_at": null,
+      "source_class": "official_uci",
+      "trust_level": "high",
+      "why_trusted_or_not": "UCI official domain"
+    }
+  ]
+}
+```
+
+- [x] 搜索失败时返回结构化错误，不抛出导致整轮 Agent 崩溃。
+- [x] 搜索结果数量默认限制为 5，避免把大量不可靠网页塞进上下文。
+- [x] 搜索请求加 rate limit 和 trace log。
+
+### M9.3 来源分类与可信度规则
+
+- [x] 新增 source classifier，将每个 URL 分类为：
+  - `local_db_verified`
+  - `official_uci`
+  - `official_university`
+  - `government`
+  - `professor_page`
+  - `rmp`
+  - `reddit`
+  - `commercial`
+  - `news`
+  - `unknown`
+- [x] 可信度排序写入代码与 prompt：
+
+```text
+local_db_verified
+> official_uci
+> official_university / government
+> professor_page
+> external_web
+> forum/social
+> llm_inference
+```
+
+- [x] 默认 trust level：
+  - `local_db_verified`: high
+  - `official_uci`: high
+  - `official_university`, `government`: medium_high
+  - `professor_page`: medium
+  - `rmp`: medium
+  - `news`, `commercial`: medium_low
+  - `reddit`, forum/social: low
+  - `unknown`: low
+- [x] 任何没有 URL 的 web 信息不能作为事实来源。
+- [x] LLM 推断不能作为事实来源，只能作为解释或建议。
+
+### M9.4 Agent Tool 接入
+
+- [x] 在 `app/agent/tools.py` 增加 `web_search` tool schema。
+- [x] 增加 `_tool_web_search()` dispatcher。
+- [x] tool schema 参数：
+
+```json
+{
+  "query": "string",
+  "reason": "string",
+  "preferred_domains": ["string"],
+  "max_results": 5
+}
+```
+
+- [x] `reason` 必填，迫使 LLM 说明为什么需要搜索。
+- [x] 如果 `reason` 为空或明显无意义，后端可以拒绝或降级返回 warning。
+- [x] tool result 只返回标题、URL、domain、snippet、source_class、trust_level，不返回大段网页全文。
+- [x] SSE tool chip 显示“联网搜索 · query”。
+- [x] observability 记录搜索次数、失败率、source_class 分布和 latency。
+
+### M9.5 Search Skill / Prompt 硬规则
+
+- [x] 在 Agent system prompt 中加入 Search Skill。
+- [x] 规则必须明确：
+  - 本地 DB 是默认最高可信来源。
+  - Web 信息不能覆盖 `complete` 本地 DB，除非用户明确要求比较，并且回答必须说明冲突。
+  - 如果本地 DB 是 `partial / stale / unavailable`，可以用 web 补充，但必须标为 web-sourced。
+  - 如果 web 与 DB 冲突，必须同时展示双方来源和差异。
+  - 不允许编 source、URL、rating、section、instructor。
+  - 引用网页信息时必须附 markdown link。
+  - Reddit/forum/social 只能作为 anecdotal，不可作为课程是否开设、政策 deadline、教授授课安排的事实依据。
+- [x] 对教授评分增加规则：
+  - 本地 professor DB/RMP snapshot 优先。
+  - 外部 RMP 或其他评价网站必须标为 external。
+  - 教授个人主页可用于研究方向，不可直接证明某学期授课。
+- [x] 对开课信息增加规则：
+  - 某 term 是否开课优先看 `get_sections(course, term)`。
+  - coverage complete 且无 sections → 可以说本地确认未开。
+  - coverage partial/stale/unavailable 且无 sections → 只能说本地无法确认，可联网查补充信息。
+
+### M9.6 回答格式与引用
+
+- [x] 如果使用 web result，回答中对应事实后必须带链接，例如：
+
+```markdown
+UCI Registrar 页面说明 add/drop deadline 由注册日历列出。[UCI Registrar](https://...)
+```
+
+- [x] 回答末尾增加可选 `Sources` 区块：
+
+```markdown
+Sources:
+- Database verified: local catalog · Spring 2026 · coverage complete
+- Web sourced: [UCI Registrar — Academic Calendar](https://...)
+- External web: [RateMyProfessors — ...](https://...)
+```
+
+- [x] 本地 DB 信息不需要外链，但必须可显示 `Database verified`、term、coverage、updated_at。
+- [x] Web 信息必须显示 `Web sourced`、domain、retrieved date。
+- [x] 如果没有可靠来源，回答必须明确说“我无法验证”。
+
+### M9.7 前端展示
+
+- [x] 第一版先依赖 markdown link 正常渲染，不做复杂 evidence panel。
+- [x] 在 tool chip 中区分：
+  - 查询数据库
+  - 联网搜索
+  - 读取网页来源
+- [x] 后续增加 source badge：
+  - `DB Verified`
+  - `Official UCI`
+  - `Official Web`
+  - `External Web`
+  - `Anecdotal`
+  - `Unverified`
+- [x] 推荐卡片保留本地 provenance，不把 web source 混进 card 的 DB verified 字段。
+- [x] 如果 card 里某个字段来自 web，字段旁单独显示 web badge。
+
+### M9.8 DB 与 Web 冲突处理
+
+- [x] 新增冲突表达规则：
+
+```text
+本地数据库显示：...
+网页来源显示：...
+判断：两者来源不同；本地 DB 用于结构化开课/section 判断，网页用于补充政策或公告。
+```
+
+- [x] complete DB 与 web 冲突：默认 DB 优先，web 作为冲突提示。
+- [x] stale/partial DB 与 official web 冲突：可以引用 official web，但必须标为 web-sourced。
+- [x] external web 与 DB 冲突：DB 优先，external 只能作为非官方补充。
+- [x] 无法判断时返回 unknown，不做确定性结论。
+
+### M9.9 测试计划
+
+- [x] `web_search` tool schema 和 dispatcher 单元测试。
+- [x] URL source classifier 测试：
+  - `uci.edu` → `official_uci`
+  - `catalogue.uci.edu` → `official_uci`
+  - `reg.uci.edu` → `official_uci`
+  - `ratemyprofessors.com` → `rmp`
+  - `reddit.com` → `reddit`
+  - 未知域名 → `unknown`
+- [x] Agent 行为测试：
+  - DB found + coverage complete → 不应调用 web search。
+  - 用户明确要求上网 → 允许调用 web search。
+  - DB missing → 允许调用 web search。
+  - partial term → 允许调用 web search。
+  - web result 没有 URL → 不能作为事实引用。
+  - DB/Web 冲突 → 回答必须说明冲突。
+- [x] 前端静态契约测试：
+  - markdown link 可渲染。
+  - web search tool chip 可显示。
+  - source badge 不破坏现有 card。
+- [x] 搜索 API 测试默认使用 fake provider，不联网，不依赖真实搜索服务。
+
+### M9.10 配置与安全
+
+- [x] 新增环境变量：
+  - `WEB_SEARCH_ENABLED`
+  - `WEB_SEARCH_PROVIDER`
+  - `WEB_SEARCH_API_KEY`
+  - `WEB_SEARCH_MAX_RESULTS`
+  - `WEB_SEARCH_TIMEOUT_SECONDS`
+- [x] 默认开发环境可以关闭 web search；关闭时 tool 返回明确 unavailable。
+- [x] 生产环境必须通过环境变量显式开启。
+- [x] 搜索 query 不记录完整敏感 profile；日志中截断 query 和 snippet。
+- [x] 不把搜索结果自动写入本地数据库，避免污染 verified data。
+- [x] 如需 cache，只 cache query/result/source/retrieved_at，并明确标为 web cache，不等于 DB。
+
+### M9.11 最小可执行版本
+
+第一版只要求完成：
+
+1. `app/data/web_search.py` fake/provider interface。
+2. `web_search` agent tool schema + dispatcher。
+3. Search Skill prompt 规则。
+4. 结果含 title/url/snippet/domain/source_class/trust_level。
+5. 回答中带 markdown link。
+6. fake provider 测试通过。
+7. 不改变现有推荐卡片的数据可信度语义。
+
+### 验收
+
+- 用户明确要求联网时，Agent 可以调用 `web_search` 并在回答中附链接。
+- 本地 DB 已确认的信息不会被默认 web search 覆盖。
+- 所有 web 信息都显示来源 URL、domain、retrieved_at 和 trust_level。
+- DB 与 Web 信息冲突时，回答明确区分双方来源。
+- 搜索功能关闭时，系统不会崩溃，且会说明当前无法联网。
+- 默认测试仍然不联网、不依赖真实搜索 API。
+
+## 14. 跨阶段 Definition of Done
 
 每个任务只有同时满足以下条件才算完成：
 
 - 有自动化测试覆盖成功、失败和 unknown 路径。
 - 不通过 silent fallback 掩盖数据缺失或实现错误。
-- 用户可见事实携带 term、source 和 updated_at。
+- 用户可见事实携带 term、source、updated_at；web-sourced 事实必须携带 URL、domain、retrieved_at 和 trust_level。
 - 数据或 API schema 变化有迁移与兼容说明。
 - 不引入新的重复状态源、重复正则或重复业务链路。
 - 不提交真实用户数据、密钥、验证码或 Cookie。
 - 代码、测试和验收证据在同一个 PR/commit 范围内可审查。
 
-## 14. 实际提交分组
+## 15. 实际提交分组
 
 工作已按可审查、可回滚的阶段提交。每组提交都对应 ROADMAP 中的阶段性验收：
 
@@ -425,8 +677,9 @@
 7. M6：前端 SSE 收敛、静态资源模块拆分、浏览器回归。
 8. M7：私测安全、依赖/CI、可观测性。
 9. M8：Roadmap 和 README 与当前实现对齐。
+10. M9：联网搜索 tool、Search Skill、来源分类、引用展示和离线 fake-provider 测试。
 
-## 15. 进度记录
+## 16. 进度记录
 
 | 日期 | 阶段 | 变更 | Commit/PR | 验收结果 |
 |---|---|---|---|---|
@@ -439,3 +692,4 @@
 | 2026-07-04 | M6 | 前端 SSE 收敛、资源模块拆分、浏览器回归 | `e8d2564`, `db9daca`, `5edad5e` | 登录/onboarding/chat/tool chip/card/add/continue/session restore/mobile/keyboard 基础回归通过。 |
 | 2026-07-04 | M7 | 私测安全、依赖/CI、health/trace/metrics/logging | `ef4f779`, `a58f8d7`, `766cf94` | 生产安全默认值、rate limit、CI workflow、trace ID 和 health endpoints 已落地；`121 passed, 2 deselected`。 |
 | 2026-07-04 | M8 | Roadmap 收尾、README 按当前架构重写 | `docs: close roadmap and README` | README 删除旧 demo/mock/placeholder；README 数据检查、compileall、pip check、`121 passed, 2 deselected` 通过。 |
+| 2026-07-05 | M9 | 完成 controlled `web_search`、source classifier、Search Skill prompt、前端 chip/source badge 和离线 fake-provider 测试 | `feat: add controlled web search evidence chain` | `compileall`、`pip check`、`139 passed, 2 deselected` 通过；默认测试不联网，搜索关闭时结构化 unavailable。 |

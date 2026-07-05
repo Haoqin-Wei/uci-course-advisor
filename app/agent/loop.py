@@ -400,7 +400,7 @@ async def _run_loop(
 
             yield {"type": "tool_call_done",
                    "name": tc["name"],
-                   "ok": "error" not in result,
+                   "ok": "error" not in result and result.get("ok", True) is not False,
                    "label": label}
 
             # Side-channel: propose_recommendation stages structured
