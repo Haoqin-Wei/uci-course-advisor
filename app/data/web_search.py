@@ -2,9 +2,9 @@
 
 The first implementation is intentionally conservative:
 
-- tests and local development use a fake provider;
-- real external providers are opt-in and currently return a structured
-  unavailable error until a concrete provider adapter is added;
+- tests use fake/disabled providers so CI stays offline;
+- development can use the DuckDuckGo HTML provider without an API key;
+- unimplemented external providers return structured unavailable errors;
 - results are normalized to small search-result records, never full page
   content, so web evidence cannot pollute local DB-verified data.
 """
@@ -15,8 +15,11 @@ import logging
 import time
 from copy import deepcopy
 from datetime import datetime, timezone
-from urllib.parse import urlsplit
+from html.parser import HTMLParser
+from urllib.parse import parse_qs, unquote, urlsplit
 from typing import Any, Iterable, Optional
+
+import requests
 
 from app import config, observability
 
@@ -28,6 +31,12 @@ HARD_MAX_RESULTS = 10
 SNIPPET_MAX_CHARS = 500
 TITLE_MAX_CHARS = 180
 LOG_VALUE_MAX_CHARS = 160
+DUCKDUCKGO_HTML_URL = "https://lite.duckduckgo.com/lite/"
+USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/126.0 Safari/537.36"
+)
 
 SOURCE_CLASSES = {
     "local_db_verified",
@@ -294,6 +303,25 @@ def _provider_search(
             max_results=max_results,
         ), None
 
+    if provider in {"duckduckgo", "ddg"}:
+        try:
+            return _duckduckgo_search(
+                query=query,
+                preferred_domains=preferred_domains,
+                max_results=max_results,
+            ), None
+        except requests.RequestException as e:
+            return [], {
+                "error_code": "provider_network_error",
+                "message": f"duckduckgo search request failed: {type(e).__name__}",
+            }
+        except Exception as e:
+            logger.warning("duckduckgo provider failed: %s: %s", type(e).__name__, e)
+            return [], {
+                "error_code": "provider_parse_error",
+                "message": "duckduckgo search response could not be parsed",
+            }
+
     if provider in {"", "disabled", "none"}:
         return [], {
             "error_code": "provider_unavailable",
@@ -315,6 +343,120 @@ def _provider_search(
     }
 
 
+def _duckduckgo_search(
+    *,
+    query: str,
+    preferred_domains: list[str],
+    max_results: int,
+) -> list[dict[str, Any]]:
+    hinted_query = _query_with_domain_hints(query, preferred_domains)
+    queries = [hinted_query] if hinted_query == query else [hinted_query, query]
+    session = requests.Session()
+    last_error: Optional[requests.RequestException] = None
+    for search_query in queries:
+        try:
+            response = session.get(
+                DUCKDUCKGO_HTML_URL,
+                params={"q": search_query},
+                headers={"User-Agent": USER_AGENT},
+                timeout=config.web_search_timeout_seconds(),
+            )
+            if response.status_code != 200:
+                raise requests.RequestException(
+                    f"unexpected DuckDuckGo status {response.status_code}"
+                )
+            response.raise_for_status()
+        except requests.RequestException as e:
+            last_error = e
+            continue
+
+        parser = _DuckDuckGoHTMLParser()
+        parser.feed(response.text)
+        parser.close()
+        if parser.results or search_query == query:
+            return parser.results[:max_results]
+
+    if last_error is not None:
+        raise last_error
+    return []
+
+
+def _query_with_domain_hints(query: str, preferred_domains: list[str]) -> str:
+    if not preferred_domains:
+        return query
+    if len(preferred_domains) == 1:
+        return f"{query} site:{preferred_domains[0]}"
+    site_clause = " OR ".join(f"site:{domain}" for domain in preferred_domains[:3])
+    return f"{query} ({site_clause})"
+
+
+class _DuckDuckGoHTMLParser(HTMLParser):
+    """Small parser for DuckDuckGo's no-JS HTML result page."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.results: list[dict[str, Any]] = []
+        self._active: Optional[str] = None
+        self._current: Optional[dict[str, Any]] = None
+        self._title_parts: list[str] = []
+        self._snippet_parts: list[str] = []
+        self._last_result: Optional[dict[str, Any]] = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
+        attr = {k: v or "" for k, v in attrs}
+        class_name = attr.get("class", "")
+        if tag == "a" and ("result__a" in class_name or "result-link" in class_name):
+            self._active = "title"
+            self._title_parts = []
+            self._current = {"url": _decode_duckduckgo_href(attr.get("href", ""))}
+            return
+        if (
+            ("result__snippet" in class_name or "result-snippet" in class_name)
+            and self._last_result is not None
+        ):
+            self._active = "snippet"
+            self._snippet_parts = []
+            return
+        if "timestamp" in class_name and self._last_result is not None:
+            self._active = "timestamp"
+            self._snippet_parts = []
+
+    def handle_data(self, data: str) -> None:
+        if self._active == "title":
+            self._title_parts.append(data)
+        elif self._active in {"snippet", "timestamp"}:
+            self._snippet_parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._active == "title" and self._current is not None:
+            if tag != "a":
+                return
+            title = _collapse_ws(" ".join(self._title_parts))
+            url = self._current.get("url")
+            if title and url:
+                result = {"title": title, "url": url, "snippet": ""}
+                self.results.append(result)
+                self._last_result = result
+            self._current = None
+            self._title_parts = []
+            self._active = None
+            return
+        if self._active == "snippet" and self._last_result is not None:
+            if tag not in {"a", "td", "div"}:
+                return
+            self._last_result["snippet"] = _collapse_ws(" ".join(self._snippet_parts))
+            self._snippet_parts = []
+            self._active = None
+            return
+        if self._active == "timestamp" and self._last_result is not None:
+            if tag != "span":
+                return
+            published_at = _collapse_ws(" ".join(self._snippet_parts))
+            self._last_result["published_at"] = published_at or None
+            self._snippet_parts = []
+            self._active = None
+
+
 def _fake_provider_search(
     *,
     query: str,
@@ -332,6 +474,25 @@ def _fake_provider_search(
                 filtered.append(result)
         results = filtered
     return results[:max_results]
+
+
+def _decode_duckduckgo_href(href: str) -> Optional[str]:
+    if not href:
+        return None
+    candidate = href.strip()
+    if candidate.startswith("//"):
+        candidate = f"https:{candidate}"
+    parsed = urlsplit(candidate)
+    if "duckduckgo.com" in (parsed.hostname or ""):
+        params = parse_qs(parsed.query)
+        uddg = params.get("uddg")
+        if uddg:
+            return unquote(uddg[0])
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        return candidate
+    # Very old DDG markup can expose raw URLs in escaped redirect path
+    # fragments. Treat anything else as unusable rather than inventing.
+    return None
 
 
 def _normalize_result(raw: dict[str, Any], *, retrieved_at: str) -> dict[str, Any]:
@@ -489,6 +650,10 @@ def _truncate(value: str, max_chars: int) -> str:
     if len(value) <= max_chars:
         return value
     return value[: max_chars - 1].rstrip() + "…"
+
+
+def _collapse_ws(value: str) -> str:
+    return " ".join(value.split())
 
 
 def _log_value(value: str) -> str:

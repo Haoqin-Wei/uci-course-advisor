@@ -74,14 +74,15 @@ def float_env(name: str, default: float) -> float:
 
 
 def web_search_enabled() -> bool:
-    # Web search is opt-in in every environment. Production must set
-    # WEB_SEARCH_ENABLED=true explicitly; development/tests stay offline
-    # unless a caller enables a fake provider.
-    return bool_env("WEB_SEARCH_ENABLED", default=False)
+    # Production must set WEB_SEARCH_ENABLED=true explicitly. Development
+    # defaults to enabled so "上网查一下" works out of the box; tests
+    # override this to false in conftest to keep CI offline.
+    return bool_env("WEB_SEARCH_ENABLED", default=not is_production())
 
 
 def web_search_provider() -> str:
-    return os.environ.get("WEB_SEARCH_PROVIDER", "disabled").strip().lower() or "disabled"
+    default = "disabled" if is_production() else "duckduckgo"
+    return os.environ.get("WEB_SEARCH_PROVIDER", default).strip().lower() or default
 
 
 def web_search_api_key() -> str:
