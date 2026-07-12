@@ -410,6 +410,15 @@ def _duckduckgo_search(
             )
             continue
 
+        observability.log_event(
+            logger,
+            logging.INFO,
+            "web_search_content",
+            provider="duckduckgo",
+            attempt=attempt,
+            search_query=_log_value(search_query),
+            content_preview=_log_content_preview(response.text),
+        )
         parser = _DuckDuckGoHTMLParser()
         parser.feed(response.text)
         parser.close()
@@ -724,6 +733,10 @@ def _collapse_ws(value: str) -> str:
 
 def _log_value(value: str) -> str:
     return _truncate(value.replace("\n", " "), LOG_VALUE_MAX_CHARS)
+
+
+def _log_content_preview(value: str) -> str:
+    return value.replace("\n", " ")[:100]
 
 
 def _log_search_result(rank: int, result: dict[str, Any]) -> None:

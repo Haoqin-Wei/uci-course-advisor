@@ -149,7 +149,11 @@ def test_web_search_logs_started_provider_attempt_results_and_completion(
     assert "event=web_search_completed" in caplog.text
 
 
-def test_duckduckgo_provider_parses_html_without_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_duckduckgo_provider_parses_html_without_real_network(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="app.data.web_search")
     monkeypatch.setenv("WEB_SEARCH_ENABLED", "true")
     monkeypatch.setenv("WEB_SEARCH_PROVIDER", "duckduckgo")
 
@@ -203,6 +207,9 @@ def test_duckduckgo_provider_parses_html_without_real_network(monkeypatch: pytes
             "usable_as_fact": True,
         }
     ]
+    expected_preview = FakeResponse.text.replace("\n", " ")[:100]
+    assert "event=web_search_content" in caplog.text
+    assert f"content_preview={expected_preview!r}" in caplog.text
 
 
 def test_duckduckgo_provider_falls_back_when_domain_hint_fails(
