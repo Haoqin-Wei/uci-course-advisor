@@ -74,6 +74,7 @@ import secrets
 import time
 from typing import AsyncIterator, Optional
 
+from app import observability
 from app.agent import tools as agent_tools
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,7 @@ MAX_TOTAL_TOOLS = 16
 # clean error from resume_agent().
 CONTINUATION_TTL_S = 600  # 10 min — long enough to read + decide
 _continuation_store: dict[str, dict] = {}
+_LOG_VALUE_MAX_CHARS = 160
 
 
 def _gc_continuations() -> None:
@@ -101,6 +103,62 @@ def _gc_continuations() -> None:
              if now - v["created_at"] > CONTINUATION_TTL_S]
     for k in stale:
         _continuation_store.pop(k, None)
+
+
+def _log_value(value) -> object:
+    if isinstance(value, str):
+        clean = value.replace("\n", " ")
+        return clean if len(clean) <= _LOG_VALUE_MAX_CHARS else clean[:157] + "..."
+    if isinstance(value, list):
+        if len(value) <= 5:
+            return [_log_value(item) for item in value]
+        return {
+            "count": len(value),
+            "sample": [_log_value(item) for item in value[:5]],
+        }
+    if isinstance(value, dict):
+        return {
+            str(k): _log_value(v)
+            for k, v in list(value.items())[:8]
+        }
+    return value
+
+
+def _summarize_tool_args(args: dict) -> dict:
+    out = {}
+    for key, value in (args or {}).items():
+        if key == "items" and isinstance(value, list):
+            out[key] = {"count": len(value)}
+        else:
+            out[key] = _log_value(value)
+    return out
+
+
+def _summarize_tool_result(result: dict) -> dict:
+    if not isinstance(result, dict):
+        return {"type": type(result).__name__}
+    summary = {
+        "ok": result.get("ok"),
+        "found": result.get("found"),
+        "error": result.get("error"),
+        "error_code": result.get("error_code"),
+        "provider": result.get("provider"),
+        "source": result.get("source"),
+    }
+    if "results" in result and isinstance(result["results"], list):
+        summary["result_count"] = len(result["results"])
+        summary["result_domains"] = [
+            item.get("domain") for item in result["results"][:5]
+            if isinstance(item, dict)
+        ]
+    if "sections" in result and isinstance(result["sections"], list):
+        summary["section_count"] = len(result["sections"])
+    if "courses" in result and isinstance(result["courses"], list):
+        summary["course_count"] = len(result["courses"])
+    if "staged_count" in result:
+        summary["staged_count"] = result.get("staged_count")
+        summary["skipped_count"] = result.get("skipped_count")
+    return {k: v for k, v in summary.items() if v is not None}
 
 
 def _stash_continuation(
@@ -375,6 +433,17 @@ async def _run_loop(
             logger.info("[agent] iter=%d tool[%d/%d] %s args=%s",
                         iteration, total_tool_calls + 1, MAX_TOTAL_TOOLS,
                         tc["name"], {k: args.get(k) for k in list(args)[:4]})
+            observability.log_event(
+                logger,
+                logging.INFO,
+                "agent_tool_call_start",
+                tool=tc["name"],
+                label=label,
+                iteration=iteration,
+                tool_index=total_tool_calls + 1,
+                max_tools=MAX_TOTAL_TOOLS,
+                args=_summarize_tool_args(args),
+            )
             yield {"type": "tool_call_start",
                    "name": tc["name"], "args": args, "label": label}
 
@@ -398,9 +467,21 @@ async def _run_loop(
                 "content": json.dumps(result, default=str),
             })
 
+            tool_ok = "error" not in result and result.get("ok", True) is not False
+            observability.log_event(
+                logger,
+                logging.INFO,
+                "agent_tool_call_done",
+                tool=tc["name"],
+                label=label,
+                ok=tool_ok,
+                iteration=iteration,
+                tool_index=total_tool_calls,
+                result=_summarize_tool_result(result),
+            )
             yield {"type": "tool_call_done",
                    "name": tc["name"],
-                   "ok": "error" not in result and result.get("ok", True) is not False,
+                   "ok": tool_ok,
                    "label": label}
 
             # Side-channel: propose_recommendation stages structured

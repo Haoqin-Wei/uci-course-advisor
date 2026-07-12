@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 import requests
 
@@ -110,6 +112,43 @@ def test_fake_provider_returns_normalized_limited_results(monkeypatch: pytest.Mo
     assert metrics["counters"]["web_search.source_class{source_class=official_uci}"] == 1
 
 
+def test_web_search_logs_started_provider_attempt_results_and_completion(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="app.data.web_search")
+    monkeypatch.setenv("WEB_SEARCH_ENABLED", "true")
+    monkeypatch.setenv("WEB_SEARCH_PROVIDER", "fake")
+    web_search.set_fake_results(
+        [
+            {
+                "title": "UCI Registrar — Quarterly Academic Calendar",
+                "url": "https://reg.uci.edu/calendars/quarterly/2025-2026/quarterly25-26.html",
+                "snippet": "Official registrar calendar result.",
+            }
+        ]
+    )
+
+    result = web_search.search_web(
+        query="UCI add drop deadline",
+        reason="user explicitly asked to search official UCI pages",
+        preferred_domains=["reg.uci.edu"],
+        subject="student_001",
+    )
+
+    assert result["ok"] is True
+    assert "event=web_search_started" in caplog.text
+    assert "event=web_search_provider_attempt_parsed" in caplog.text
+    assert "provider='fake'" in caplog.text
+    assert "event=web_search_result" in caplog.text
+    assert "rank=1" in caplog.text
+    assert "url='https://reg.uci.edu/calendars/quarterly/2025-2026/quarterly25-26.html'" in caplog.text
+    assert "title='UCI Registrar — Quarterly Academic Calendar'" in caplog.text
+    assert "snippet='Official registrar calendar result.'" in caplog.text
+    assert "source_class='official_uci'" in caplog.text
+    assert "event=web_search_completed" in caplog.text
+
+
 def test_duckduckgo_provider_parses_html_without_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("WEB_SEARCH_ENABLED", "true")
     monkeypatch.setenv("WEB_SEARCH_PROVIDER", "duckduckgo")
@@ -166,7 +205,11 @@ def test_duckduckgo_provider_parses_html_without_real_network(monkeypatch: pytes
     ]
 
 
-def test_duckduckgo_provider_falls_back_when_domain_hint_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_duckduckgo_provider_falls_back_when_domain_hint_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="app.data.web_search")
     monkeypatch.setenv("WEB_SEARCH_ENABLED", "true")
     monkeypatch.setenv("WEB_SEARCH_PROVIDER", "duckduckgo")
     calls: list[str] = []
@@ -212,6 +255,11 @@ def test_duckduckgo_provider_falls_back_when_domain_hint_fails(monkeypatch: pyte
     assert calls[1] == "UCI ICS major restriction lifting date 2026"
     assert result["results"][0]["url"] == "https://ics.uci.edu/course-enrollment-restrictions/"
     assert result["results"][0]["published_at"] == "2026-05-01T00:00:00.0000000"
+    assert "event=web_search_provider_attempt" in caplog.text
+    assert "event=web_search_provider_attempt_failed" in caplog.text
+    assert "status_code=202" in caplog.text
+    assert "attempt=2" in caplog.text
+    assert "event=web_search_provider_attempt_parsed" in caplog.text
 
 
 def test_fake_provider_marks_no_url_result_unusable(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -200,6 +200,16 @@ def search_web(
     }
 
     observability.increment("web_search.requests", provider=provider)
+    observability.log_event(
+        logger,
+        logging.INFO,
+        "web_search_started",
+        provider=provider,
+        query=_log_value(normalized_query),
+        reason=_log_value(normalized_reason),
+        max_results=limit,
+        preferred_domains=domains,
+    )
 
     try:
         if not normalized_query:
@@ -263,11 +273,12 @@ def search_web(
         base["ok"] = True
         base["provider"] = provider
 
-        for result in normalized:
+        for rank, result in enumerate(normalized, start=1):
             observability.increment(
                 "web_search.source_class",
                 source_class=result.get("source_class", "unknown"),
             )
+            _log_search_result(rank, result)
         observability.increment("web_search.results", len(normalized), provider=provider)
         observability.log_event(
             logger,
@@ -353,7 +364,18 @@ def _duckduckgo_search(
     queries = [hinted_query] if hinted_query == query else [hinted_query, query]
     session = requests.Session()
     last_error: Optional[requests.RequestException] = None
-    for search_query in queries:
+    for attempt, search_query in enumerate(queries, start=1):
+        observability.log_event(
+            logger,
+            logging.INFO,
+            "web_search_provider_attempt",
+            provider="duckduckgo",
+            attempt=attempt,
+            endpoint=DUCKDUCKGO_HTML_URL,
+            search_query=_log_value(search_query),
+            preferred_domains=preferred_domains,
+            timeout_seconds=config.web_search_timeout_seconds(),
+        )
         try:
             response = session.get(
                 DUCKDUCKGO_HTML_URL,
@@ -362,19 +384,55 @@ def _duckduckgo_search(
                 timeout=config.web_search_timeout_seconds(),
             )
             if response.status_code != 200:
+                observability.log_event(
+                    logger,
+                    logging.WARNING,
+                    "web_search_provider_attempt_failed",
+                    provider="duckduckgo",
+                    attempt=attempt,
+                    status_code=response.status_code,
+                    search_query=_log_value(search_query),
+                )
                 raise requests.RequestException(
                     f"unexpected DuckDuckGo status {response.status_code}"
                 )
             response.raise_for_status()
         except requests.RequestException as e:
             last_error = e
+            observability.log_event(
+                logger,
+                logging.WARNING,
+                "web_search_provider_attempt_failed",
+                provider="duckduckgo",
+                attempt=attempt,
+                error_type=type(e).__name__,
+                search_query=_log_value(search_query),
+            )
             continue
 
         parser = _DuckDuckGoHTMLParser()
         parser.feed(response.text)
         parser.close()
+        observability.log_event(
+            logger,
+            logging.INFO,
+            "web_search_provider_attempt_parsed",
+            provider="duckduckgo",
+            attempt=attempt,
+            search_query=_log_value(search_query),
+            result_count=len(parser.results),
+        )
         if parser.results or search_query == query:
             return parser.results[:max_results]
+        observability.log_event(
+            logger,
+            logging.INFO,
+            "web_search_provider_fallback",
+            provider="duckduckgo",
+            from_query=_log_value(search_query),
+            to_query=_log_value(query),
+            reason="domain-hinted query returned no parseable results",
+        )
 
     if last_error is not None:
         raise last_error
@@ -473,6 +531,14 @@ def _fake_provider_search(
             if domain and any(domain == d or domain.endswith(f".{d}") for d in allowed):
                 filtered.append(result)
         results = filtered
+    observability.log_event(
+        logger,
+        logging.INFO,
+        "web_search_provider_attempt_parsed",
+        provider="fake",
+        preferred_domains=preferred_domains,
+        result_count=len(results[:max_results]),
+    )
     return results[:max_results]
 
 
@@ -658,3 +724,20 @@ def _collapse_ws(value: str) -> str:
 
 def _log_value(value: str) -> str:
     return _truncate(value.replace("\n", " "), LOG_VALUE_MAX_CHARS)
+
+
+def _log_search_result(rank: int, result: dict[str, Any]) -> None:
+    observability.log_event(
+        logger,
+        logging.INFO,
+        "web_search_result",
+        rank=rank,
+        title=_log_value(result.get("title") or ""),
+        url=result.get("url"),
+        domain=result.get("domain"),
+        snippet=_log_value(result.get("snippet") or ""),
+        published_at=result.get("published_at"),
+        source_class=result.get("source_class"),
+        trust_level=result.get("trust_level"),
+        usable_as_fact=result.get("usable_as_fact"),
+    )

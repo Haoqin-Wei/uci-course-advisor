@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 
 from app.agent import loop as agent_loop
 from app.agent import tools as agent_tools
@@ -152,6 +153,57 @@ def test_agent_can_dispatch_explicit_web_search_with_sse_chip(monkeypatch) -> No
     tool_payload = json.loads(messages[2]["content"])
     assert tool_payload["ok"] is True
     assert tool_payload["results"][0]["source_class"] == "official_uci"
+    client.assert_exhausted()
+
+
+def test_agent_logs_tool_call_start_and_done(monkeypatch, caplog) -> None:
+    caplog.set_level(logging.INFO, logger="app.agent.loop")
+    monkeypatch.setenv("WEB_SEARCH_ENABLED", "true")
+    monkeypatch.setenv("WEB_SEARCH_PROVIDER", "fake")
+    web_search.set_fake_results(
+        [
+            {
+                "title": "UCI Registrar",
+                "url": "https://reg.uci.edu/",
+                "snippet": "Official registrar page.",
+            }
+        ]
+    )
+    messages = [{"role": "user", "content": "search UCI registrar"}]
+    client = ScriptedLLMClient(
+        tool_response(
+            tool_call(
+                "web_search",
+                {
+                    "query": "UCI registrar",
+                    "reason": "user explicitly asked to search official UCI pages",
+                },
+                call_id="call_web",
+            )
+        ),
+        text_response("Done."),
+    )
+
+    events = asyncio.run(
+        _collect(
+            agent_loop.run_agent(
+                messages,
+                client=client,
+                model="fake-model",
+                user_id="student_001",
+                term="Spring 2025",
+            )
+        )
+    )
+
+    assert events[-1]["text"] == "Done."
+    assert "event=agent_tool_call_start" in caplog.text
+    assert "tool='web_search'" in caplog.text
+    assert "'query': 'UCI registrar'" in caplog.text
+    assert "event=agent_tool_call_done" in caplog.text
+    assert "ok=True" in caplog.text
+    assert "'result_count': 1" in caplog.text
+    assert "'result_domains': ['reg.uci.edu']" in caplog.text
     client.assert_exhausted()
 
 
