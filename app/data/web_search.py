@@ -16,7 +16,7 @@ import time
 from copy import deepcopy
 from datetime import datetime, timezone
 from html.parser import HTMLParser
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import parse_qs, urlencode, unquote, urlsplit
 from typing import Any, Iterable, Optional
 
 import requests
@@ -290,6 +290,9 @@ def search_web(
             max_results=limit,
             preferred_domains=domains,
             result_count=len(normalized),
+            result_urls=[r.get("url") for r in normalized[:5]],
+            result_domains=[r.get("domain") for r in normalized[:5]],
+            source_classes=[r.get("source_class") for r in normalized[:5]],
         )
         return base
     finally:
@@ -365,6 +368,7 @@ def _duckduckgo_search(
     session = requests.Session()
     last_error: Optional[requests.RequestException] = None
     for attempt, search_query in enumerate(queries, start=1):
+        web_search_url = _build_search_url(search_query)
         observability.log_event(
             logger,
             logging.INFO,
@@ -372,6 +376,7 @@ def _duckduckgo_search(
             provider="duckduckgo",
             attempt=attempt,
             endpoint=DUCKDUCKGO_HTML_URL,
+            web_search_url=web_search_url,
             search_query=_log_value(search_query),
             preferred_domains=preferred_domains,
             timeout_seconds=config.web_search_timeout_seconds(),
@@ -391,6 +396,7 @@ def _duckduckgo_search(
                     provider="duckduckgo",
                     attempt=attempt,
                     status_code=response.status_code,
+                    web_search_url=web_search_url,
                     search_query=_log_value(search_query),
                 )
                 raise requests.RequestException(
@@ -406,6 +412,7 @@ def _duckduckgo_search(
                 provider="duckduckgo",
                 attempt=attempt,
                 error_type=type(e).__name__,
+                web_search_url=web_search_url,
                 search_query=_log_value(search_query),
             )
             continue
@@ -416,6 +423,9 @@ def _duckduckgo_search(
             "web_search_content",
             provider="duckduckgo",
             attempt=attempt,
+            web_search_url=web_search_url,
+            status_code=response.status_code,
+            content_length=len(response.text or ""),
             search_query=_log_value(search_query),
             content_preview=_log_content_preview(response.text),
         )
@@ -428,8 +438,10 @@ def _duckduckgo_search(
             "web_search_provider_attempt_parsed",
             provider="duckduckgo",
             attempt=attempt,
+            web_search_url=web_search_url,
             search_query=_log_value(search_query),
             result_count=len(parser.results),
+            result_urls=[r.get("url") for r in parser.results[:5]],
         )
         if parser.results or search_query == query:
             return parser.results[:max_results]
@@ -440,6 +452,7 @@ def _duckduckgo_search(
             provider="duckduckgo",
             from_query=_log_value(search_query),
             to_query=_log_value(query),
+            web_search_url=web_search_url,
             reason="domain-hinted query returned no parseable results",
         )
 
@@ -455,6 +468,10 @@ def _query_with_domain_hints(query: str, preferred_domains: list[str]) -> str:
         return f"{query} site:{preferred_domains[0]}"
     site_clause = " OR ".join(f"site:{domain}" for domain in preferred_domains[:3])
     return f"{query} ({site_clause})"
+
+
+def _build_search_url(search_query: str) -> str:
+    return f"{DUCKDUCKGO_HTML_URL}?{urlencode({'q': search_query})}"
 
 
 class _DuckDuckGoHTMLParser(HTMLParser):
@@ -547,6 +564,7 @@ def _fake_provider_search(
         provider="fake",
         preferred_domains=preferred_domains,
         result_count=len(results[:max_results]),
+        result_urls=[r.get("url") for r in results[:max_results] if isinstance(r, dict)],
     )
     return results[:max_results]
 
@@ -747,6 +765,7 @@ def _log_search_result(rank: int, result: dict[str, Any]) -> None:
         rank=rank,
         title=_log_value(result.get("title") or ""),
         url=result.get("url"),
+        web_search_url=result.get("url"),
         domain=result.get("domain"),
         snippet=_log_value(result.get("snippet") or ""),
         published_at=result.get("published_at"),
