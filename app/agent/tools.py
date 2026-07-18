@@ -27,6 +27,7 @@ from typing import Any, Callable, Optional
 from app import observability
 from app.data import db
 from app.data import web_search as web_search_data
+from app.data import websoc_workflow
 from app.scheduling import (
     resolve_pending_schedule_sections,
     sections_overlap,
@@ -514,6 +515,45 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "get_department_restrictions",
+            "description": (
+                "Fixed Registrar WebSoc workflow for department/school "
+                "enrollment restriction comments. Use for major restriction "
+                "release dates, New Only Restrictions/NORS dates, and "
+                "department-specific add/drop/change or restriction-policy "
+                "questions. This always starts from "
+                "https://www.reg.uci.edu/perl/WebSoc for the given term and "
+                "department, parses the comments above the course table, and "
+                "may deep-read official UCI links that WebSoc comments point "
+                "to. Do not use general web_search first for these questions."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "term": {
+                        "type": "string",
+                        "description": "Required. Form: 'Spring 2026', 'Fall 2026', 'Spring 2025'.",
+                    },
+                    "department": {
+                        "type": "string",
+                        "description": "Canonical UCI WebSoc department code, e.g. 'ART', 'I&C SCI', 'COMPSCI'.",
+                    },
+                    "restriction_type": {
+                        "type": "string",
+                        "description": "Optional hint such as 'major_restriction', 'nors', or 'add_drop_change'.",
+                    },
+                    "follow_links": {
+                        "type": "boolean",
+                        "description": "Whether to deep-read official UCI links explicitly present in WebSoc comments. Defaults true.",
+                    },
+                },
+                "required": ["term", "department"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "web_search",
             "description": (
                 "Controlled web search for cases where local DB tools are "
@@ -901,6 +941,22 @@ def _tool_get_policy(topic: Optional[str] = None) -> dict:
         "source_url": p.SOURCES.get(source_key),
         "verified_at": "2026-05-29",
     }
+
+
+def _tool_get_department_restrictions(
+    term: str,
+    department: str,
+    restriction_type: Optional[str] = None,
+    follow_links: bool = True,
+) -> dict:
+    result = websoc_workflow.fetch_websoc_department_restrictions(
+        term=term,
+        department=department,
+    )
+    result["restriction_type"] = restriction_type
+    if result.get("ok") and follow_links:
+        result["linked_pages"] = websoc_workflow.fetch_linked_official_pages(result)
+    return result
 
 
 def _tool_get_student_profile(*, context: dict) -> dict:
@@ -1717,6 +1773,7 @@ DISPATCH: dict[str, Callable[..., dict]] = {
     "check_section_conflict":   _tool_check_section_conflict,
     "get_student_profile":      _tool_get_student_profile,
     "get_policy":               _tool_get_policy,
+    "get_department_restrictions": _tool_get_department_restrictions,
     "web_search":               _tool_web_search,
     "propose_recommendation":   _tool_propose_recommendation,
 }
@@ -1814,6 +1871,11 @@ def humanize_tool_call(name: str, args: dict) -> str:
     if name == "get_policy":
         topic = a.get("topic")
         return f"查询学校政策 · {topic}" if topic else "列出学校政策主题"
+    if name == "get_department_restrictions":
+        department = a.get("department") or ""
+        term = a.get("term")
+        suffix = f" · {term}" if term else ""
+        return f"读取 WebSoc 部门说明 · {department}{suffix}"
     if name == "web_search":
         query = (a.get("query") or "").strip()
         return f"联网搜索 · {query}" if query else "联网搜索"
