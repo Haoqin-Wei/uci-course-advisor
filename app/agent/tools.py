@@ -91,6 +91,46 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "get_live_sections",
+            "description": (
+                "Live UCI WebSoc availability for a course in a SPECIFIC "
+                "term via Anteater API. Use this instead of get_sections "
+                "when the student asks whether a course/section is OPEN, "
+                "FULL, Waitl, has seats left, waitlist size/capacity, "
+                "New Only Reserved/NOR seats, or current restriction codes. "
+                "Returns live status, enrolled/capacity, seats_open, "
+                "waitlist, NOR, restrictions, updated_at, and retrieved_at. "
+                "ALWAYS pass `term`; use force_refresh=true only when the "
+                "student explicitly asks for latest/now/refresh."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "course_id": {
+                        "type": "string",
+                        "description": "Course code in any common form: 'CS161', 'COMPSCI 161', 'ICS33'.",
+                    },
+                    "term": {
+                        "type": "string",
+                        "description": "Required. Form: 'Spring 2026', 'Fall 2026', 'Spring 2025'.",
+                    },
+                    "section_codes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional specific 5-digit WebSoc section codes to check.",
+                    },
+                    "force_refresh": {
+                        "type": "boolean",
+                        "description": "Bypass the 5-minute live WebSoc cache only when the user asks for the latest/current status.",
+                    },
+                },
+                "required": ["course_id", "term"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_grade_distribution",
             "description": (
                 "Historical grade distribution for a course (A/B/C "
@@ -623,6 +663,29 @@ def _tool_get_sections(
         return {"found": False, "source": "none", "sections": [],
                 "reason": "term is required and no term was provided"}
     return db.get_sections(course_id, effective_term)
+
+
+def _tool_get_live_sections(
+    course_id: str,
+    *,
+    context: dict,
+    term: Optional[str] = None,
+    section_codes: Optional[list[str]] = None,
+    force_refresh: bool = False,
+) -> dict:
+    # Same term safety net as get_sections, but this path is reserved
+    # for live availability/status snapshots.
+    effective_term = term or context.get("term")
+    if not effective_term:
+        return {"found": False, "source": "none", "sections": [],
+                "is_live": False,
+                "reason": "term is required and no term was provided"}
+    return db.get_live_sections(
+        course_id,
+        effective_term,
+        section_codes=section_codes,
+        force_refresh=force_refresh,
+    )
 
 
 def _tool_get_grade_distribution(course_id: str) -> dict:
@@ -1643,6 +1706,7 @@ def _split_primary_secondary(active_sections: list[dict]) -> tuple[list[dict], l
 DISPATCH: dict[str, Callable[..., dict]] = {
     "get_course_info":          _tool_get_course_info,
     "get_sections":             _tool_get_sections,
+    "get_live_sections":        _tool_get_live_sections,
     "get_grade_distribution":   _tool_get_grade_distribution,
     "get_professor_rating":     _tool_get_professor_rating,
     "get_professor_reviews":    _tool_get_professor_reviews,
@@ -1722,6 +1786,8 @@ def humanize_tool_call(name: str, args: dict) -> str:
         return f"查询 {a.get('course_id', '')} 课程信息"
     if name == "get_sections":
         return f"查询 {a.get('course_id', '')} 排课{term_suffix}"
+    if name == "get_live_sections":
+        return f"实时查询 WebSoc · {a.get('course_id', '')}{term_suffix}"
     if name == "get_grade_distribution":
         return f"查询 {a.get('course_id', '')} 历年成绩"
     if name == "get_professor_rating":
