@@ -80,15 +80,26 @@ function _renderCardBadges(card, cat) {
 }
 
 function _renderCardSourceBadges(card) {
-  // Optional future extension for field-level web provenance. Existing
-  // card DB fields (`course_source`, `course_provenance`,
-  // `section_source`) remain untouched; web badges must arrive in this
-  // separate field so web evidence never masquerades as DB verified.
-  const badges = card?.field_source_badges || [];
-  if (!Array.isArray(badges) || badges.length === 0) return '';
+  // Field-level provenance stays separate from core DB fields
+  // (`course_source`, `course_provenance`, `section_source`) so web
+  // evidence never masquerades as DB verified. Section-level live
+  // sources can also surface here when a card includes live sections.
+  const explicit = Array.isArray(card?.field_source_badges)
+    ? card.field_source_badges
+    : [];
+  const sectionSources = [];
+  if (card?.section_source) sectionSources.push(card.section_source);
+  for (const section of (card?.sections || [])) {
+    if (section?.source) sectionSources.push(section.source);
+  }
+  const badges = [...explicit, ...sectionSources];
+  if (badges.length === 0) return '';
+  const seen = new Set();
   return badges.map((raw) => {
     const key = (typeof raw === 'string' ? raw : raw?.kind || raw?.source_class || '')
       .toLowerCase();
+    if (seen.has(key)) return '';
+    seen.add(key);
     const label = SOURCE_BADGE_LABELS[key] || SOURCE_BADGE_LABELS.unverified;
     const css = key && SOURCE_BADGE_LABELS[key] ? key : 'unverified';
     return `<span class="cc-badge cc-source-badge cc-source-${escAttr(css)}">${label}</span>`;

@@ -91,6 +91,8 @@ def test_key_browser_regression_flows_are_wired() -> None:
     assert "External Web" in cards
     assert "field_source_badges" in cards
     assert "course_provenance" in cards
+    assert "sectionSources" in cards
+    assert "section?.source" in cards
 
     assert "tool-chip-live-websoc" in chat
     assert "tool-chip-websoc-comments" in chat
