@@ -204,6 +204,85 @@ def test_deep_read_rejects_non_uci_redirect() -> None:
     assert result["errors"][0]["error_code"] == "linked_page_left_allowed_domain"
 
 
+def test_deep_read_rejects_non_textual_linked_page() -> None:
+    workflow_result = {
+        "ok": True,
+        "workflow_id": "websoc_department_restrictions",
+        "source_url": "https://www.reg.uci.edu/perl/WebSoc?Dept=ART",
+        "fields": {"major_restriction_removed_at": None},
+        "links": [
+            {
+                "text": "Restriction details",
+                "url": "https://arts.uci.edu/restrictions.pdf",
+                "allowed_for_deep_read": True,
+                "link_role": "restriction_details",
+                "source_block": "Art department comments:",
+            }
+        ],
+    }
+
+    class FakeResponse:
+        text = "%PDF"
+        url = "https://arts.uci.edu/restrictions.pdf"
+        headers = {"content-type": "application/pdf"}
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        def get(self, *_args, **_kwargs):
+            return FakeResponse()
+
+    result = websoc_workflow.fetch_linked_official_pages(
+        workflow_result,
+        session=FakeSession(),
+    )
+
+    assert result["pages"] == []
+    assert result["errors"][0]["error_code"] == "linked_page_unsupported_content_type"
+
+
+def test_deep_read_rejects_oversized_linked_page() -> None:
+    workflow_result = {
+        "ok": True,
+        "workflow_id": "websoc_department_restrictions",
+        "source_url": "https://www.reg.uci.edu/perl/WebSoc?Dept=ART",
+        "fields": {"major_restriction_removed_at": None},
+        "links": [
+            {
+                "text": "Restriction details",
+                "url": "https://arts.uci.edu/restrictions",
+                "allowed_for_deep_read": True,
+                "link_role": "restriction_details",
+                "source_block": "Art department comments:",
+            }
+        ],
+    }
+
+    class FakeResponse:
+        text = "<html></html>"
+        url = "https://arts.uci.edu/restrictions"
+        headers = {
+            "content-type": "text/html",
+            "content-length": str(websoc_workflow.LINK_MAX_BYTES + 1),
+        }
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        def get(self, *_args, **_kwargs):
+            return FakeResponse()
+
+    result = websoc_workflow.fetch_linked_official_pages(
+        workflow_result,
+        session=FakeSession(),
+    )
+
+    assert result["pages"] == []
+    assert result["errors"][0]["error_code"] == "linked_page_too_large"
+
+
 def test_fetch_websoc_department_restrictions_returns_structured_error() -> None:
     class FailingSession:
         def get(self, *_args, **_kwargs):

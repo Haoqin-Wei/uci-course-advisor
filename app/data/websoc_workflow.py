@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 WEBSOC_URL = "https://www.reg.uci.edu/perl/WebSoc"
 REQUEST_TIMEOUT_S = 12
 LINK_TEXT_MAX_CHARS = 1500
+LINK_MAX_BYTES = 500_000
 
 _QUARTER_CODES = {
     "Winter": "03",
@@ -320,6 +321,41 @@ def fetch_linked_official_pages(
             )
             continue
 
+        content_type = (getattr(response, "headers", {}) or {}).get("content-type", "")
+        if content_type and not _is_textual_content_type(content_type):
+            errors.append(
+                {
+                    "url": link["url"],
+                    "final_url": final_url,
+                    "error_code": "linked_page_unsupported_content_type",
+                    "message": f"linked page content type is not text/html: {content_type}",
+                }
+            )
+            continue
+
+        content_length = _safe_int((getattr(response, "headers", {}) or {}).get("content-length"))
+        if content_length is not None and content_length > LINK_MAX_BYTES:
+            errors.append(
+                {
+                    "url": link["url"],
+                    "final_url": final_url,
+                    "error_code": "linked_page_too_large",
+                    "message": "linked page is larger than the workflow limit",
+                }
+            )
+            continue
+
+        if len((response.text or "").encode("utf-8")) > LINK_MAX_BYTES:
+            errors.append(
+                {
+                    "url": link["url"],
+                    "final_url": final_url,
+                    "error_code": "linked_page_too_large",
+                    "message": "linked page body is larger than the workflow limit",
+                }
+            )
+            continue
+
         parsed = _parse_html(response.text)
         pages.append(
             {
@@ -370,6 +406,22 @@ def _classify_link_role(url: str, text: str = "") -> Optional[str]:
     if "enroll" in lowered:
         return "enrollment_instructions"
     return None
+
+
+def _is_textual_content_type(content_type: str) -> bool:
+    lower = content_type.lower()
+    return (
+        "text/html" in lower
+        or "text/plain" in lower
+        or "application/xhtml+xml" in lower
+    )
+
+
+def _safe_int(value: Any) -> Optional[int]:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _find_nth_link_block(
