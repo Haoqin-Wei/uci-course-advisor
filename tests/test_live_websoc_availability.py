@@ -136,6 +136,31 @@ def test_fetch_live_sections_force_refresh_bypasses_cache(
     assert calls == 2
 
 
+def test_fetch_live_sections_rate_limit_returns_unavailable_metric(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        status_code = 429
+        text = "rate limited"
+
+    def fake_request(self, method, url, **kwargs):
+        return FakeResponse()
+
+    monkeypatch.setattr(requests.sessions.Session, "request", fake_request)
+
+    result = anteater.fetch_live_sections(
+        year="2026",
+        quarter="Fall",
+        department="COMPSCI",
+        course_number="161",
+    )
+
+    assert result is None
+    metrics = observability.snapshot_metrics()
+    assert metrics["counters"]["external_api.rate_limited{service=anteater}"] == 1
+    assert metrics["counters"]["live_websoc.api_result{result=unavailable}"] == 1
+
+
 def test_get_live_sections_maps_anteater_availability_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
