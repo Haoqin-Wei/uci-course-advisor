@@ -76,6 +76,7 @@ from typing import AsyncIterator, Optional
 
 from app import observability
 from app.agent import tools as agent_tools
+from app.agent.workflow_router import build_route_hint_message, route_search_workflows
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +160,32 @@ def _summarize_tool_result(result: dict) -> dict:
         summary["staged_count"] = result.get("staged_count")
         summary["skipped_count"] = result.get("skipped_count")
     return {k: v for k, v in summary.items() if v is not None}
+
+
+def _latest_user_content(messages: list[dict]) -> str:
+    for message in reversed(messages):
+        if message.get("role") == "user":
+            return str(message.get("content") or "")
+    return ""
+
+
+def _messages_with_route_hint(
+    messages: list[dict],
+    route_hint_message: Optional[dict[str, str]],
+) -> list[dict]:
+    if not route_hint_message:
+        return messages
+    last_user_idx = None
+    for idx, message in enumerate(messages):
+        if message.get("role") == "user":
+            last_user_idx = idx
+    if last_user_idx is None:
+        return [route_hint_message, *messages]
+    return [
+        *messages[:last_user_idx],
+        route_hint_message,
+        *messages[last_user_idx:],
+    ]
 
 
 def _stash_continuation(
@@ -280,13 +307,18 @@ async def _run_loop(
         "term": term,
         "pending_schedule": list(pending_schedule or []),
     }
+    workflow_route = route_search_workflows(_latest_user_content(messages), term=term)
+    route_hint_message = build_route_hint_message(workflow_route)
+    if workflow_route:
+        for intent in workflow_route.get("intents", []):
+            observability.increment("workflow_router.matches", intent=intent)
     total_tool_calls = start_tool_count
 
     for iteration in range(start_iteration, MAX_ITERATIONS):
         try:
             response = await client.chat.completions.create(
                 model=model,
-                messages=messages,
+                messages=_messages_with_route_hint(messages, route_hint_message),
                 tools=agent_tools.TOOL_SCHEMAS,
                 tool_choice="auto",
                 stream=True,
