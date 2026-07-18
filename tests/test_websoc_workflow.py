@@ -143,6 +143,30 @@ def test_deep_read_fetches_only_selected_official_websoc_links() -> None:
     assert "Fall 2026 restriction details" in result["pages"][0]["text_excerpt"]
 
 
+def test_deep_read_skips_links_when_websoc_comments_already_have_date() -> None:
+    workflow_result = websoc_workflow.parse_websoc_department_html(
+        _fixture("art_department.html"),
+        term="Fall 2026",
+        department="ART",
+        source_url=websoc_workflow.build_websoc_department_url("Fall 2026", "ART"),
+        retrieved_at="2026-07-18T11:00:00Z",
+    )
+
+    class FakeSession:
+        def get(self, *_args, **_kwargs):
+            raise AssertionError("direct WebSoc date should avoid linked-page fetch")
+
+    result = websoc_workflow.fetch_linked_official_pages(
+        workflow_result,
+        session=FakeSession(),
+    )
+
+    assert result["ok"] is True
+    assert result["selected_count"] == 0
+    assert result["pages"] == []
+    assert result["errors"] == []
+
+
 def test_deep_read_rejects_non_uci_redirect() -> None:
     workflow_result = {
         "ok": True,
