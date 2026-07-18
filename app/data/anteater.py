@@ -199,9 +199,11 @@ def fetch_live_sections(
     if not force_refresh and key in _live_sections_cache:
         cached_at, cached = _live_sections_cache[key]
         if now - cached_at <= LIVE_WEBSOC_TTL_SECONDS:
+            observability.increment("live_websoc.cache", result="hit")
             if cached is None:
                 return None
             return {**cached, "cache_hit": True}
+    observability.increment("live_websoc.cache", result="miss")
 
     params: dict[str, str] = {
         "year": str(year),
@@ -219,12 +221,21 @@ def fetch_live_sections(
         params["courseNumber"] = num
 
     retrieved_at = _utc_now()
+    started_at = observability.now()
     body = _get_json(f"{ANTEATER_BASE_URL}/websoc", params=params)
+    observability.observe_ms(
+        "live_websoc.api_latency",
+        observability.elapsed_ms(started_at),
+        service="anteater",
+        endpoint="/websoc",
+    )
     if not body:
+        observability.increment("live_websoc.api_result", result="unavailable")
         _live_sections_cache[key] = (now, None)
         return None
 
     data = body.get("data") or {}
+    observability.increment("live_websoc.api_result", result="ok")
     result = {
         "source": "live_anteater_websoc",
         "retrieved_at": retrieved_at,

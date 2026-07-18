@@ -1230,6 +1230,10 @@ body.schedule-open .msg-ai { max-width: 680px; }
 .cc-source-db_verified,
 .cc-source-official_uci { background: var(--success-soft);       color: var(--success); }
 .cc-source-official_web { background: var(--accent-soft);        color: var(--accent); }
+.cc-source-live_anteater_websoc { background: var(--success-soft); color: var(--success); }
+.cc-source-websoc_comments,
+.cc-source-official_department_link { background: var(--accent-soft); color: var(--accent); }
+.cc-source-local_not_live { background: var(--warning-soft); color: var(--warning); }
 .cc-source-external_web { background: var(--overlay-light);      color: var(--text-secondary); }
 .cc-source-anecdotal    { background: var(--warning-soft);       color: var(--warning); }
 .cc-source-unverified   { background: var(--danger-soft);        color: var(--danger); }
@@ -1470,6 +1474,30 @@ tr.cc-sg-row .cc-sg-add-hover.added {
 }
 .tool-chip-web-search.is-active .tool-dot {
   background: var(--accent);
+}
+.tool-chip-live-websoc {
+  border-color: rgba(5, 150, 105, 0.35);
+  background: rgba(5, 150, 105, 0.08);
+}
+.tool-chip-live-websoc.is-active {
+  border-color: var(--success);
+  color: var(--success);
+  background: rgba(5, 150, 105, 0.10);
+}
+.tool-chip-live-websoc.is-active .tool-dot {
+  background: var(--success);
+}
+.tool-chip-websoc-comments {
+  border-color: rgba(124, 58, 237, 0.32);
+  background: rgba(124, 58, 237, 0.08);
+}
+.tool-chip-websoc-comments.is-active {
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
+  background: rgba(124, 58, 237, 0.10);
+}
+.tool-chip-websoc-comments.is-active .tool-dot {
+  background: var(--accent-strong);
 }
 .tool-chip.is-done {
   opacity: 0.65;

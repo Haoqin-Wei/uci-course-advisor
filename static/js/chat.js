@@ -187,6 +187,10 @@ function startToolChip(wrap, label, toolName) {
   if (toolName) {
     chip.dataset.toolName = toolName;
     if (toolName === 'web_search') chip.classList.add('tool-chip-web-search');
+    if (toolName === 'get_live_sections') chip.classList.add('tool-chip-live-websoc');
+    if (toolName === 'get_department_restrictions') {
+      chip.classList.add('tool-chip-websoc-comments');
+    }
   }
   chip.innerHTML = '<span class="tool-dot"></span><span class="tool-label"></span>';
   chip.querySelector('.tool-label').textContent = label || '调用工具';

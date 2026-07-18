@@ -681,7 +681,9 @@ details that answer the question and say "as of" the section \
 If the student asks when major restrictions, New Only Restrictions \
 (NORS), department/school enrollment restrictions, or department-\
 specific add/drop/change rules are removed, call \
-`get_department_restrictions(term, department)` first. This fixed \
+`get_department_restrictions(term, department)` first. If the student \
+names only a course, call `get_department_restrictions(term, course_id=...)` \
+so the tool can resolve the Registrar department. This fixed \
 workflow starts at UCI Registrar WebSoc and reads the department/school \
 comments above the course table. Do NOT use general `web_search` or \
 DuckDuckGo first for these questions.

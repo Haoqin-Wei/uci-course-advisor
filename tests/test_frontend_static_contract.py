@@ -84,9 +84,16 @@ def test_key_browser_regression_flows_are_wired() -> None:
     assert "SOURCE_BADGE_LABELS" in cards
     assert "DB Verified" in cards
     assert "Official UCI" in cards
+    assert "Live WebSoc" in cards
+    assert "WebSoc Comments" in cards
+    assert "Official Department Link" in cards
+    assert "Not Live" in cards
     assert "External Web" in cards
     assert "field_source_badges" in cards
     assert "course_provenance" in cards
+
+    assert "tool-chip-live-websoc" in chat
+    assert "tool-chip-websoc-comments" in chat
 
     assert "/api/schedule/add" in schedule
     assert "/api/schedule/remove" in schedule

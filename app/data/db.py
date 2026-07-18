@@ -609,6 +609,11 @@ def get_live_sections(
         }
 
     fallback_reason = "live Anteater WebSoc unavailable; local data is not current availability"
+    observability.increment(
+        "live_websoc.fallback",
+        reason="anteater_unavailable",
+        result="attempt_local",
+    )
     cv = get_catalog(t)
     if cv:
         records = cv.get_sections(ref)
@@ -616,6 +621,11 @@ def get_live_sections(
             code_set = set(normalized_codes)
             records = [s for s in records if s.section_code in code_set]
         if records:
+            observability.increment(
+                "live_websoc.fallback",
+                reason="anteater_unavailable",
+                result="local_not_live",
+            )
             return {
                 "found": True,
                 "source": "local_not_live",
@@ -633,6 +643,11 @@ def get_live_sections(
                 "reason": fallback_reason,
             }
 
+    observability.increment(
+        "live_websoc.fallback",
+        reason="anteater_unavailable",
+        result="no_fallback",
+    )
     return {
         "found": False,
         "source": "none",

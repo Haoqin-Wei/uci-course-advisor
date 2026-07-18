@@ -25,6 +25,7 @@ import logging
 from typing import Any, Callable, Optional
 
 from app import observability
+from app.catalog.normalization import parse_course_mention
 from app.data import db
 from app.data import web_search as web_search_data
 from app.data import websoc_workflow
@@ -538,6 +539,10 @@ TOOL_SCHEMAS: list[dict] = [
                         "type": "string",
                         "description": "Canonical UCI WebSoc department code, e.g. 'ART', 'I&C SCI', 'COMPSCI'.",
                     },
+                    "course_id": {
+                        "type": "string",
+                        "description": "Optional course code such as 'CS161' or 'ICS33'. Use when the student names a course but not the department; the tool resolves the department before querying WebSoc.",
+                    },
                     "restriction_type": {
                         "type": "string",
                         "description": "Optional hint such as 'major_restriction', 'nors', or 'add_drop_change'.",
@@ -547,7 +552,7 @@ TOOL_SCHEMAS: list[dict] = [
                         "description": "Whether to deep-read official UCI links explicitly present in WebSoc comments. Defaults true.",
                     },
                 },
-                "required": ["term", "department"],
+                "required": ["term"],
             },
         },
     },
@@ -945,14 +950,38 @@ def _tool_get_policy(topic: Optional[str] = None) -> dict:
 
 def _tool_get_department_restrictions(
     term: str,
-    department: str,
+    department: Optional[str] = None,
+    course_id: Optional[str] = None,
     restriction_type: Optional[str] = None,
     follow_links: bool = True,
 ) -> dict:
+    resolved_department = (department or "").strip()
+    resolved_from_course: Optional[str] = None
+    if not resolved_department and course_id:
+        ref = parse_course_mention(course_id)
+        if ref:
+            resolved_department = ref.department
+            resolved_from_course = ref.display()
+
+    if not resolved_department:
+        return {
+            "ok": False,
+            "workflow_id": "websoc_department_restrictions",
+            "error_code": "department_required",
+            "message": "department is required when course_id cannot be parsed",
+            "term": term,
+            "department": None,
+            "course_id": course_id,
+            "restriction_type": restriction_type,
+        }
+
     result = websoc_workflow.fetch_websoc_department_restrictions(
         term=term,
-        department=department,
+        department=resolved_department,
     )
+    if resolved_from_course:
+        result["course_id"] = resolved_from_course
+        result["department_resolved_from"] = "course_id"
     result["restriction_type"] = restriction_type
     if result.get("ok") and follow_links:
         result["linked_pages"] = websoc_workflow.fetch_linked_official_pages(result)

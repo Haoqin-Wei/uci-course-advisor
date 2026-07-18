@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 import requests
 
+from app import observability
 from app.catalog.types import CourseRef, SectionRecord
 from app.data import anteater, db
 
@@ -92,6 +93,11 @@ def test_fetch_live_sections_queries_section_codes_and_caches(
     assert first["sections"][0]["sectionCode"] == "34070"
     assert second is not None
     assert second["cache_hit"] is True
+    metrics = observability.snapshot_metrics()
+    assert metrics["counters"]["live_websoc.cache{result=miss}"] == 1
+    assert metrics["counters"]["live_websoc.cache{result=hit}"] == 1
+    assert metrics["counters"]["live_websoc.api_result{result=ok}"] == 1
+    assert metrics["timings"]["live_websoc.api_latency{endpoint=/websoc,service=anteater}"]["count"] == 1
 
 
 def test_fetch_live_sections_force_refresh_bypasses_cache(
@@ -225,3 +231,10 @@ def test_get_live_sections_local_fallback_is_marked_not_live(
     assert section["is_live"] is False
     assert section["seats_open"] == 10
     assert section["retrieved_at"] is None
+    metrics = observability.snapshot_metrics()
+    assert metrics["counters"][
+        "live_websoc.fallback{reason=anteater_unavailable,result=attempt_local}"
+    ] == 1
+    assert metrics["counters"][
+        "live_websoc.fallback{reason=anteater_unavailable,result=local_not_live}"
+    ] == 1

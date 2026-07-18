@@ -25,10 +25,11 @@ def test_department_restrictions_tool_schema_is_fixed_workflow() -> None:
 
     assert "Fixed Registrar WebSoc workflow" in schema["description"]
     assert "Do not use general web_search first" in schema["description"]
-    assert schema["parameters"]["required"] == ["term", "department"]
+    assert schema["parameters"]["required"] == ["term"]
     assert set(schema["parameters"]["properties"]) == {
         "term",
         "department",
+        "course_id",
         "restriction_type",
         "follow_links",
     }
@@ -87,6 +88,58 @@ def test_department_restrictions_dispatcher_fetches_websoc_and_linked_pages(
     ]
 
 
+def test_department_restrictions_dispatcher_resolves_department_from_course_id(
+    monkeypatch,
+) -> None:
+    calls: list[dict] = []
+
+    def fake_fetch(**kwargs):
+        calls.append(kwargs)
+        return {
+            "ok": True,
+            "workflow_id": "websoc_department_restrictions",
+            "term": kwargs["term"],
+            "department": kwargs["department"],
+            "source_url": "https://www.reg.uci.edu/perl/WebSoc?Dept=COMPSCI",
+            "fields": {},
+            "links": [],
+        }
+
+    monkeypatch.setattr(
+        agent_tools.websoc_workflow,
+        "fetch_websoc_department_restrictions",
+        fake_fetch,
+    )
+
+    result = agent_tools.dispatch(
+        "get_department_restrictions",
+        {
+            "term": "Fall 2026",
+            "course_id": "CS161",
+            "restriction_type": "major_restriction",
+            "follow_links": False,
+        },
+        context={},
+    )
+
+    assert result["ok"] is True
+    assert result["department"] == "COMPSCI"
+    assert result["course_id"] == "COMPSCI 161"
+    assert result["department_resolved_from"] == "course_id"
+    assert calls == [{"term": "Fall 2026", "department": "COMPSCI"}]
+
+
+def test_department_restrictions_dispatcher_rejects_missing_department() -> None:
+    result = agent_tools.dispatch(
+        "get_department_restrictions",
+        {"term": "Fall 2026", "course_id": "not a course", "follow_links": False},
+        context={},
+    )
+
+    assert result["ok"] is False
+    assert result["error_code"] == "department_required"
+
+
 def test_department_restrictions_humanized_chip_label() -> None:
     label = agent_tools.humanize_tool_call(
         "get_department_restrictions",
@@ -101,6 +154,7 @@ def test_agent_prompt_encodes_department_restriction_rules() -> None:
 
     assert "Department restrictions (HARD RULE)" in prompt
     assert "call `get_department_restrictions(term, department)` first" in prompt
+    assert "get_department_restrictions(term, course_id=...)" in prompt
     assert "Do NOT use general `web_search` or DuckDuckGo first" in prompt
     assert "WebSoc comments point to an official UCI department page" in prompt
 
