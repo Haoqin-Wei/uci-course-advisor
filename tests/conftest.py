@@ -226,6 +226,7 @@ def isolated_test_environment(
     db._course_info_cache.clear()
     anteater._course_cache.clear()
     anteater._sections_cache.clear()
+    anteater._live_sections_cache.clear()
     anteater._instructor_cache.clear()
     anteater_programs._departments_cache = None
     anteater_programs._majors_cache = None

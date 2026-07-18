@@ -238,6 +238,37 @@ def _api_section_to_dict(sec: dict) -> dict:
     }
 
 
+def _api_live_section_to_dict(sec: dict, *, retrieved_at: Optional[str]) -> dict:
+    """Anteater WebSoc section → live availability schema."""
+
+    base = _api_section_to_dict(sec)
+    waitlist_capacity = _safe_int(sec.get("numWaitlistCap"))
+    new_only_reserved = _safe_int(sec.get("numNewOnlyReserved"))
+    updated_at = sec.get("updatedAt")
+    return {
+        **base,
+        "waitlist_capacity": waitlist_capacity,
+        "new_only_reserved": new_only_reserved,
+        "updated_at": updated_at,
+        "retrieved_at": retrieved_at,
+        "source": "live_anteater_websoc",
+        "is_live": True,
+    }
+
+
+def _local_not_live_section_to_dict(s: SectionRecord, *, reason: str) -> dict:
+    return {
+        **_section_record_to_dict(s),
+        "waitlist_capacity": None,
+        "new_only_reserved": None,
+        "updated_at": None,
+        "retrieved_at": None,
+        "source": "local_not_live",
+        "is_live": False,
+        "not_live_reason": reason,
+    }
+
+
 def _safe_int(v) -> Optional[int]:
     if v is None or v == "":
         return None
@@ -496,6 +527,127 @@ def get_sections(course_id: str, term: str) -> dict:
         "data_coverage": coverage,
         "sections": [],
         "reason": f"no sections published for {ref.display()} in {t.display()}",
+    }
+
+
+def get_live_sections(
+    course_id: str,
+    term: str,
+    section_codes: Optional[list[str]] = None,
+    force_refresh: bool = False,
+) -> dict:
+    """
+    Live availability/status for a course in a specific term.
+
+    This is intentionally separate from `get_sections()`: ordinary
+    planning can use deterministic local catalog data, but questions
+    about current seats, waitlists, OPEN/FULL/Waitl status, NOR, or
+    restriction codes should use this live WebSoc path first.
+    """
+
+    ref = _to_ref(course_id)
+    if not ref:
+        return {"found": False, "source": "none", "sections": [],
+                "is_live": False,
+                "reason": f"could not parse course id {course_id!r}"}
+    t = _to_term(term)
+    if not t:
+        return {"found": False, "source": "none", "sections": [],
+                "is_live": False,
+                "reason": f"could not parse term {term!r} (expected e.g. 'Spring 2026')"}
+
+    normalized_codes = [
+        str(code).strip()
+        for code in (section_codes or [])
+        if str(code).strip()
+    ]
+    coverage = get_term_coverage(t)
+
+    try:
+        live = anteater.fetch_live_sections(
+            year=str(t.year),
+            quarter=t.quarter,
+            department=ref.department,
+            course_number=ref.course_number,
+            section_codes=normalized_codes or None,
+            force_refresh=force_refresh,
+        )
+    except Exception as e:
+        logger.warning("live WebSoc availability failed for %s %s: %s", ref.display(), t.display(), e)
+        observability.increment("data.refresh_failures", source="anteater_live_websoc")
+        observability.log_event(
+            logger,
+            logging.WARNING,
+            "data_refresh_failure",
+            source="anteater_live_websoc",
+            term=t.display(),
+            course_id=ref.display(),
+            error=f"{type(e).__name__}: {e}",
+        )
+        live = None
+
+    if live is not None:
+        sections_raw = live.get("sections") or []
+        sections = [
+            _api_live_section_to_dict(s, retrieved_at=live.get("retrieved_at"))
+            for s in sections_raw
+        ]
+        return {
+            "found": bool(sections),
+            "source": "live_anteater_websoc",
+            "is_live": True,
+            "term": t.display(),
+            "course_id": ref.display(),
+            "coverage_status": coverage.get("coverage_status"),
+            "data_coverage": coverage,
+            "retrieved_at": live.get("retrieved_at"),
+            "cache_hit": bool(live.get("cache_hit")),
+            "sections": sections,
+            "reason": None if sections else (
+                f"live WebSoc returned no sections for {ref.display()} in {t.display()}"
+            ),
+        }
+
+    fallback_reason = "live Anteater WebSoc unavailable; local data is not current availability"
+    cv = get_catalog(t)
+    if cv:
+        records = cv.get_sections(ref)
+        if normalized_codes:
+            code_set = set(normalized_codes)
+            records = [s for s in records if s.section_code in code_set]
+        if records:
+            return {
+                "found": True,
+                "source": "local_not_live",
+                "is_live": False,
+                "term": t.display(),
+                "course_id": ref.display(),
+                "coverage_status": coverage.get("coverage_status"),
+                "data_coverage": coverage,
+                "retrieved_at": None,
+                "cache_hit": False,
+                "sections": [
+                    _local_not_live_section_to_dict(s, reason=fallback_reason)
+                    for s in records
+                ],
+                "reason": fallback_reason,
+            }
+
+    return {
+        "found": False,
+        "source": "none",
+        "is_live": False,
+        "term": t.display(),
+        "course_id": ref.display(),
+        "coverage_status": coverage.get("coverage_status"),
+        "data_coverage": coverage,
+        "retrieved_at": None,
+        "cache_hit": False,
+        "sections": [],
+        "reason": (
+            f"live WebSoc could not verify current availability for "
+            f"{ref.display()} in {t.display()}"
+        ),
     }
 
 

@@ -31,6 +31,8 @@ from __future__ import annotations
 
 import logging
 import os
+import time
+from datetime import datetime, timezone
 from typing import Optional
 
 import requests
@@ -41,6 +43,7 @@ logger = logging.getLogger(__name__)
 
 ANTEATER_BASE_URL = "https://anteaterapi.com/v2/rest"
 REQUEST_TIMEOUT_S = 12
+LIVE_WEBSOC_TTL_SECONDS = 5 * 60
 
 # ── In-process cache ────────────────────────────────────
 # Keyed by request shape; values are the parsed `data` field from the
@@ -48,6 +51,7 @@ REQUEST_TIMEOUT_S = 12
 # <20 fetches/turn so we don't bother with LRU eviction yet.
 _course_cache:   dict[str, Optional[dict]] = {}
 _sections_cache: dict[tuple[str, str, str, str], Optional[list]] = {}
+_live_sections_cache: dict[tuple, tuple[float, Optional[dict]]] = {}
 _instructor_cache: dict[str, Optional[dict]] = {}
 
 
@@ -99,6 +103,20 @@ def _get_json(url: str, params: Optional[dict] = None) -> Optional[dict]:
     return body
 
 
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _flatten_websoc_sections(data: dict) -> list[dict]:
+    flat: list[dict] = []
+    for school in data.get("schools", []):
+        for dept in school.get("departments", []):
+            for course in dept.get("courses", []):
+                for sec in course.get("sections", []):
+                    flat.append(sec)
+    return flat
+
+
 # ── Courses ──────────────────────────────────────────────
 
 def fetch_course(course_id: str) -> Optional[dict]:
@@ -146,14 +164,75 @@ def fetch_sections(
         return None
 
     data = body.get("data") or {}
-    flat: list[dict] = []
-    for school in data.get("schools", []):
-        for dept in school.get("departments", []):
-            for course in dept.get("courses", []):
-                for sec in course.get("sections", []):
-                    flat.append(sec)
+    flat = _flatten_websoc_sections(data)
     _sections_cache[key] = flat
     return flat
+
+
+def fetch_live_sections(
+    *,
+    year: str,
+    quarter: str,
+    department: Optional[str] = None,
+    course_number: Optional[str] = None,
+    section_codes: Optional[list[str]] = None,
+    force_refresh: bool = False,
+) -> Optional[dict]:
+    """
+    Live WebSoc data via Anteater, with AntAlmanac-style 5 minute
+    freshness semantics.
+
+    Use this for current availability/status questions. Unlike
+    `fetch_sections`, this returns an envelope with `retrieved_at` and
+    cache metadata so callers can tell users exactly how fresh the seat
+    count is.
+    """
+
+    normalized_codes = tuple(
+        sorted(str(code).strip() for code in (section_codes or []) if str(code).strip())
+    )
+    dept = (department or "").upper().strip()
+    num = (course_number or "").upper().strip()
+    key = ("live_websoc", str(year), quarter, dept, num, normalized_codes)
+
+    now = time.time()
+    if not force_refresh and key in _live_sections_cache:
+        cached_at, cached = _live_sections_cache[key]
+        if now - cached_at <= LIVE_WEBSOC_TTL_SECONDS:
+            if cached is None:
+                return None
+            return {**cached, "cache_hit": True}
+
+    params: dict[str, str] = {
+        "year": str(year),
+        "quarter": quarter,
+    }
+    if normalized_codes:
+        params["sectionCodes"] = ",".join(normalized_codes)
+    else:
+        if not dept or not num:
+            logger.warning(
+                "live WebSoc request missing department/courseNumber and sectionCodes"
+            )
+            return None
+        params["department"] = dept
+        params["courseNumber"] = num
+
+    retrieved_at = _utc_now()
+    body = _get_json(f"{ANTEATER_BASE_URL}/websoc", params=params)
+    if not body:
+        _live_sections_cache[key] = (now, None)
+        return None
+
+    data = body.get("data") or {}
+    result = {
+        "source": "live_anteater_websoc",
+        "retrieved_at": retrieved_at,
+        "cache_hit": False,
+        "sections": _flatten_websoc_sections(data),
+    }
+    _live_sections_cache[key] = (now, result)
+    return result
 
 
 # ── Instructors (RMP-style profile) ─────────────────────
