@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 WEBSOC_URL = "https://www.reg.uci.edu/perl/WebSoc"
 REQUEST_TIMEOUT_S = 12
+LINK_TEXT_MAX_CHARS = 1500
 
 _QUARTER_CODES = {
     "Winter": "03",
@@ -33,6 +34,16 @@ _QUARTER_CODES = {
     "Summer": "76",
     "Fall": "92",
 }
+
+_ICS_LINK_ROLES = (
+    ("course-enrollment-restrictions", "ics_undergraduate_restrictions"),
+    ("graduate-academic-advising/course-updates", "ics_graduate_course_updates"),
+    (
+        "undergraduate-programs/majors-minors/undergraduate-student-policies",
+        "ics_undergraduate_student_policies",
+    ),
+    ("undergraduate-academic-advising/concurrent-enrollment", "ics_concurrent_enrollment"),
+)
 
 
 @dataclass
@@ -242,6 +253,7 @@ def _assign_links_to_blocks(
                 "text": link.get("text") or absolute_url,
                 "url": absolute_url,
                 "domain": _domain_from_url(absolute_url),
+                "link_role": _classify_link_role(absolute_url, link.get("text") or ""),
                 "source_block": assigned["title"] if assigned else None,
                 "source_block_type": assigned["block_type"] if assigned else None,
                 "source_url": source_url,
@@ -250,6 +262,114 @@ def _assign_links_to_blocks(
             }
         )
     return out
+
+
+def fetch_linked_official_pages(
+    workflow_result: dict[str, Any],
+    *,
+    session: Optional[requests.Session] = None,
+    max_pages: int = 3,
+) -> dict[str, Any]:
+    """Fetch official pages explicitly linked from WebSoc comments.
+
+    This is intentionally not a general crawler. It only follows links
+    already present in a successful WebSoc workflow result and only
+    keeps UCI official pages selected by deterministic rules.
+    """
+
+    if not workflow_result.get("ok"):
+        return {
+            "ok": False,
+            "workflow_id": workflow_result.get("workflow_id"),
+            "error_code": "invalid_workflow_result",
+            "message": "cannot deep-read links from an unsuccessful workflow result",
+            "pages": [],
+        }
+
+    selected = [
+        link for link in workflow_result.get("links", [])
+        if _should_deep_read_link(link, workflow_result)
+    ][:max(0, max_pages)]
+    http = session or requests.Session()
+    pages: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    for link in selected:
+        retrieved_at = _utc_now()
+        try:
+            response = http.get(link["url"], timeout=REQUEST_TIMEOUT_S)
+            response.raise_for_status()
+        except requests.RequestException as e:
+            errors.append(
+                {
+                    "url": link["url"],
+                    "error_code": "linked_page_request_failed",
+                    "message": f"official linked page request failed: {type(e).__name__}",
+                }
+            )
+            continue
+
+        final_url = getattr(response, "url", link["url"]) or link["url"]
+        if not _is_uci_domain(final_url):
+            errors.append(
+                {
+                    "url": link["url"],
+                    "final_url": final_url,
+                    "error_code": "linked_page_left_allowed_domain",
+                    "message": "linked page redirected outside uci.edu",
+                }
+            )
+            continue
+
+        parsed = _parse_html(response.text)
+        pages.append(
+            {
+                "url": final_url,
+                "domain": _domain_from_url(final_url),
+                "retrieved_at": retrieved_at,
+                "source_link_text": link.get("text"),
+                "source_block": link.get("source_block"),
+                "link_role": link.get("link_role"),
+                "text_excerpt": _truncate(parsed.text, LINK_TEXT_MAX_CHARS),
+            }
+        )
+
+    return {
+        "ok": True,
+        "workflow_id": workflow_result.get("workflow_id"),
+        "source_url": workflow_result.get("source_url"),
+        "selected_count": len(selected),
+        "pages": pages,
+        "errors": errors,
+    }
+
+
+def _should_deep_read_link(link: dict[str, Any], workflow_result: dict[str, Any]) -> bool:
+    if not link.get("allowed_for_deep_read"):
+        return False
+    role = link.get("link_role")
+    if role and role.startswith("ics_"):
+        return True
+    fields = workflow_result.get("fields") or {}
+    lacks_restriction_date = not fields.get("major_restriction_removed_at")
+    text = f"{link.get('text') or ''} {link.get('url') or ''}".lower()
+    return lacks_restriction_date and any(
+        needle in text
+        for needle in ("restriction", "timeline", "policy", "policies", "enroll")
+    )
+
+
+def _classify_link_role(url: str, text: str = "") -> Optional[str]:
+    lowered = f"{url} {text}".lower()
+    for needle, role in _ICS_LINK_ROLES:
+        if needle in lowered:
+            return role
+    if "restriction" in lowered or "timeline" in lowered:
+        return "restriction_details"
+    if "policy" in lowered or "policies" in lowered:
+        return "policy_details"
+    if "enroll" in lowered:
+        return "enrollment_instructions"
+    return None
 
 
 def _find_nth_link_block(
@@ -315,6 +435,13 @@ def _clean_text(text: str) -> str:
 
 def _collapse_ws(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
+
+
+def _truncate(text: str, limit: int) -> str:
+    collapsed = _clean_text(text)
+    if len(collapsed) <= limit:
+        return collapsed
+    return collapsed[: max(0, limit - 1)].rstrip() + "…"
 
 
 def _domain_from_url(url: Optional[str]) -> Optional[str]:
