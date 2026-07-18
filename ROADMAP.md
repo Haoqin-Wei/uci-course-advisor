@@ -652,7 +652,224 @@ Sources:
 - 搜索功能关闭时，系统不会崩溃，且会说明当前无法联网。
 - 默认测试仍然不联网、不依赖真实搜索 API。
 
-## 14. 跨阶段 Definition of Done
+## 14. M10 — Live WebSoc 可用性与专业限制 Workflow
+
+目标：把“课程是否还有位置 / OPEN-FULL-Waitl / waitlist / NOR / restriction code”与“专业限制什么时候解除”从通用 web search 中拆出来，做成固定、可测试、可追溯的 workflow。课程实时可用性按 AntAlmanac 的方式以 Anteater API WebSoc 数据为准；专业限制以 Registrar WebSoc department 页面为入口，并支持读取 WebSoc comments 中指向的官方部门链接。
+
+本阶段不扩 Degree Audit，不改推荐算法目标。重点是让高风险、近期变化的问题不再依赖本地 CSV 或 agentic 搜索猜测。
+
+### M10.1 问题分类与路由
+
+- [ ] 新增 search/workflow router，先判断用户问题是否属于固定 workflow，再决定是否交给 agentic `web_search`。
+- [ ] 定义 `availability` intent，覆盖：
+  - 课程或 section 是否 `OPEN / FULL / Waitl`。
+  - 当前 enrolled / capacity / seats open。
+  - waitlist 当前人数和容量。
+  - New Only Reserved / NOR 数量。
+  - restriction code 当前值。
+  - “现在能不能选这门课 / 还有位置吗 / waitlist 多长”。
+- [ ] 定义 `department_restriction` intent，覆盖：
+  - major restriction 什么时候解除。
+  - New Only Restrictions / NORS 什么时候解除。
+  - 某学院或 department 的 add/drop/change 特殊规则。
+  - “我不是这个 major，什么时候能选这门课”。
+- [ ] 固定 workflow 命中后默认不走 DuckDuckGo / 全网 agentic search。
+- [ ] 如果问题同时涉及 course availability 和 department restriction，先查 live WebSoc section，再查 department restriction workflow，并在回答中分开来源。
+
+### M10.2 Live Availability 数据源规则
+
+- [ ] 将课程可用性问题的数据源规则改成：`live Anteater WebSoc > local cache/CSV fallback > unknown`。
+- [ ] 本地 CSV 不允许作为“当前还剩几个座位 / 现在 open 吗”的最终事实来源。
+- [ ] 当用户问普通 planning、历史 term、section 时间地点时，仍允许使用现有 DB-first `get_sections()` 逻辑。
+- [ ] 当用户问当前/未来 active term 的实时可用性时，必须优先调用 Anteater API WebSoc。
+- [ ] 如果 Anteater API 失败，可以返回本地数据作为非实时 fallback，但必须标注 `not_live` 和原因。
+- [ ] 如果 Anteater API 和本地 DB 冲突，availability/status/seat count 默认以 live Anteater WebSoc 为准，本地 DB 只作为对照。
+
+### M10.3 Anteater API WebSoc 接口补强
+
+- [ ] 在 `app/data/anteater.py` 增加按 section code 查询 WebSoc 的能力，对齐 AntAlmanac/AANTS 的 `sectionCodes` 查询方式。
+- [ ] 保留按 `department + courseNumber + year + quarter` 查询课程 sections 的能力。
+- [ ] 增加 live availability 专用函数，例如 `fetch_live_sections()` 或 `fetch_sections(..., live=True)`。
+- [ ] live availability 返回时保留 Anteater 原始 `updatedAt` 字段。
+- [ ] 统一输出字段：
+  - `status`
+  - `max_capacity`
+  - `enrolled`
+  - `seats_open`
+  - `waitlisted`
+  - `waitlist_capacity`
+  - `new_only_reserved`
+  - `restrictions`
+  - `updated_at`
+  - `retrieved_at`
+  - `source = live_anteater_websoc`
+- [ ] 对 `numCurrentlyEnrolled.totalEnrolled`、`maxCapacity`、`numOnWaitlist`、`numWaitlistCap`、`numNewOnlyReserved` 做安全整数解析。
+- [ ] `seats_open` 由 `max_capacity - enrolled` 计算；缺字段时返回 `null`，不猜。
+
+### M10.4 5 分钟 Freshness 语义
+
+- [ ] 给 live Anteater WebSoc 查询增加 5 分钟 TTL cache，对齐 AntAlmanac 主页面的 freshness 语义。
+- [ ] cache key 至少包含 `year`、`quarter`、`department/courseNumber` 或 `sectionCodes`。
+- [ ] 用户明确说“最新 / 现在 / refresh / 重新查”时允许绕过 TTL cache。
+- [ ] tool result 中显示 `retrieved_at` 和 API 返回的 `updated_at`。
+- [ ] 回答必须说 “as of ...”，避免用户误以为 seat count 是永久事实。
+- [ ] 记录 cache hit/miss、API latency、non-200、rate limit 和 fallback 事件。
+
+### M10.5 Agent Tool 接入
+
+- [ ] 新增 `get_live_sections` tool，或给现有 `get_sections` 增加 `freshness` / `mode` 参数。
+- [ ] 推荐方案：新增 `get_live_sections(course_id, term, section_codes?, force_refresh?)`，避免破坏已有 planning 行为。
+- [ ] `get_live_sections` 只回答 live availability，不用于泛化课程推荐。
+- [ ] `get_sections` 继续服务普通 course planning、时间冲突和 section 列表。
+- [ ] Agent prompt 增加硬规则：availability intent 必须调用 `get_live_sections`，不能只用本地 DB 或 web snippets。
+- [ ] SSE tool chip 区分：
+  - `实时查询 WebSoc · COURSE TERM`
+  - `查询排课 · COURSE TERM`
+- [ ] schedule/recommendation card 如果显示 live seat/status 字段，要标注 `live_anteater_websoc`，不能混进 DB verified provenance。
+
+### M10.6 WebSoc Department Restriction Workflow
+
+- [ ] 新增固定 workflow：`websoc_department_restrictions`。
+- [ ] workflow 输入：
+  - `term`
+  - `department`
+  - 可选 `course_id`
+  - 可选 `restriction_type`，如 `major_restriction`、`nors`、`add_drop_change`
+- [ ] 如果用户只给 course_id，先通过本地 catalog 或 live WebSoc 解析出 department。
+- [ ] 如果 course_id 无法解析到 department，向用户要求 department；默认不改走 agentic search。
+- [ ] 固定访问 `https://www.reg.uci.edu/perl/WebSoc`，按 `YearTerm + Dept` 查询 department summary。
+- [ ] 请求参数中默认排除 cancelled courses，和 Registrar WebSoc 页面语义一致。
+- [ ] 不通过 DuckDuckGo 搜 WebSoc；URL 和参数由 workflow 构造。
+
+### M10.7 WebSoc 页面解析
+
+- [ ] 解析 WebSoc 返回 HTML 顶部区域，而不是只解析 course sections。
+- [ ] 提取 `Search Criteria` 中的 department 和 cancelled-course 设置。
+- [ ] 提取 term registration end date，例如 “Registration for term ends on ...”。
+- [ ] 提取 school-level comments block，例如 `Claire Trevor School of the Arts comments`。
+- [ ] 提取 department-level comments block，例如 `Art department comments`。
+- [ ] 从 comments 中抽取常见字段：
+  - add deadline
+  - drop deadline
+  - change grade option / variable units deadline
+  - major restriction removal date/time
+  - NORS removal date/time
+  - waitlist policy
+  - authorization-code policy
+  - contact email
+- [ ] 不能抽取成结构化字段时，保留原始 comment text，并标注 `extraction_status = partial`。
+- [ ] 解析失败时返回 structured error，不让 agent 编日期。
+
+### M10.8 WebSoc Comments 链接收集与深读
+
+- [ ] 收集 school comments 和 department comments 中出现的所有 `<a href>`。
+- [ ] 每个 link 记录：
+  - `text`
+  - `url`
+  - `domain`
+  - `source_block`
+  - `source_url`
+- [ ] 只允许深读 WebSoc comments 中实际出现的链接。
+- [ ] 默认只深读 `*.uci.edu` 官方链接；非 UCI 链接只收集，不作为事实依据，除非后续显式允许。
+- [ ] 如果 WebSoc comments 已直接给出 major restriction 日期，不必深读链接。
+- [ ] 如果 WebSoc comments 说明 restriction details/update timeline 在链接中，必须继续 fetch 链接。
+- [ ] 深读链接时限制 timeout、content type、页面大小和重定向域名。
+- [ ] 链接正文转纯文本后，只返回必要片段和来源 URL，不把整页塞进 agent context。
+
+### M10.9 ICS 特殊规则
+
+- [ ] 在 workflow registry 增加 ICS / I&C SCI 特例。
+- [ ] 对 ICS WebSoc comments 中的以下链接视为官方可深读来源：
+  - `https://ics.uci.edu/course-enrollment-restrictions/`
+  - `https://ics.uci.edu/academics/undergraduate-programs/majors-minors/undergraduate-student-policies/`
+  - `https://ics.uci.edu/academics/graduate-academic-advising/course-updates/`
+- [ ] 对 undergraduate course restriction 问题，优先读取 `course-enrollment-restrictions` 或 WebSoc comments 中明确标为 Undergraduate courses 的链接。
+- [ ] 对 graduate course update 问题，优先读取 WebSoc comments 中明确标为 Graduate courses 的链接。
+- [ ] 对 general ICS policy 问题，允许读取 undergraduate student policies 链接。
+- [ ] 如果 ICS 链接页面与 WebSoc comments 冲突，回答必须同时列出：
+  - `WebSoc comments 显示：...`
+  - `ICS official page 显示：...`
+  - `判断：WebSoc 是入口与本学期上下文，ICS 页面是 WebSoc 指向的官方补充。`
+
+### M10.10 回答与引用规则
+
+- [ ] Availability 回答必须包含：
+  - course/section
+  - term
+  - status
+  - enrolled/capacity
+  - seats_open
+  - waitlist 信息，如存在
+  - restrictions/NOR，如存在
+  - `as of updated_at/retrieved_at`
+  - source label `Live WebSoc via Anteater API`
+- [ ] Department restriction 回答必须包含：
+  - term
+  - department
+  - WebSoc source URL
+  - 如果用了 linked page，也包含 linked official URL
+  - 哪些信息来自 WebSoc comments，哪些来自 linked page
+- [ ] 当 live data 不可用时，明确说“无法验证当前实时状态”，不能用旧 CSV 伪装成实时。
+- [ ] 当 WebSoc comments 没有提供 restriction timeline，回答应说“WebSoc 未列出具体解除时间”，并列出可验证来源。
+- [ ] 所有 web/link 来源都必须是 markdown link。
+
+### M10.11 前端与 Tool Chip
+
+- [ ] tool chip 新增 `实时查询 WebSoc` 类型。
+- [ ] tool chip 新增 `读取 WebSoc 部门说明` 类型。
+- [ ] tool chip 新增 `读取官方部门链接` 类型。
+- [ ] 如果 source badge 已存在，增加或复用：
+  - `Live WebSoc`
+  - `WebSoc Comments`
+  - `Official Department Link`
+  - `Not Live`
+- [ ] 推荐卡片中的 seat/status 字段如果来自 live API，应显示 live badge 和更新时间。
+- [ ] card provenance 不把 live websoc 写成 local DB verified。
+
+### M10.12 测试计划
+
+- [ ] `availability` intent 命中时必须调用 live Anteater WebSoc 路径。
+- [ ] 本地 DB 有旧 section 数据时，availability 仍优先 live API。
+- [ ] live API 返回 OPEN/FULL/Waitl 时，字段映射正确。
+- [ ] `numCurrentlyEnrolled.totalEnrolled`、waitlist、NOR、restriction codes 解析正确。
+- [ ] live API 缺字段时返回 `null`，不猜 seats。
+- [ ] 5 分钟 TTL cache hit/miss 测试。
+- [ ] `force_refresh` 绕过 cache 测试。
+- [ ] live API 429/non-200/network error 返回 structured fallback。
+- [ ] WebSoc department restriction workflow 构造固定 Registrar URL，不调用 DuckDuckGo。
+- [ ] ART fixture 能解析 school comments、department comments、major restriction date、NORS date 和 comments links。
+- [ ] ICS fixture 能解析 WebSoc comments 中的 undergraduate/graduate/policy links。
+- [ ] ICS workflow 能深读 comments 中出现的 `ics.uci.edu` 链接。
+- [ ] WebSoc comments 已给日期时，不强制深读链接。
+- [ ] WebSoc comments 指向链接但没有日期时，会深读链接并标注来源。
+- [ ] 非 UCI 或未出现在 comments 中的链接不会被 workflow 自行访问。
+- [ ] prompt 测试：availability 不允许只凭本地 DB；major restriction 不允许 agentic search 优先。
+- [ ] 前端静态契约测试：新 tool chip 和 source badge 不破坏现有卡片。
+
+### M10.13 最小可执行版本
+
+第一版只要求完成：
+
+1. `get_live_sections` 或等价 live availability dispatcher。
+2. availability intent 路由到 live Anteater WebSoc。
+3. live result 返回 status、capacity、enrolled、seats_open、waitlist、NOR、restrictions、updated_at/retrieved_at。
+4. 5 分钟 TTL cache 和 force refresh。
+5. `websoc_department_restrictions` workflow 可以按 term + department 访问 Registrar WebSoc。
+6. 能解析 WebSoc 顶部 comments 和 comments links。
+7. ICS comments link 能被识别并按需深读。
+8. fake/fixture 测试默认不联网。
+
+### 验收
+
+- 用户问“现在还有几个位置 / open 吗”时，系统使用 live Anteater WebSoc，不用本地 CSV 当实时事实。
+- 用户问 major restriction / NORS 时，系统固定从 Registrar WebSoc department 页面开始。
+- WebSoc comments 中的官方 department 链接可以被收集并按需深读。
+- ICS 这类把 restriction timeline 放在部门网页的问题可以回答，并标注 WebSoc + ICS official page 双来源。
+- 所有实时 availability 回答都显示 `updated_at` 或 `retrieved_at`。
+- workflow 失败时返回无法验证，不编造日期、位置、restriction 或来源。
+- 默认测试不依赖真实网络、真实 Anteater API 或真实 Registrar 页面。
+
+## 15. 跨阶段 Definition of Done
 
 每个任务只有同时满足以下条件才算完成：
 
@@ -663,8 +880,10 @@ Sources:
 - 不引入新的重复状态源、重复正则或重复业务链路。
 - 不提交真实用户数据、密钥、验证码或 Cookie。
 - 代码、测试和验收证据在同一个 PR/commit 范围内可审查。
+- 对实时数据链路，必须明确 freshness、cache TTL、source 和 fallback 语义。
+- 对固定 workflow，必须有 fixture 测试证明不会绕到 agentic search。
 
-## 15. 实际提交分组
+## 16. 实际提交分组
 
 工作已按可审查、可回滚的阶段提交。每组提交都对应 ROADMAP 中的阶段性验收：
 
@@ -678,8 +897,9 @@ Sources:
 8. M7：私测安全、依赖/CI、可观测性。
 9. M8：Roadmap 和 README 与当前实现对齐。
 10. M9：联网搜索 tool、Search Skill、来源分类、引用展示和离线 fake-provider 测试。
+11. M10：Live WebSoc 可用性、专业限制 workflow、WebSoc comments 链接深读。
 
-## 16. 进度记录
+## 17. 进度记录
 
 | 日期 | 阶段 | 变更 | Commit/PR | 验收结果 |
 |---|---|---|---|---|
