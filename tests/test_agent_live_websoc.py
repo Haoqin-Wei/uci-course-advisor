@@ -91,6 +91,7 @@ def test_agent_prompt_encodes_live_availability_rules() -> None:
     assert "call `get_live_sections(course, term)`" in prompt
     assert "New Only Reserved/NOR" in prompt
     assert "source` is `local_not_live`" in prompt
+    assert "Live WebSoc via Anteater API" in prompt
     assert "as of" in prompt
 
 

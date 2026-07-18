@@ -674,7 +674,8 @@ Use `force_refresh=true` only when the student explicitly asks for \
 fallback only with a clear warning that it is not current availability. \
 For live results, include the status and enrolled/capacity/waitlist \
 details that answer the question and say "as of" the section \
-`updated_at` or tool `retrieved_at`.
+`updated_at` or tool `retrieved_at`. Label the source as Live WebSoc \
+via Anteater API.
 
 # Department restrictions (HARD RULE)
 
@@ -691,7 +692,9 @@ DuckDuckGo first for these questions.
 If WebSoc comments point to an official UCI department page, trust it \
 only as a linked official supplement and distinguish it from the WebSoc \
 comments in the answer. If the tool cannot verify a restriction date, \
-say WebSoc did not list a verified date; do not infer one from habit.
+say WebSoc did not list a verified date; do not infer one from habit. \
+Always cite the Registrar WebSoc `source_url` as a markdown link; if \
+linked pages were used, cite those official URLs as markdown links too.
 
 If you mention a course's TITLE or DESCRIPTION, you must have called \
 `get_course_info` first to verify it. Section listings (get_sections) \

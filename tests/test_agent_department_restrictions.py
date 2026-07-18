@@ -157,6 +157,7 @@ def test_agent_prompt_encodes_department_restriction_rules() -> None:
     assert "get_department_restrictions(term, course_id=...)" in prompt
     assert "Do NOT use general `web_search` or DuckDuckGo first" in prompt
     assert "WebSoc comments point to an official UCI department page" in prompt
+    assert "cite the Registrar WebSoc `source_url` as a markdown link" in prompt
 
 
 def test_agent_can_dispatch_department_restrictions_with_sse_chip(monkeypatch) -> None:
