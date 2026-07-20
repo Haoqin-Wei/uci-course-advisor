@@ -128,3 +128,24 @@ def test_similar_traces_share_cluster_and_increment_hit_count(tmp_path) -> None:
     latest = store.find_similar("What date are ICS restrictions removed?", threshold=0.30)
     assert latest[0]["hit_count"] == 2
     assert latest[0]["cluster_id"] == first["cluster_id"]
+
+
+def test_failed_trace_is_stored_for_review_but_not_recommended(tmp_path) -> None:
+    store = DeepSearchHistoryStore(tmp_path / "history.db")
+    result = store.record_trace(
+        query="Where is the UCI policy update?",
+        final_answer="I could not verify the page.",
+        url_path=[
+            {
+                "url": "https://reg.uci.edu/unavailable",
+                "depth": 1,
+                "ok": False,
+                "source_class": None,
+                "retrieved_at": "2026-07-21T00:00:00+00:00",
+            }
+        ],
+        source_urls=[],
+        fallback_search_used=False,
+    )
+    assert result["stored"] is True
+    assert store.find_similar("Where is the UCI policy update?", threshold=0.0) == []

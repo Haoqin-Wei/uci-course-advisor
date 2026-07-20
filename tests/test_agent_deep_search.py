@@ -173,3 +173,64 @@ def test_fetch_page_humanized_chip_label() -> None:
     assert agent_tools.humanize_tool_call(
         "fetch_page", {"url": "https://reg.uci.edu/policy"}
     ) == "深读网页 · https://reg.uci.edu/policy"
+
+
+def test_fixed_workflow_can_deep_read_supplement_after_primary_tool(monkeypatch) -> None:
+    supplement_url = "https://ics.uci.edu/course-enrollment-restrictions/"
+    monkeypatch.setattr(
+        agent_tools.websoc_workflow,
+        "fetch_websoc_department_restrictions",
+        lambda **kwargs: {
+            "ok": True,
+            "workflow_id": "websoc_department_restrictions",
+            "source_url": "https://www.reg.uci.edu/perl/WebSoc",
+            "term": kwargs["term"],
+            "department": kwargs["department"],
+            "links": [{"url": supplement_url}],
+        },
+    )
+    deep_search.set_fake_pages(
+        [
+            {
+                "url": supplement_url,
+                "html": "<html><p>Current official ICS restriction update.</p></html>",
+            }
+        ]
+    )
+    messages = [{"role": "user", "content": "ICS 专业限制什么时候解除？"}]
+    client = ScriptedLLMClient(
+        tool_response(
+            tool_call(
+                "get_department_restrictions",
+                {"term": "Fall 2026", "department": "I&C SCI", "follow_links": False},
+                call_id="call_workflow",
+            )
+        ),
+        tool_response(
+            tool_call("fetch_page", {"url": supplement_url}, call_id="call_supplement")
+        ),
+        text_response(
+            "WebSoc and the current ICS page should both be shown when their details differ."
+        ),
+    )
+
+    events = asyncio.run(
+        _collect(
+            agent_loop.run_agent(
+                messages,
+                client=client,
+                model="fake-model",
+                user_id="student_001",
+                term="Fall 2026",
+            )
+        )
+    )
+
+    tool_names = [event["name"] for event in events if event["type"] == "tool_call_start"]
+    assert tool_names == ["get_department_restrictions", "fetch_page"]
+    prompt = "\n".join(message.get("content") or "" for message in client.calls[0].messages)
+    assert "Developer workflow registry match" in prompt
+    assert "present both claims and both sources" in prompt
+    page_payload = json.loads(messages[4]["content"])
+    assert page_payload["ok"] is True
+    assert page_payload["depth"] == 1

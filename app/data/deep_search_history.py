@@ -267,6 +267,9 @@ class DeepSearchHistoryStore:
             match = similarity(query_features, stored_features)
             if match["score"] < threshold:
                 continue
+            url_path = json.loads(row["url_path_json"])
+            if not any(item.get("ok") for item in url_path):
+                continue
             cluster_id = str(row["cluster_id"])
             candidate = {
                 "trace_id": int(row["id"]),
@@ -274,7 +277,7 @@ class DeepSearchHistoryStore:
                 "normalized_query": str(row["normalized_query"]),
                 "feature_id": str(row["feature_id"]),
                 "similarity": match,
-                "url_path": json.loads(row["url_path_json"]),
+                "url_path": url_path,
                 "max_depth": int(row["max_depth"]),
                 "fallback_search_used": bool(row["fallback_search_used"]),
                 "final_answer_summary": row["final_answer_summary"],
