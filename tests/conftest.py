@@ -44,6 +44,7 @@ class RuntimePaths:
     grades_cache: Path
     professor_summaries: Path
     logs: Path
+    deep_search_history_db: Path
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,7 @@ def runtime_paths(tmp_path: Path) -> RuntimePaths:
         grades_cache=root / "grades_cache",
         professor_summaries=root / "professor_summaries",
         logs=root / "logs",
+        deep_search_history_db=root / "deep_search_history.db",
     )
 
 
@@ -176,7 +178,7 @@ def isolated_test_environment(
 
     from app import observability
     from app.auth import rate_limit, security, store
-    from app.data import grades, professor_summary, sessions
+    from app.data import deep_search_history, grades, professor_summary, sessions
     from app.validation import log as validation_log
 
     monkeypatch.setattr(store, "DB_PATH", runtime_paths.auth_db)
@@ -196,6 +198,11 @@ def isolated_test_environment(
         validation_log,
         "LOG_FILE",
         runtime_paths.logs / "validation.jsonl",
+    )
+    monkeypatch.setattr(
+        deep_search_history,
+        "DB_PATH",
+        runtime_paths.deep_search_history_db,
     )
 
     from app.llm import adapter
