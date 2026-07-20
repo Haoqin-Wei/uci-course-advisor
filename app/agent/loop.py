@@ -75,12 +75,13 @@ import time
 from typing import AsyncIterator, Optional
 
 from app import observability
+from app.agent.deep_search_state import DeepSearchRunState
 from app.agent import tools as agent_tools
 from app.agent.workflow_router import build_route_hint_message, route_solution
 
 logger = logging.getLogger(__name__)
 
-MAX_ITERATIONS = 6
+MAX_ITERATIONS = 12
 # Bumped 12 → 16 after Phase E1 landed. A typical recommendation flow
 # is 1 enumeration call (search_courses) + propose_recommendation +
 # ~3 enrichment calls per recommended course (grades / prereq /
@@ -306,6 +307,8 @@ async def _run_loop(
         "user_id": user_id,
         "term": term,
         "pending_schedule": list(pending_schedule or []),
+        "user_query": _latest_user_content(messages),
+        "deep_search_state": DeepSearchRunState(query=_latest_user_content(messages)),
     }
     workflow_route = route_solution(_latest_user_content(messages), term=term)
     route_hint_message = build_route_hint_message(workflow_route)

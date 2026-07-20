@@ -25,6 +25,7 @@ import logging
 from typing import Any, Callable, Optional
 
 from app import observability
+from app.agent.deep_search_state import DeepSearchRunState
 from app.catalog.normalization import parse_course_mention
 from app.data import db
 from app.data import web_search as web_search_data
@@ -602,6 +603,39 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "fetch_page",
+            "description": (
+                "Fetch one public HTTP(S) page for model-directed deep search. "
+                "Returns only title, summary, key passages, page links, source "
+                "positions, domain, retrieval time, and trust metadata. It does "
+                "not recursively follow links. To follow a link returned by a "
+                "previous fetch_page call, pass that page as parent_url; the "
+                "server calculates depth. A run may fetch at most 8 unique pages "
+                "and reach depth 8. Never retry already_visited URLs."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Public http/https URL to fetch.",
+                    },
+                    "parent_url": {
+                        "type": "string",
+                        "description": (
+                            "The already-fetched page whose links contained this "
+                            "URL. Omit only for a search result, workflow-provided "
+                            "URL, or other new depth-1 starting point."
+                        ),
+                    },
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "propose_recommendation",
             "description": (
                 "REQUIRED when recommending a SET of courses for a specific term "
@@ -1019,13 +1053,35 @@ def _tool_web_search(
     """
 
     subject = str(context.get("user_id") or "anonymous")
-    return web_search_data.search_web(
+    result = web_search_data.search_web(
         query=query,
         reason=reason,
         preferred_domains=preferred_domains,
         max_results=max_results,
         subject=subject,
     )
+    state = _deep_search_state(context)
+    return state.register_search_result(result)
+
+
+def _tool_fetch_page(
+    url: str,
+    *,
+    context: dict,
+    parent_url: Optional[str] = None,
+) -> dict:
+    """Fetch one page through the current run's dedupe and budget state."""
+
+    return _deep_search_state(context).fetch(url, parent_url=parent_url)
+
+
+def _deep_search_state(context: dict) -> DeepSearchRunState:
+    state = context.get("deep_search_state")
+    if isinstance(state, DeepSearchRunState):
+        return state
+    state = DeepSearchRunState(query=str(context.get("user_query") or ""))
+    context["deep_search_state"] = state
+    return state
 
 
 def _tool_propose_recommendation(
@@ -1804,6 +1860,7 @@ DISPATCH: dict[str, Callable[..., dict]] = {
     "get_policy":               _tool_get_policy,
     "get_department_restrictions": _tool_get_department_restrictions,
     "web_search":               _tool_web_search,
+    "fetch_page":               _tool_fetch_page,
     "propose_recommendation":   _tool_propose_recommendation,
 }
 
@@ -1908,6 +1965,9 @@ def humanize_tool_call(name: str, args: dict) -> str:
     if name == "web_search":
         query = (a.get("query") or "").strip()
         return f"联网搜索 · {query}" if query else "联网搜索"
+    if name == "fetch_page":
+        url = (a.get("url") or "").strip()
+        return f"深读网页 · {url}" if url else "深读网页"
     if name == "propose_recommendation":
         n = len(a.get("items") or [])
         return f"准备 {n} 张推荐卡片{term_suffix}"
