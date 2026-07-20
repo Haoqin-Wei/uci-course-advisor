@@ -75,8 +75,14 @@ import time
 from typing import AsyncIterator, Optional
 
 from app import observability
-from app.agent.deep_search_state import DeepSearchRunState
 from app.agent import tools as agent_tools
+from app.agent.deep_search_history import (
+    history_refresh_missing,
+    load_history_hint,
+    record_run_trace,
+    verification_required_text,
+)
+from app.agent.deep_search_state import DeepSearchRunState
 from app.agent.workflow_router import build_route_hint_message, route_solution
 
 logger = logging.getLogger(__name__)
@@ -170,21 +176,21 @@ def _latest_user_content(messages: list[dict]) -> str:
     return ""
 
 
-def _messages_with_route_hint(
+def _messages_with_run_hints(
     messages: list[dict],
-    route_hint_message: Optional[dict[str, str]],
+    hint_messages: list[dict[str, str]],
 ) -> list[dict]:
-    if not route_hint_message:
+    if not hint_messages:
         return messages
     last_user_idx = None
     for idx, message in enumerate(messages):
         if message.get("role") == "user":
             last_user_idx = idx
     if last_user_idx is None:
-        return [route_hint_message, *messages]
+        return [*hint_messages, *messages]
     return [
         *messages[:last_user_idx],
-        route_hint_message,
+        *hint_messages,
         *messages[last_user_idx:],
     ]
 
@@ -197,6 +203,8 @@ def _stash_continuation(
     pending_schedule: Optional[list[dict]],
     iterations_used: int,
     tool_calls_used: int,
+    deep_search_state: DeepSearchRunState,
+    history_hint_message: Optional[dict[str, str]],
 ) -> str:
     _gc_continuations()
     cid = secrets.token_urlsafe(16)
@@ -207,6 +215,8 @@ def _stash_continuation(
         "pending_schedule": list(pending_schedule or []),
         "iterations_used":  iterations_used,
         "tool_calls_used":  tool_calls_used,
+        "deep_search_state": deep_search_state,
+        "history_hint_message": history_hint_message,
         "created_at": time.time(),
     }
     logger.info("[agent] stashed continuation %s (%d msgs, %d iters, %d tools)",
@@ -237,11 +247,18 @@ async def run_agent(
     drop-down). It's stored on the tool context so dispatchers can
     inject it as a default when the model forgets to pass `term=...`.
     """
+    user_query = _latest_user_content(messages)
+    deep_search_state = DeepSearchRunState(query=user_query)
+    matches, history_hint_message = load_history_hint(user_query)
+    deep_search_state.history_matches = matches
     async for event in _run_loop(
         messages, client=client, model=model,
         user_id=user_id, term=term,
         pending_schedule=pending_schedule,
         start_iteration=0, start_tool_count=0,
+        user_query=user_query,
+        deep_search_state=deep_search_state,
+        history_hint_message=history_hint_message,
     ):
         yield event
 
@@ -255,8 +272,9 @@ async def resume_agent(
     """
     Resume a previously stashed agent loop. Called when the user
     clicks "Continue" after a limit_reached event. Pops the snapshot
-    so it can't be replayed twice. Budget resets — the user is
-    explicitly opting in to more work.
+    so it can't be replayed twice. The general agent budget resets, but
+    deep-search visited memory and its 8-page/depth budget remain attached
+    to the same answer.
 
     Yields the same event protocol as run_agent.
     """
@@ -287,6 +305,9 @@ async def resume_agent(
         user_id=snap["user_id"], term=snap["term"],
         pending_schedule=snap.get("pending_schedule") or [],
         start_iteration=0, start_tool_count=0,
+        user_query=snap["deep_search_state"].query,
+        deep_search_state=snap["deep_search_state"],
+        history_hint_message=snap.get("history_hint_message"),
     ):
         yield event
 
@@ -301,17 +322,23 @@ async def _run_loop(
     pending_schedule: Optional[list[dict]],
     start_iteration: int,
     start_tool_count: int,
+    user_query: str,
+    deep_search_state: DeepSearchRunState,
+    history_hint_message: Optional[dict[str, str]],
 ) -> AsyncIterator[dict]:
     """The actual iteration body, shared by run_agent and resume_agent."""
     tool_context = {
         "user_id": user_id,
         "term": term,
         "pending_schedule": list(pending_schedule or []),
-        "user_query": _latest_user_content(messages),
-        "deep_search_state": DeepSearchRunState(query=_latest_user_content(messages)),
+        "user_query": user_query,
+        "deep_search_state": deep_search_state,
     }
-    workflow_route = route_solution(_latest_user_content(messages), term=term)
+    workflow_route = route_solution(user_query, term=term)
     route_hint_message = build_route_hint_message(workflow_route)
+    hint_messages = [
+        hint for hint in (route_hint_message, history_hint_message) if hint is not None
+    ]
     observability.increment("solution_router.routes", route=workflow_route["route_type"])
     if workflow_route["route_type"] == "workflow":
         for intent in workflow_route.get("intents", []):
@@ -322,7 +349,7 @@ async def _run_loop(
         try:
             response = await client.chat.completions.create(
                 model=model,
-                messages=_messages_with_route_hint(messages, route_hint_message),
+                messages=_messages_with_run_hints(messages, hint_messages),
                 tools=agent_tools.TOOL_SCHEMAS,
                 tool_choice="auto",
                 stream=True,
@@ -383,12 +410,22 @@ async def _run_loop(
         #    the final answer. We've already streamed the tokens; emit
         #    the "final" event with the full text for persistence.
         if not tool_calls_acc:
-            yield {
+            final_text = accumulated_content
+            verification_missing = history_refresh_missing(deep_search_state)
+            if verification_missing:
+                final_text = verification_required_text(user_query)
+            trace_result = record_run_trace(deep_search_state, final_text)
+            final_event = {
                 "type": "final",
-                "text": accumulated_content,
+                "text": final_text,
                 "iterations": iteration + 1,
                 "tool_calls": total_tool_calls,
             }
+            if verification_missing:
+                final_event["verification_required"] = True
+            if trace_result.get("stored"):
+                final_event["deep_search_trace_id"] = trace_result.get("trace_id")
+            yield final_event
             return
 
         # ── Tool-call iteration. Append the assistant message that
@@ -449,6 +486,8 @@ async def _run_loop(
                     tool_calls_used=total_tool_calls,
                     user_id=user_id, term=term,
                     pending_schedule=pending_schedule,
+                    deep_search_state=deep_search_state,
+                    history_hint_message=history_hint_message,
                     client=client, model=model,
                 ):
                     yield ev
@@ -540,6 +579,8 @@ async def _run_loop(
         tool_calls_used=total_tool_calls,
         user_id=user_id, term=term,
         pending_schedule=pending_schedule,
+        deep_search_state=deep_search_state,
+        history_hint_message=history_hint_message,
         client=client, model=model,
     ):
         yield ev
@@ -554,6 +595,8 @@ async def _emit_limit_reached_and_fallback(
     user_id: str,
     term: Optional[str],
     pending_schedule: Optional[list[dict]],
+    deep_search_state: DeepSearchRunState,
+    history_hint_message: Optional[dict[str, str]],
     client,
     model: str,
 ) -> AsyncIterator[dict]:
@@ -573,6 +616,8 @@ async def _emit_limit_reached_and_fallback(
         pending_schedule=pending_schedule,
         iterations_used=iterations_used,
         tool_calls_used=tool_calls_used,
+        deep_search_state=deep_search_state,
+        history_hint_message=history_hint_message,
     )
     yield {
         "type": "limit_reached",
@@ -701,13 +746,22 @@ async def _emit_limit_reached_and_fallback(
         logger.warning("[agent fallback] scrubbed %d chars of leaked tool markup",
                        len(accumulated) - len(cleaned))
 
-    yield {
+    verification_missing = history_refresh_missing(deep_search_state)
+    if verification_missing:
+        cleaned = verification_required_text(deep_search_state.query)
+    trace_result = record_run_trace(deep_search_state, cleaned)
+    final_event = {
         "type": "final",
         "text": cleaned,
         "iterations": iterations_used,
         "tool_calls": tool_calls_used,
         "truncated": True,
     }
+    if verification_missing:
+        final_event["verification_required"] = True
+    if trace_result.get("stored"):
+        final_event["deep_search_trace_id"] = trace_result.get("trace_id")
+    yield final_event
 
 
 # DeepSeek (thinking mode) occasionally emits its internal "DSML"

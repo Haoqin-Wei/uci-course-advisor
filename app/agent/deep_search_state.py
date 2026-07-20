@@ -28,10 +28,16 @@ class DeepSearchRunState:
     block_reason: Optional[str] = None
     fallback_search_used: bool = False
     search_queries: list[str] = field(default_factory=list)
+    history_matches: list[dict[str, Any]] = field(default_factory=list)
+    trace_recorded: bool = False
 
     @property
     def fetch_blocked(self) -> bool:
         return self.block_reason is not None
+
+    @property
+    def has_successful_fetch(self) -> bool:
+        return any(record.get("ok") for record in self.visited.values())
 
     def register_search_result(self, result: dict[str, Any]) -> dict[str, Any]:
         """Register depth-0 entrypoints and mark post-limit fallback searches."""

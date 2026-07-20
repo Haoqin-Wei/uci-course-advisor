@@ -89,7 +89,7 @@ def test_web_search_humanized_chip_label() -> None:
 def test_search_skill_prompt_encodes_db_first_and_conflict_rules() -> None:
     prompt = AGENT_SYSTEM_PROMPT
 
-    assert "Search Skill — web search and evidence chain" in prompt
+    assert "Search Tools — entry search, model-directed deep search" in prompt
     assert "Local DB tools are the default and highest-trust source" in prompt
     assert "Do NOT call `web_search` when" in prompt
     assert "coverage is `complete`" in prompt
@@ -99,6 +99,9 @@ def test_search_skill_prompt_encodes_db_first_and_conflict_rules() -> None:
     assert "本地数据库显示" in prompt
     assert "网页来源显示" in prompt
     assert "Sources:" in prompt
+    assert "at most 8 unique" in prompt
+    assert "strong starting recommendation, not proof" in prompt
+    assert "MUST successfully call" in prompt
 
 
 def test_agent_can_dispatch_explicit_web_search_with_sse_chip(monkeypatch) -> None:
