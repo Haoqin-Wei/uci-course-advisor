@@ -871,7 +871,227 @@ Sources:
 - workflow 失败时返回无法验证，不编造日期、位置、restriction 或来源。
 - 默认测试不依赖真实网络、真实 Anteater API 或真实 Registrar 页面。
 
-## 15. 跨阶段 Definition of Done
+## 15. M11 — Agentic Deep Search Tool 与 Workflow Registry 重构
+
+目标：重新定义 `web_search` 的职责。`web_search` 不再代表“agentic 解决方案本身”，而是一个可被 workflow 和 agentic 路线共同调用的工具。问题解决方案只分为两类：开发者预先规定的 `workflow`，以及未被规定时进入的 `agentic`。两类方案都可以使用搜索工具补充信息，但 workflow 的固定入口、固定解析路径和主证据优先级由开发者写死。
+
+本阶段不直接实现新的业务 workflow，而是改造搜索工具、深度抓取、历史记录和人工沉淀机制，为后续把高频 agentic 路径固化成 workflow 做准备。
+
+状态：已审核通过，按以下阶段逐步实现；每个阶段测试通过后单独提交。
+
+### M11.1 概念边界重定义
+
+- [ ] 将“解决方案路线”明确为：
+  - `workflow`：开发者预先写死某类问题的固定路径、固定入口、固定 parser、主证据规则。
+  - `agentic`：未命中开发者规定 workflow 的问题，由模型自行决定用哪些 tool。
+- [ ] 将 `web_search` 重新定义为普通 tool，而不是路线分类：
+  - workflow 可以调用它获取补充信息。
+  - agentic 可以调用它作为自主搜索入口。
+  - `web_search` 本身不决定一个问题是否属于 workflow。
+- [ ] 保留 M10 已完成的 UCI WebSoc availability / department restriction workflow 作为固定 workflow 示例。
+- [ ] 重构 M10 的 `workflow_router` 概念：
+  - 不再让 heuristic 自动“学习”哪些问题是 workflow。
+  - 改成 developer-maintained workflow registry / rule table。
+  - registry 命中后进入固定 workflow；未命中才进入 agentic。
+- [ ] workflow 主来源与 deep search 补充来源冲突时，回答同时列出双方来源，不替用户做隐式裁决。
+
+### M11.2 Deep Search Tool 形态
+
+- [ ] 采用“方案 B 简化版”：
+  - `web_search(query, ...)` 只负责找入口和返回搜索结果。
+  - 新增 `fetch_page(url, ...)` 负责抓取页面、提取摘要、关键段落和 links。
+  - 模型决定是否继续抓取页面里的链接。
+- [ ] `fetch_page` 返回内容粒度：
+  - page title
+  - summary
+  - key passages
+  - links
+  - source URL / final URL / domain / retrieved_at / trust metadata
+- [ ] `fetch_page` 返回的 links 第一版不强过滤：
+  - 全部返回可提取链接。
+  - 标注 domain、source position、trust/source_class。
+  - 由模型决定下一步访问哪些链接。
+- [ ] 允许 `fetch_page(url)` 从任意公开 URL 开始，不要求 URL 一定来自 `web_search`。
+- [ ] workflow 中已拿到的官方链接，例如 WebSoc comments 里的 ICS 链接，也可以作为 deep search 起点继续探索。
+
+### M11.3 Run 内 Visited Memory 与去重
+
+- [ ] 新增 deep-search run state，用于一次 agent run 内的 hard dedupe。
+- [ ] 同一次回答中，已访问过的 normalized URL 不重复抓取。
+- [ ] 如果模型再次调用同一 URL，`fetch_page` 返回 structured result：
+  - `ok=false`
+  - `error_code=already_visited`
+  - 已有页面摘要引用或 visited metadata
+- [ ] URL normalize 至少处理：
+  - scheme/host lowercase
+  - 去掉 fragment
+  - canonical trailing slash
+  - query 参数稳定排序
+  - 常见 tracking 参数去除
+- [ ] 去重范围第一版只限一次 run；用户追问的新 run 可以重新抓同一 URL。
+- [ ] 每次 run 记录 link depth：
+  - search result 是 depth 0。
+  - 打开 search result 是 depth 1。
+  - 从 depth 1 页面继续点链接是 depth 2。
+
+### M11.4 Deep Search 预算
+
+- [ ] 单次回答最大链接深度：`depth <= 8`。
+- [ ] 单次回答最多抓取页面数：`fetch_page <= 8`。
+- [ ] 达到 depth 或 page 上限后，模型不能继续 deep fetch。
+- [ ] 达到 deep-search 上限但证据不足时，允许自动调用普通 `web_search` 找更多入口。
+- [ ] 上限后的普通 `web_search` 只作为补充搜索结果摘要，不允许继续 `fetch_page` 绕过 8 页限制。
+- [ ] 上限后 ordinary `web_search` 的结果不写入 deep-search 长期路径历史。
+- [ ] 回答必须说明 deep-search 已达到预算上限，并基于已有证据回答或说明证据不足。
+
+### M11.5 页面访问边界
+
+- [ ] 产品语义上允许访问任何公开网页，不限定只访问 UCI 或官方域名。
+- [ ] 第一版主要边界是避免无用调用、重复调用和循环调用。
+- [ ] 保留最小工程安全底线：
+  - 不访问 `file://`、`localhost`、private IP、link-local IP、metadata service。
+  - 限制 timeout、redirect 次数、页面大小。
+  - 默认只解析文本/HTML；二进制内容不进入 agent context。
+- [ ] 非官方 / 低可信页面可以返回给模型，但必须标注 trust/source_class，回答时不能伪装成官方来源。
+
+### M11.6 长期 Deep Search History
+
+- [ ] 新增长期 deep-search history，使用 SQLite 存储。
+- [ ] 长期历史只记录公共 web-search 路径，全局共享。
+- [ ] 如果 query 或最终答案包含学生个人背景，不写入全局历史：
+  - profile 信息
+  - 已修课程
+  - GPA
+  - major / school year / class level
+  - 个人计划、个人偏好、用户具体 schedule
+- [ ] 历史只记录：
+  - URL 路径
+  - 每个 URL 的 depth
+  - 最终答案摘要
+  - final answer source URLs
+  - 是否使用 fallback ordinary `web_search`
+  - 最大 depth
+  - trace timestamps
+- [ ] 不长期保存页面全文、页面摘要、关键段落，避免存储过期内容或敏感内容。
+- [ ] 第一版先不做开发者手动标记更新入口，但 schema 预留：
+  - `workflow_candidate`
+  - `candidate_reason`
+  - `review_status`
+
+### M11.7 本地轻量相似匹配
+
+- [ ] 不使用付费外部 embedding API。
+- [ ] 第一版实现本地轻量 embedding / 关键词混合方案：
+  - normalized query tokens
+  - department / course / policy intent features
+  - domain / URL path features
+  - TF-IDF 或 hash vector
+  - cosine similarity
+- [ ] 每条可记录 trace 生成本地向量或 feature signature。
+- [ ] 新 query 到来时，检索相似历史 trace / cluster。
+- [ ] 相似度不完美可以接受，但结果必须可解释，便于开发者审核。
+
+### M11.8 历史提示注入给 Agent
+
+- [ ] 当新问题命中相似 deep-search history 时，自动把历史提示注入给 agent。
+- [ ] 历史提示是强建议：
+  - 通常优先从历史 URL 路径开始。
+  - 通常参考历史最大 depth。
+  - 模型仍可自由判断是否访问额外网页。
+- [ ] 历史最终答案只能作为参考，不能直接复用为最终回答。
+- [ ] 即使命中历史，agent 必须至少重新检查一个来源页面后才能回答。
+- [ ] 注入内容不包含页面正文，只包含：
+  - 相似 query/cluster 摘要
+  - 推荐 URL 路径
+  - 推荐 depth
+  - 上次 final answer summary
+  - 上次 source URLs
+  - last_seen_at / hit count
+- [ ] 回答不能说“历史记录证明...”；必须基于本次重新抓取的来源作答。
+
+### M11.9 Trace 与开发者后续固化 Workflow
+
+- [ ] 记录所有 deep-search traces，后续由开发者筛选高频问题是否固化成 workflow。
+- [ ] SQLite 统计字段覆盖：
+  - normalized query
+  - local embedding / feature id
+  - similar cluster id
+  - visited URL path
+  - max depth
+  - fallback ordinary `web_search` 是否使用
+  - final answer summary
+  - final source URLs
+  - occurrence count
+  - first_seen_at / last_seen_at
+  - workflow_candidate
+  - review_status
+- [ ] 第一版不做开发者后台 UI。
+- [ ] 第一版不做 candidate 更新 API。
+- [ ] 先提供日志 / SQLite 数据，后续再做开发者后台 UI。
+
+### M11.10 与 M10 的关系和需要砍掉/调整的内容
+
+- [ ] 保留 M10 的 `get_live_sections`，它仍是课程实时 availability 的固定 workflow tool。
+- [ ] 保留 M10 的 `get_department_restrictions`，它仍是专业限制问题的固定 workflow tool。
+- [ ] 保留 WebSoc comments linked-page deep read，但后续可复用 M11 的通用 `fetch_page` 能力，减少重复 crawler/parser。
+- [ ] 调整 M10 `workflow_router`：
+  - 从 heuristic intent router 改为 developer-authored registry。
+  - 不让系统自动学习定义 workflow。
+  - 历史 trace 只辅助开发者发现高频候选 workflow。
+- [ ] 调整 prompt：
+  - workflow vs agentic 的选择来自 registry，不来自模型自由判断。
+  - `web_search` / `fetch_page` 是工具，可被两条路线调用。
+  - workflow 主证据和 deep-search 补充证据冲突时，同时列出。
+- [ ] 砍掉“deep search 自动递归抓链接”的方向；第一版坚持由模型逐步选择链接。
+- [ ] 砍掉“长期历史命中后直接复用答案”的方向；必须重新检查至少一个来源。
+
+### M11.11 测试计划
+
+- [ ] `fetch_page` 返回 title、summary、key passages、links、source/trust metadata。
+- [ ] `fetch_page` 对同一 run 内重复 URL 返回 `already_visited`。
+- [ ] URL normalize / tracking 参数去重测试。
+- [ ] depth 从 search result 到 linked page 正确递增。
+- [ ] `depth > 8` 被拒绝。
+- [ ] 单 run `fetch_page > 8` 被拒绝。
+- [ ] deep limit 后 ordinary `web_search` 可作为补充，但不能再 `fetch_page`。
+- [ ] limit 后 ordinary `web_search` 不写入长期 history。
+- [ ] workflow 和 agentic 都可以调用 `fetch_page`。
+- [ ] developer registry 命中 workflow；未命中进入 agentic。
+- [ ] workflow 主来源与 deep-search 补充来源冲突时，tool/prompt 测试要求同时列出。
+- [ ] public query trace 写入 SQLite。
+- [ ] 含个人背景 query / answer 不写入 SQLite history。
+- [ ] history 只保存 URL path、depth、final answer summary、sources，不保存页面正文。
+- [ ] 本地相似匹配能把常见同义问法归到相似 cluster。
+- [ ] history hint 注入给 agent，且要求至少重新 fetch 一个来源。
+- [ ] 测试默认不联网，使用 fake search provider、fake page fetcher、fixture pages。
+
+### M11.12 最小可执行版本
+
+第一版只要求完成：
+
+1. 新增 `fetch_page` tool。
+2. `web_search` 继续作为入口搜索 tool。
+3. 单 run visited URL memory 和 depth/page budget。
+4. SQLite deep-search trace 存储。
+5. 公共 query 才记录，全局共享；个人化 query 不记录。
+6. 本地轻量相似匹配。
+7. 相似历史强建议注入给 agent。
+8. 命中历史后必须重新 fetch 至少一个来源页面。
+9. M10 workflow router 调整为 developer-authored registry。
+10. 全部默认测试离线。
+
+### 验收
+
+- 开发者规定的 workflow 优先于 agentic，但 workflow 可以调用 `web_search` / `fetch_page` 作为补充。
+- 未命中 workflow registry 的问题进入 agentic，由模型自行决定搜索与深读路径。
+- 模型可以逐步选择页面 links，但同一 run 内不能重复访问同一 URL，也不能超过 depth/page 预算。
+- 长期 history 能记录公共 deep-search trace，并在相似问题中给 agent 强建议。
+- history 命中不会直接复用旧答案，回答前必须重新检查至少一个来源。
+- 含用户背景的问题不会写入全局 deep-search history。
+- 高频 deep-search trace 能为后续人工固化 workflow 提供足够统计字段。
+- 默认测试不依赖真实网络、真实搜索 API 或真实网页。
+
+## 16. 跨阶段 Definition of Done
 
 每个任务只有同时满足以下条件才算完成：
 
@@ -885,7 +1105,7 @@ Sources:
 - 对实时数据链路，必须明确 freshness、cache TTL、source 和 fallback 语义。
 - 对固定 workflow，必须有 fixture 测试证明不会绕到 agentic search。
 
-## 16. 实际提交分组
+## 17. 实际提交分组
 
 工作已按可审查、可回滚的阶段提交。每组提交都对应 ROADMAP 中的阶段性验收：
 
@@ -900,8 +1120,9 @@ Sources:
 9. M8：Roadmap 和 README 与当前实现对齐。
 10. M9：联网搜索 tool、Search Skill、来源分类、引用展示和离线 fake-provider 测试。
 11. M10：Live WebSoc 可用性、专业限制 workflow、WebSoc comments 链接深读。
+12. M11：Agentic deep search tool、run 内 visited memory、SQLite trace history、workflow registry 重构。（已审核，实施中。）
 
-## 17. 进度记录
+## 18. 进度记录
 
 | 日期 | 阶段 | 变更 | Commit/PR | 验收结果 |
 |---|---|---|---|---|
