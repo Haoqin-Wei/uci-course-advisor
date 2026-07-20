@@ -5,7 +5,12 @@ import json
 
 from app import observability
 from app.agent import loop as agent_loop
-from app.agent.workflow_router import build_route_hint_message, route_search_workflows
+from app.agent.workflow_router import (
+    WORKFLOW_REGISTRY,
+    build_route_hint_message,
+    route_search_workflows,
+    route_solution,
+)
 from tests.fakes.llm import ScriptedLLMClient, text_response, tool_call, tool_response
 
 
@@ -17,11 +22,14 @@ def test_router_classifies_live_availability_without_agentic_search() -> None:
     route = route_search_workflows("CS161 现在还有几个位置？", term="Fall 2026")
 
     assert route is not None
-    assert route["mode"] == "fixed_workflow_first"
+    assert route["route_type"] == "workflow"
+    assert route["mode"] == "developer_workflow"
+    assert route["workflow_ids"] == ["websoc_live_availability"]
     assert route["intents"] == ["availability"]
     assert route["recommended_tools"] == ["get_live_sections"]
     assert route["course_ids"] == ["COMPSCI 161"]
-    assert route["no_agentic_web_search_first"] is True
+    assert route["search_tools_are_supplemental"] is True
+    assert route["source_conflict_policy"] == "present_both"
 
 
 def test_router_classifies_department_restrictions_and_department_alias() -> None:
@@ -48,11 +56,32 @@ def test_router_classifies_combined_availability_and_restriction_question() -> N
     hint = build_route_hint_message(route)
     assert hint is not None
     assert "call get_live_sections first, then get_department_restrictions" in hint["content"]
-    assert "before using general web_search" in hint["content"]
+    assert "optional supplemental tools" in hint["content"]
+    assert "present both claims and both sources" in hint["content"]
 
 
 def test_router_ignores_unrelated_agentic_search_questions() -> None:
     assert route_search_workflows("Who is teaching databases at UCI?", term="Fall 2026") is None
+    route = route_solution("Who is teaching databases at UCI?", term="Fall 2026")
+    assert route == {
+        "route_type": "agentic",
+        "mode": "agentic",
+        "workflow_ids": [],
+        "intents": [],
+        "recommended_tools": [],
+        "term": "Fall 2026",
+    }
+
+
+def test_workflow_registry_is_explicit_and_developer_maintained() -> None:
+    assert [rule.workflow_id for rule in WORKFLOW_REGISTRY] == [
+        "websoc_live_availability",
+        "websoc_department_restrictions",
+    ]
+    assert [rule.tools for rule in WORKFLOW_REGISTRY] == [
+        ("get_live_sections",),
+        ("get_department_restrictions",),
+    ]
 
 
 def test_agent_loop_injects_route_hint_only_for_llm_request(monkeypatch) -> None:
@@ -90,10 +119,11 @@ def test_agent_loop_injects_route_hint_only_for_llm_request(monkeypatch) -> None
 
     first_call_messages = client.calls[0].messages
     assert first_call_messages[0]["role"] == "system"
-    assert "Workflow route hint" in first_call_messages[0]["content"]
+    assert "Developer workflow registry match" in first_call_messages[0]["content"]
     assert "get_live_sections" in first_call_messages[0]["content"]
     assert messages[0]["role"] == "user"
-    assert "Workflow route hint" not in json.dumps(messages, ensure_ascii=False)
+    assert "Developer workflow registry match" not in json.dumps(messages, ensure_ascii=False)
     assert events[0]["name"] == "get_live_sections"
     metrics = observability.snapshot_metrics()
     assert metrics["counters"]["workflow_router.matches{intent=availability}"] == 1
+    assert metrics["counters"]["solution_router.routes{route=workflow}"] == 1

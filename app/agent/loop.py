@@ -76,7 +76,7 @@ from typing import AsyncIterator, Optional
 
 from app import observability
 from app.agent import tools as agent_tools
-from app.agent.workflow_router import build_route_hint_message, route_search_workflows
+from app.agent.workflow_router import build_route_hint_message, route_solution
 
 logger = logging.getLogger(__name__)
 
@@ -307,9 +307,10 @@ async def _run_loop(
         "term": term,
         "pending_schedule": list(pending_schedule or []),
     }
-    workflow_route = route_search_workflows(_latest_user_content(messages), term=term)
+    workflow_route = route_solution(_latest_user_content(messages), term=term)
     route_hint_message = build_route_hint_message(workflow_route)
-    if workflow_route:
+    observability.increment("solution_router.routes", route=workflow_route["route_type"])
+    if workflow_route["route_type"] == "workflow":
         for intent in workflow_route.get("intents", []):
             observability.increment("workflow_router.matches", intent=intent)
     total_tool_calls = start_tool_count
