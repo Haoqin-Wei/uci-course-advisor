@@ -1187,7 +1187,7 @@ async def stream_agent_response(
     Yields the agent loop's event protocol verbatim:
         {"type": "token", "text": ...}            — answer text deltas
         {"type": "tool_call_start", ...}          — before each tool dispatch
-        {"type": "tool_call_done",  ...}          — after each tool dispatch
+        {"type": "tool_call_done",  "args": ...} — after each tool dispatch
         {"type": "final", "text": ..., ...}       — terminal success
         {"type": "error", "message": ...}         — bound hit or LLM failure
 

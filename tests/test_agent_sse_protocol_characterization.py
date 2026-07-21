@@ -48,6 +48,7 @@ def test_handle_agent_forwards_tool_limit_and_merges_fallback_cards(monkeypatch)
             "name": "get_policy",
             "ok": True,
             "label": "Check policy",
+            "args": {"topic": "ge", "term": "Fall 2026"},
         }
         yield {
             "type": "cards_proposed",
@@ -104,7 +105,15 @@ def test_handle_agent_forwards_tool_limit_and_merges_fallback_cards(monkeypatch)
         [],
         None,
     )
-    assert execution_meta == {"successful_tools": ["get_policy"]}
+    assert execution_meta == {
+        "successful_tools": ["get_policy"],
+        "successful_tool_calls": [
+            {
+                "name": "get_policy",
+                "args": {"topic": "ge", "term": "Fall 2026"},
+            }
+        ],
+    }
     assert [event["type"] for event in queued] == [
         "token",
         "tool_call_start",

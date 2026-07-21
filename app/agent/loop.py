@@ -721,7 +721,8 @@ async def _run_loop(
             yield {"type": "tool_call_done",
                    "name": tc["name"],
                    "ok": tool_ok,
-                   "label": label}
+                   "label": label,
+                   "args": args}
 
             # Side-channel: propose_recommendation stages structured
             # cards on the tool_context dict (the LLM-visible return is

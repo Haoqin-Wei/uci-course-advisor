@@ -499,10 +499,29 @@ def _validate_response(
     validation_dict = report.to_dict()
     validation_dict["applied_action"] = action.value
     logger.info(
-        "[validation] overall=%s errors=%d warnings=%d action=%s",
-        report.overall, len(report.errors), len(report.warnings), action.value,
+        "[validation] target_term=%s overall=%s errors=%d warnings=%d action=%s",
+        target_term.display(), report.overall,
+        len(report.errors), len(report.warnings), action.value,
     )
     return final_answer, final_cards, validation_dict
+
+
+def _validation_term_from_agent_meta(
+    agent_meta: dict,
+    fallback_term: Optional[str],
+) -> Optional[str]:
+    """Prefer the term used by the successful grounding tool.
+
+    The selected UI term can differ from a term explicitly supplied in a
+    follow-up message. Validation must check the same term the tool queried.
+    """
+
+    for call in reversed(agent_meta.get("successful_tool_calls") or []):
+        args = call.get("args") if isinstance(call, dict) else None
+        parsed = Term.parse((args or {}).get("term") or "")
+        if parsed:
+            return parsed.display()
+    return fallback_term
 
 
 # ══════════════════════════════════════════════════════════
@@ -718,6 +737,7 @@ async def _handle_agent(
     saw_any_event = False
     proposed_cards: list[dict] = []
     successful_tools: set[str] = set()
+    successful_tool_calls: list[dict] = []
 
     try:
         async for event in adapter.stream_agent_response(
@@ -771,6 +791,10 @@ async def _handle_agent(
                 ok = event.get("ok", True)
                 if ok and event.get("name"):
                     successful_tools.add(event["name"])
+                    successful_tool_calls.append({
+                        "name": event["name"],
+                        "args": dict(event.get("args") or {}),
+                    })
                 if not ok:
                     observability.increment("agent.tool_failures", tool=event.get("name"))
                 observability.log_event(
@@ -880,6 +904,7 @@ async def _handle_agent(
 
     if execution_meta is not None:
         execution_meta["successful_tools"] = sorted(successful_tools)
+        execution_meta["successful_tool_calls"] = successful_tool_calls
     return (accumulated, proposed_cards, [], None)
 
 
@@ -1043,6 +1068,19 @@ async def _stream_chat(
             )
             reply, cards, followups, validation_dict = agent_result
             retrieval_performed = bool(agent_meta.get("successful_tools"))
+            validation_term = _validation_term_from_agent_meta(
+                agent_meta,
+                req.term or state.get("term"),
+            )
+            if validation_term and validation_term != (req.term or state.get("term")):
+                observability.log_event(
+                    logger,
+                    logging.INFO,
+                    "validation_term_overridden",
+                    selected_term=req.term or state.get("term"),
+                    validation_term=validation_term,
+                    reason="successful_tool_call",
+                )
 
             if validation_dict is None and reply:
                 reply, cards, validation_dict = _validate_response(
@@ -1051,7 +1089,7 @@ async def _stream_chat(
                     retrieved=None,
                     state=state,
                     user_message=req.message,
-                    term_str=req.term or state.get("term"),
+                    term_str=validation_term,
                     session_id=active_session_id,
                     retrieval_performed=retrieval_performed,
                 )

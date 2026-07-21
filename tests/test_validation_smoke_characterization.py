@@ -8,6 +8,33 @@ from app.validation.policies import decide_action
 from app.validation.types import ValidationContext
 
 
+def test_validation_term_prefers_successful_tool_term_over_ui_term():
+    from app.routers import chat as chat_router
+
+    agent_meta = {
+        "successful_tool_calls": [
+            {
+                "name": "get_department_restrictions",
+                "args": {"department": "BIO SCI", "term": "Fall 2026"},
+            }
+        ]
+    }
+
+    assert chat_router._validation_term_from_agent_meta(
+        agent_meta,
+        "Spring 2026",
+    ) == "Fall 2026"
+
+
+def test_validation_term_ignores_failed_or_missing_tool_metadata():
+    from app.routers import chat as chat_router
+
+    assert chat_router._validation_term_from_agent_meta(
+        {"successful_tool_calls": []},
+        "Spring 2026",
+    ) == "Spring 2026"
+
+
 def _spring_2025_fixture_catalog(minimal_catalog) -> CatalogView:
     return CatalogView(
         target_term=minimal_catalog.term,
