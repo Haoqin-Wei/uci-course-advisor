@@ -21,6 +21,33 @@ def _schema_by_name(name: str) -> dict:
     )
 
 
+def test_agent_tool_log_summary_includes_deep_search_evidence() -> None:
+    summary = agent_loop._summarize_tool_result(
+        {
+            "ok": True,
+            "source_url": "https://example.com/start",
+            "final_url": "https://example.com/final",
+            "status_code": 200,
+            "title": "Restriction update",
+            "summary": "Major restrictions end at noon.",
+            "key_passages": [{"text": "Major restrictions end at noon."}],
+            "links": [{"url": "https://example.com/details"}],
+        }
+    )
+
+    assert summary == {
+        "ok": True,
+        "source_url": "https://example.com/start",
+        "final_url": "https://example.com/final",
+        "status_code": 200,
+        "title": "Restriction update",
+        "summary": "Major restrictions end at noon.",
+        "link_count": 1,
+        "link_urls": ["https://example.com/details"],
+        "key_passage_count": 1,
+    }
+
+
 def _page(url: str, *, link: str | None = None) -> dict:
     link_html = f'<a href="{link}">Next official page</a>' if link else ""
     return {

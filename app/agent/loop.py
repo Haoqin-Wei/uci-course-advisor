@@ -152,6 +152,16 @@ def _summarize_tool_result(result: dict) -> dict:
         "error_code": result.get("error_code"),
         "provider": result.get("provider"),
         "source": result.get("source"),
+        "workflow_id": result.get("workflow_id"),
+        "source_url": result.get("source_url"),
+        "final_url": result.get("final_url"),
+        "status_code": result.get("status_code"),
+        "extraction_status": result.get("extraction_status"),
+        "search_criteria": result.get("search_criteria"),
+        "registration_ends": result.get("registration_ends"),
+        "restriction_fields": result.get("fields"),
+        "title": result.get("title"),
+        "summary": result.get("summary"),
     }
     if "results" in result and isinstance(result["results"], list):
         summary["result_count"] = len(result["results"])
@@ -159,6 +169,28 @@ def _summarize_tool_result(result: dict) -> dict:
             item.get("domain") for item in result["results"][:5]
             if isinstance(item, dict)
         ]
+        summary["result_urls"] = [
+            item.get("url") for item in result["results"][:5]
+            if isinstance(item, dict)
+        ]
+    if "links" in result and isinstance(result["links"], list):
+        summary["link_count"] = len(result["links"])
+        summary["link_urls"] = [
+            item.get("url") for item in result["links"][:10]
+            if isinstance(item, dict)
+        ]
+    if "key_passages" in result and isinstance(result["key_passages"], list):
+        summary["key_passage_count"] = len(result["key_passages"])
+    linked_pages = result.get("linked_pages")
+    if isinstance(linked_pages, dict):
+        pages = linked_pages.get("pages") or []
+        errors = linked_pages.get("errors") or []
+        summary["linked_page_count"] = len(pages)
+        summary["linked_page_urls"] = [
+            page.get("url") for page in pages[:10]
+            if isinstance(page, dict)
+        ]
+        summary["linked_page_error_count"] = len(errors)
     if "sections" in result and isinstance(result["sections"], list):
         summary["section_count"] = len(result["sections"])
     if "courses" in result and isinstance(result["courses"], list):

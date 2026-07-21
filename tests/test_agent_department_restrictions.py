@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 
 from app.agent import loop as agent_loop
 from app.agent import tools as agent_tools
@@ -160,7 +161,11 @@ def test_agent_prompt_encodes_department_restriction_rules() -> None:
     assert "cite the Registrar WebSoc `source_url` as a markdown link" in prompt
 
 
-def test_agent_can_dispatch_department_restrictions_with_sse_chip(monkeypatch) -> None:
+def test_agent_can_dispatch_department_restrictions_with_sse_chip(
+    monkeypatch,
+    caplog,
+) -> None:
+    caplog.set_level(logging.INFO, logger="app.agent.loop")
     monkeypatch.setattr(
         agent_tools.websoc_workflow,
         "fetch_websoc_department_restrictions",
@@ -220,4 +225,10 @@ def test_agent_can_dispatch_department_restrictions_with_sse_chip(monkeypatch) -
         tool_payload["fields"]["major_restriction_removed_at"]
         == "Monday, August 24th, 2026 at noon"
     )
+    assert "event=agent_tool_call_done" in caplog.text
+    assert "workflow_id" in caplog.text
+    assert "source_url" in caplog.text
+    assert "https://www.reg.uci.edu/perl/WebSoc?Dept=ART" in caplog.text
+    assert "restriction_fields" in caplog.text
+    assert "Monday, August 24th, 2026 at noon" in caplog.text
     client.assert_exhausted()
