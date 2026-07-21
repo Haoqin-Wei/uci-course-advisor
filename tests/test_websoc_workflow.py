@@ -84,6 +84,21 @@ def test_live_websoc_fetch_logs_url_response_and_parsed_result(caplog) -> None:
             return None
 
     class FakeSession:
+        def get(self, url, **kwargs):
+            assert url == websoc_workflow.WEBSOC_URL
+            assert kwargs["timeout"] == websoc_workflow.REQUEST_TIMEOUT_S
+            return type(
+                "FormResponse",
+                (),
+                {
+                    "status_code": 200,
+                    "url": url,
+                    "text": _fixture("search_form.html"),
+                    "headers": {"content-type": "text/html"},
+                    "raise_for_status": lambda self: None,
+                },
+            )()
+
         def post(self, url, **kwargs):
             assert url == websoc_workflow.WEBSOC_URL
             assert kwargs["data"]["Submit"] == "Display Web Results"
@@ -104,6 +119,8 @@ def test_live_websoc_fetch_logs_url_response_and_parsed_result(caplog) -> None:
     assert result["source_url"] == websoc_workflow.WEBSOC_URL
     assert result["request_method"] == "POST"
     assert result["request_form"]["Dept"] == "ART"
+    assert result["response_term"] == "Fall 2026"
+    assert result["validation"] == {"ok": True, "errors": []}
     assert "event=websoc_search_started" in caplog.text
     assert f"web_search_url={result['source_url']!r}" in caplog.text
     assert "request_method='POST'" in caplog.text
@@ -117,6 +134,85 @@ def test_live_websoc_fetch_logs_url_response_and_parsed_result(caplog) -> None:
     assert "Monday, August 24th, 2026 at noon" in caplog.text
     assert "nors_removed_at" in caplog.text
     assert "Friday, August 21st at noon" in caplog.text
+
+
+def test_websoc_form_parser_keeps_exact_term_and_department_values() -> None:
+    parsed = websoc_workflow._parse_websoc_form(_fixture("search_form.html"))
+
+    assert parsed.terms == {
+        "2026-92": "2026 Fall Quarter",
+        "2026-14": "2026 Spring Quarter",
+    }
+    assert parsed.departments["ART"] == "ART - Art"
+    assert parsed.departments["ARTS"] == "ARTS - Arts"
+    assert parsed.departments["I&C SCI"] == (
+        "I&C SCI - Information and Computer Science"
+    )
+
+
+@pytest.mark.parametrize(
+    ("term", "department", "error_code"),
+    [
+        ("Winter 2026", "ART", "websoc_term_unavailable"),
+        ("Fall 2026", "UNKNOWN", "websoc_department_unavailable"),
+    ],
+)
+def test_websoc_rejects_values_missing_from_live_form(term, department, error_code) -> None:
+    class FormResponse:
+        status_code = 200
+        url = websoc_workflow.WEBSOC_URL
+        text = _fixture("search_form.html")
+        headers = {"content-type": "text/html"}
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        def get(self, *_args, **_kwargs):
+            return FormResponse()
+
+        def post(self, *_args, **_kwargs):
+            raise AssertionError("invalid form values must be rejected before POST")
+
+    result = websoc_workflow.fetch_websoc_department_restrictions(
+        term=term,
+        department=department,
+        session=FakeSession(),
+    )
+
+    assert result["ok"] is False
+    assert result["error_code"] == error_code
+
+
+@pytest.mark.parametrize(
+    ("html", "error_code"),
+    [
+        (
+            "<html><body><h1>Schedule of Classes</h1></body></html>",
+            "websoc_not_search_results",
+        ),
+        (
+            _fixture("art_department.html").replace("Department: ART", "Department: ARTS"),
+            "websoc_department_mismatch",
+        ),
+        (
+            _fixture("art_department.html").replace("Fall Quarter, 2026", "Spring Quarter, 2026"),
+            "websoc_term_mismatch",
+        ),
+    ],
+)
+def test_parser_rejects_wrong_or_unverified_results(html, error_code) -> None:
+    result = websoc_workflow.parse_websoc_department_html(
+        html,
+        term="Fall 2026",
+        department="ART",
+        source_url=websoc_workflow.WEBSOC_URL,
+    )
+
+    assert result["ok"] is False
+    assert result["error_code"] == error_code
+    assert result["validation"]["ok"] is False
+    assert result["extraction_status"] == "invalid"
 
 
 def test_parse_ics_websoc_comments_collects_official_deep_read_links() -> None:
@@ -344,7 +440,19 @@ def test_deep_read_rejects_oversized_linked_page() -> None:
 
 
 def test_fetch_websoc_department_restrictions_returns_structured_error() -> None:
+    class FormResponse:
+        status_code = 200
+        url = websoc_workflow.WEBSOC_URL
+        text = _fixture("search_form.html")
+        headers = {"content-type": "text/html"}
+
+        def raise_for_status(self):
+            return None
+
     class FailingSession:
+        def get(self, *_args, **_kwargs):
+            return FormResponse()
+
         def post(self, *_args, **_kwargs):
             raise requests.Timeout("slow")
 

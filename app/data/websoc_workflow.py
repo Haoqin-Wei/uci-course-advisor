@@ -55,6 +55,12 @@ class ParsedHTML:
     links: list[dict[str, Any]]
 
 
+@dataclass
+class ParsedForm:
+    terms: dict[str, str]
+    departments: dict[str, str]
+
+
 def build_websoc_department_params(term: str, department: str) -> dict[str, str]:
     parsed = Term.parse(term)
     if not parsed:
@@ -103,6 +109,45 @@ def fetch_websoc_department_restrictions(
     source_url = build_websoc_department_url(term, department)
     http = session or requests.Session()
     retrieved_at = _utc_now()
+    form_result = fetch_websoc_form_options(session=http)
+    if not form_result.get("ok"):
+        return {
+            **form_result,
+            "workflow_id": "websoc_department_restrictions",
+            "term": term,
+            "department": department,
+            "source_url": source_url,
+            "request_method": "POST",
+            "request_form": params,
+            "retrieved_at": retrieved_at,
+        }
+
+    requested_term_code = params["YearTerm"]
+    requested_department = params["Dept"]
+    if requested_term_code not in form_result["terms"]:
+        return _workflow_error(
+            error_code="websoc_term_unavailable",
+            message=f"term {term!r} is not available in the current WebSoc form",
+            term=term,
+            department=department,
+            request_form=params,
+            retrieved_at=retrieved_at,
+            available_terms=form_result["terms"],
+        )
+    if requested_department not in form_result["departments"]:
+        return _workflow_error(
+            error_code="websoc_department_unavailable",
+            message=(
+                f"department {requested_department!r} is not available in the current "
+                "WebSoc form"
+            ),
+            term=term,
+            department=department,
+            request_form=params,
+            retrieved_at=retrieved_at,
+            available_departments=form_result["departments"],
+        )
+
     observability.log_event(
         logger,
         logging.INFO,
@@ -169,17 +214,20 @@ def fetch_websoc_department_restrictions(
     result["request_form"] = params
     observability.log_event(
         logger,
-        logging.INFO,
+        logging.INFO if result.get("ok") else logging.WARNING,
         "websoc_search_completed",
         workflow_id=result["workflow_id"],
         web_search_url=result["source_url"],
         request_method=result["request_method"],
         request_form=result["request_form"],
         term=result["term"],
+        response_term=result.get("response_term"),
         requested_department=result["department"],
         response_department=(result.get("search_criteria") or {}).get("department"),
         registration_ends=result.get("registration_ends"),
         extraction_status=result.get("extraction_status"),
+        validation=result.get("validation"),
+        error_code=result.get("error_code"),
         comment_block_count=len(result.get("comment_blocks") or []),
         school_comments=_log_text(result.get("school_comments")),
         department_comments=_log_text(result.get("department_comments")),
@@ -188,6 +236,92 @@ def fetch_websoc_department_restrictions(
         result_urls=[link.get("url") for link in result.get("links") or []],
     )
     return result
+
+
+def fetch_websoc_form_options(
+    *,
+    session: Optional[requests.Session] = None,
+) -> dict[str, Any]:
+    """Read the live form so submitted term and department values are validated."""
+
+    http = session or requests.Session()
+    retrieved_at = _utc_now()
+    observability.log_event(
+        logger,
+        logging.INFO,
+        "websoc_form_started",
+        web_search_url=WEBSOC_URL,
+        request_method="GET",
+        timeout_seconds=REQUEST_TIMEOUT_S,
+    )
+    try:
+        response = http.get(WEBSOC_URL, timeout=REQUEST_TIMEOUT_S)
+        observability.log_event(
+            logger,
+            logging.INFO,
+            "websoc_form_response",
+            web_search_url=WEBSOC_URL,
+            request_method="GET",
+            final_url=getattr(response, "url", None) or WEBSOC_URL,
+            status_code=getattr(response, "status_code", None),
+            content_type=(getattr(response, "headers", {}) or {}).get("content-type"),
+            content_length=len((getattr(response, "text", "") or "").encode("utf-8")),
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        observability.log_event(
+            logger,
+            logging.WARNING,
+            "websoc_form_failed",
+            web_search_url=WEBSOC_URL,
+            request_method="GET",
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+        return {
+            "ok": False,
+            "error_code": "websoc_form_request_failed",
+            "message": f"Registrar WebSoc form request failed: {type(exc).__name__}",
+            "source_url": WEBSOC_URL,
+            "retrieved_at": retrieved_at,
+        }
+
+    parsed = _parse_websoc_form(response.text)
+    if not parsed.terms or not parsed.departments:
+        observability.log_event(
+            logger,
+            logging.WARNING,
+            "websoc_form_failed",
+            web_search_url=WEBSOC_URL,
+            request_method="GET",
+            error_type="form_parse_failed",
+            term_count=len(parsed.terms),
+            department_count=len(parsed.departments),
+        )
+        return {
+            "ok": False,
+            "error_code": "websoc_form_parse_failed",
+            "message": "Registrar WebSoc form did not contain term and department options",
+            "source_url": WEBSOC_URL,
+            "retrieved_at": retrieved_at,
+        }
+
+    observability.log_event(
+        logger,
+        logging.INFO,
+        "websoc_form_completed",
+        web_search_url=WEBSOC_URL,
+        request_method="GET",
+        term_count=len(parsed.terms),
+        department_count=len(parsed.departments),
+    )
+    return {
+        "ok": True,
+        "source_url": WEBSOC_URL,
+        "retrieved_at": retrieved_at,
+        "terms": parsed.terms,
+        "departments": parsed.departments,
+    }
 
 
 def parse_websoc_department_html(
@@ -210,17 +344,61 @@ def parse_websoc_department_html(
     links = _assign_links_to_blocks(parsed.links, blocks, source_url=source_url)
     fields = _extract_restriction_fields("\n\n".join(block["text"] for block in blocks))
     extracted_any = any(v not in (None, "", []) for v in fields.values())
+    requested_term = Term.parse(term)
+    response_term = _extract_result_term(text)
+    requested_department = _normalize_department(department)
+    response_department = _normalize_department(
+        _search_text(r"Department:\s*([A-Z0-9&/ ]+)", text)
+    )
+    validation_errors: list[dict[str, str]] = []
+    if not re.search(r"Schedule of Classes search results", text, re.IGNORECASE):
+        validation_errors.append(
+            {
+                "error_code": "websoc_not_search_results",
+                "message": "WebSoc response is not a Schedule of Classes results page",
+            }
+        )
+    if response_department != requested_department:
+        validation_errors.append(
+            {
+                "error_code": "websoc_department_mismatch",
+                "message": (
+                    f"WebSoc returned department {response_department or 'missing'} "
+                    f"instead of {requested_department}"
+                ),
+            }
+        )
+    if requested_term is None or response_term != requested_term.display():
+        validation_errors.append(
+            {
+                "error_code": "websoc_term_mismatch",
+                "message": (
+                    f"WebSoc returned term {response_term or 'missing'} instead of "
+                    f"{requested_term.display() if requested_term else term}"
+                ),
+            }
+        )
+    if not blocks:
+        validation_errors.append(
+            {
+                "error_code": "websoc_comments_missing",
+                "message": "WebSoc results page did not contain school or department comments",
+            }
+        )
 
-    return {
-        "ok": True,
+    validation_ok = not validation_errors
+
+    result = {
+        "ok": validation_ok,
         "mode": "workflow",
         "workflow_id": "websoc_department_restrictions",
         "term": term,
-        "department": (department or "").strip().upper(),
+        "department": requested_department,
         "source_url": source_url,
         "retrieved_at": retrieved_at or _utc_now(),
+        "response_term": response_term,
         "search_criteria": {
-            "department": _search_text(r"Department:\s*([A-Z0-9&/ ]+)", text),
+            "department": response_department,
             "exclude_cancelled_courses": bool(
                 re.search(r"Exclude cancelled courses", text, re.IGNORECASE)
             ),
@@ -233,8 +411,61 @@ def parse_websoc_department_html(
         "comment_blocks": blocks,
         "fields": fields,
         "links": links,
-        "extraction_status": "complete" if extracted_any else "partial",
+        "validation": {
+            "ok": validation_ok,
+            "errors": validation_errors,
+        },
+        "extraction_status": (
+            "invalid" if not validation_ok else "complete" if extracted_any else "partial"
+        ),
     }
+    if validation_errors:
+        result["error_code"] = validation_errors[0]["error_code"]
+        result["message"] = "; ".join(error["message"] for error in validation_errors)
+    return result
+
+
+def _parse_websoc_form(html: str) -> ParsedForm:
+    parser = _WebSocFormHTMLParser()
+    parser.feed(html or "")
+    parser.close()
+    return ParsedForm(
+        terms=parser.options.get("YearTerm", {}),
+        departments=parser.options.get("Dept", {}),
+    )
+
+
+class _WebSocFormHTMLParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.options: dict[str, dict[str, str]] = {}
+        self._select_name: Optional[str] = None
+        self._option_value: Optional[str] = None
+        self._option_text: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
+        attr = {key.lower(): value or "" for key, value in attrs}
+        if tag == "select":
+            name = attr.get("name")
+            self._select_name = name if name in {"YearTerm", "Dept"} else None
+        elif tag == "option" and self._select_name:
+            self._option_value = attr.get("value", "").strip()
+            self._option_text = []
+
+    def handle_data(self, data: str) -> None:
+        if self._option_value is not None:
+            self._option_text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "option" and self._select_name and self._option_value is not None:
+            if self._option_value:
+                self.options.setdefault(self._select_name, {})[self._option_value] = (
+                    _collapse_ws(" ".join(self._option_text))
+                )
+            self._option_value = None
+            self._option_text = []
+        elif tag == "select":
+            self._select_name = None
 
 
 def _parse_html(html: str) -> ParsedHTML:
@@ -602,6 +833,57 @@ def _extract_restriction_fields(text: str) -> dict[str, Any]:
             r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}",
             text,
         ))),
+    }
+
+
+def _extract_result_term(text: str) -> Optional[str]:
+    match = re.search(
+        r"\b(Fall|Winter|Spring|Summer)\s+Quarter,\s*(\d{4})\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return f"{match.group(1).capitalize()} {match.group(2)}"
+
+
+def _normalize_department(value: Optional[str]) -> str:
+    return _collapse_ws(value or "").upper()
+
+
+def _workflow_error(
+    *,
+    error_code: str,
+    message: str,
+    term: str,
+    department: str,
+    request_form: dict[str, str],
+    retrieved_at: str,
+    **extra: Any,
+) -> dict[str, Any]:
+    observability.log_event(
+        logger,
+        logging.WARNING,
+        "websoc_search_rejected",
+        workflow_id="websoc_department_restrictions",
+        web_search_url=WEBSOC_URL,
+        request_method="POST",
+        request_form=request_form,
+        error_code=error_code,
+        message=message,
+    )
+    return {
+        "ok": False,
+        "workflow_id": "websoc_department_restrictions",
+        "error_code": error_code,
+        "message": message,
+        "term": term,
+        "department": department,
+        "source_url": WEBSOC_URL,
+        "request_method": "POST",
+        "request_form": request_form,
+        "retrieved_at": retrieved_at,
+        **extra,
     }
 
 
