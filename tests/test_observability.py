@@ -1,5 +1,26 @@
 from __future__ import annotations
 
+import logging
+
+from app import observability
+
+
+def test_log_event_keeps_full_search_urls_but_bounds_regular_text(caplog):
+    logger = logging.getLogger("tests.search_logging")
+    caplog.set_level(logging.INFO, logger=logger.name)
+    url = "https://www.reg.uci.edu/perl/WebSoc?" + "department=ART&" * 20
+
+    observability.log_event(
+        logger,
+        logging.INFO,
+        "search_test",
+        web_search_url=url,
+        summary="x" * 300,
+    )
+
+    assert f"web_search_url={url!r}" in caplog.text
+    assert "summary='" + "x" * 157 + "...'" in caplog.text
+
 
 def test_health_live_returns_trace_id(app_client):
     response = app_client.get("/health/live", headers={"X-Trace-Id": "trace-test"})

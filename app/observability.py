@@ -25,6 +25,10 @@ _trace_id: contextvars.ContextVar[str] = contextvars.ContextVar(
 _counters: dict[str, float] = defaultdict(float)
 _timings: dict[str, list[float]] = defaultdict(list)
 
+_LOG_VALUE_MAX_CHARS = 160
+_LOG_URL_MAX_CHARS = 2048
+_URL_FIELD_NAMES = {"url", "web_search_url", "source_url", "final_url"}
+
 
 def new_trace_id() -> str:
     return uuid.uuid4().hex
@@ -82,7 +86,7 @@ def clear_metrics() -> None:
 
 def log_event(logger: logging.Logger, level: int, event: str, **fields: Any) -> None:
     safe_fields = {
-        key: _safe_value(value)
+        key: _safe_log_value(key, value)
         for key, value in fields.items()
         if value is not None
     }
@@ -137,9 +141,17 @@ def _metric_key(name: str, labels: dict[str, Any]) -> str:
 
 
 def _safe_value(value: Any) -> Any:
-    if isinstance(value, str) and len(value) > 160:
-        return value[:157] + "..."
+    if isinstance(value, str) and len(value) > _LOG_VALUE_MAX_CHARS:
+        return value[: _LOG_VALUE_MAX_CHARS - 3] + "..."
     return value
+
+
+def _safe_log_value(key: str, value: Any) -> Any:
+    if key in _URL_FIELD_NAMES and isinstance(value, str):
+        if len(value) > _LOG_URL_MAX_CHARS:
+            return value[: _LOG_URL_MAX_CHARS - 3] + "..."
+        return value
+    return _safe_value(value)
 
 
 def _float_env(name: str, default: float) -> float:

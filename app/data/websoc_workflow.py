@@ -19,6 +19,7 @@ from urllib.parse import urlencode, urljoin, urlsplit
 
 import requests
 
+from app import observability
 from app.catalog.term import Term
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ WEBSOC_URL = "https://www.reg.uci.edu/perl/WebSoc"
 REQUEST_TIMEOUT_S = 12
 LINK_TEXT_MAX_CHARS = 1500
 LINK_MAX_BYTES = 500_000
+LOG_TEXT_MAX_CHARS = 1000
 
 _QUARTER_CODES = {
     "Winter": "03",
@@ -96,11 +98,42 @@ def fetch_websoc_department_restrictions(
     source_url = f"{WEBSOC_URL}?{urlencode(params)}"
     http = session or requests.Session()
     retrieved_at = _utc_now()
+    observability.log_event(
+        logger,
+        logging.INFO,
+        "websoc_search_started",
+        workflow_id="websoc_department_restrictions",
+        web_search_url=source_url,
+        term=term,
+        department=(department or "").strip().upper(),
+        timeout_seconds=REQUEST_TIMEOUT_S,
+    )
     try:
         response = http.get(WEBSOC_URL, params=params, timeout=REQUEST_TIMEOUT_S)
+        observability.log_event(
+            logger,
+            logging.INFO,
+            "websoc_search_response",
+            workflow_id="websoc_department_restrictions",
+            web_search_url=source_url,
+            final_url=getattr(response, "url", None) or source_url,
+            status_code=getattr(response, "status_code", None),
+            content_type=(getattr(response, "headers", {}) or {}).get("content-type"),
+            content_length=len((getattr(response, "text", "") or "").encode("utf-8")),
+        )
         response.raise_for_status()
     except requests.RequestException as e:
-        logger.warning("WebSoc department workflow failed: %s", e)
+        observability.log_event(
+            logger,
+            logging.WARNING,
+            "websoc_search_failed",
+            workflow_id="websoc_department_restrictions",
+            web_search_url=source_url,
+            term=term,
+            department=(department or "").strip().upper(),
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         return {
             "ok": False,
             "workflow_id": "websoc_department_restrictions",
@@ -112,13 +145,32 @@ def fetch_websoc_department_restrictions(
             "retrieved_at": retrieved_at,
         }
 
-    return parse_websoc_department_html(
+    result = parse_websoc_department_html(
         response.text,
         term=term,
         department=department,
         source_url=source_url,
         retrieved_at=retrieved_at,
     )
+    observability.log_event(
+        logger,
+        logging.INFO,
+        "websoc_search_completed",
+        workflow_id=result["workflow_id"],
+        web_search_url=result["source_url"],
+        term=result["term"],
+        requested_department=result["department"],
+        response_department=(result.get("search_criteria") or {}).get("department"),
+        registration_ends=result.get("registration_ends"),
+        extraction_status=result.get("extraction_status"),
+        comment_block_count=len(result.get("comment_blocks") or []),
+        school_comments=_log_text(result.get("school_comments")),
+        department_comments=_log_text(result.get("department_comments")),
+        restriction_fields=result.get("fields"),
+        link_count=len(result.get("links") or []),
+        result_urls=[link.get("url") for link in result.get("links") or []],
+    )
+    return result
 
 
 def parse_websoc_department_html(
@@ -291,25 +343,65 @@ def fetch_linked_official_pages(
         link for link in workflow_result.get("links", [])
         if _should_deep_read_link(link, workflow_result)
     ][:max(0, max_pages)]
+    observability.log_event(
+        logger,
+        logging.INFO,
+        "websoc_linked_search_selected",
+        workflow_id=workflow_result.get("workflow_id"),
+        source_url=workflow_result.get("source_url"),
+        selected_count=len(selected),
+        result_urls=[link.get("url") for link in selected],
+    )
     http = session or requests.Session()
     pages: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
     for link in selected:
         retrieved_at = _utc_now()
+        linked_url = link["url"]
+        observability.log_event(
+            logger,
+            logging.INFO,
+            "websoc_linked_page_started",
+            workflow_id=workflow_result.get("workflow_id"),
+            web_search_url=linked_url,
+            source_url=workflow_result.get("source_url"),
+            link_role=link.get("link_role"),
+            source_block=link.get("source_block"),
+        )
         try:
-            response = http.get(link["url"], timeout=REQUEST_TIMEOUT_S)
+            response = http.get(linked_url, timeout=REQUEST_TIMEOUT_S)
+            observability.log_event(
+                logger,
+                logging.INFO,
+                "websoc_linked_page_response",
+                workflow_id=workflow_result.get("workflow_id"),
+                web_search_url=linked_url,
+                final_url=getattr(response, "url", None) or linked_url,
+                status_code=getattr(response, "status_code", None),
+                content_type=(getattr(response, "headers", {}) or {}).get("content-type"),
+                content_length=len((getattr(response, "text", "") or "").encode("utf-8")),
+            )
             response.raise_for_status()
         except requests.RequestException as e:
+            observability.log_event(
+                logger,
+                logging.WARNING,
+                "websoc_linked_page_failed",
+                workflow_id=workflow_result.get("workflow_id"),
+                web_search_url=linked_url,
+                error_type=type(e).__name__,
+                error=str(e),
+            )
             errors.append(
                 {
-                    "url": link["url"],
+                    "url": linked_url,
                     "error_code": "linked_page_request_failed",
                     "message": f"official linked page request failed: {type(e).__name__}",
                 }
             )
             continue
 
-        final_url = getattr(response, "url", link["url"]) or link["url"]
+        final_url = getattr(response, "url", linked_url) or linked_url
         if not _is_uci_domain(final_url):
             errors.append(
                 {
@@ -357,19 +449,30 @@ def fetch_linked_official_pages(
             continue
 
         parsed = _parse_html(response.text)
-        pages.append(
-            {
-                "url": final_url,
-                "domain": _domain_from_url(final_url),
-                "retrieved_at": retrieved_at,
-                "source_link_text": link.get("text"),
-                "source_block": link.get("source_block"),
-                "link_role": link.get("link_role"),
-                "text_excerpt": _truncate(parsed.text, LINK_TEXT_MAX_CHARS),
-            }
+        page = {
+            "url": final_url,
+            "domain": _domain_from_url(final_url),
+            "retrieved_at": retrieved_at,
+            "source_link_text": link.get("text"),
+            "source_block": link.get("source_block"),
+            "link_role": link.get("link_role"),
+            "text_excerpt": _truncate(parsed.text, LINK_TEXT_MAX_CHARS),
+        }
+        pages.append(page)
+        observability.log_event(
+            logger,
+            logging.INFO,
+            "websoc_linked_page_completed",
+            workflow_id=workflow_result.get("workflow_id"),
+            web_search_url=linked_url,
+            final_url=final_url,
+            link_role=link.get("link_role"),
+            text_excerpt=_log_text(page["text_excerpt"]),
+            link_count=len(parsed.links),
+            result_urls=[item.get("url") for item in parsed.links[:10]],
         )
 
-    return {
+    result = {
         "ok": True,
         "workflow_id": workflow_result.get("workflow_id"),
         "source_url": workflow_result.get("source_url"),
@@ -377,6 +480,18 @@ def fetch_linked_official_pages(
         "pages": pages,
         "errors": errors,
     }
+    observability.log_event(
+        logger,
+        logging.INFO,
+        "websoc_linked_search_completed",
+        workflow_id=workflow_result.get("workflow_id"),
+        source_url=workflow_result.get("source_url"),
+        selected_count=len(selected),
+        page_count=len(pages),
+        error_count=len(errors),
+        result_urls=[page.get("url") for page in pages],
+    )
+    return result
 
 
 def _should_deep_read_link(link: dict[str, Any], workflow_result: dict[str, Any]) -> bool:
@@ -494,6 +609,12 @@ def _truncate(text: str, limit: int) -> str:
     if len(collapsed) <= limit:
         return collapsed
     return collapsed[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _log_text(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    return _truncate(value, LOG_TEXT_MAX_CHARS)
 
 
 def _domain_from_url(url: Optional[str]) -> Optional[str]:

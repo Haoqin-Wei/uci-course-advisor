@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -66,6 +67,46 @@ def test_parse_art_websoc_comments_extracts_restriction_dates_and_links() -> Non
     ]
 
 
+def test_live_websoc_fetch_logs_url_response_and_parsed_result(caplog) -> None:
+    caplog.set_level(logging.INFO, logger="app.data.websoc_workflow")
+
+    class FakeResponse:
+        status_code = 200
+        url = websoc_workflow.build_websoc_department_url("Fall 2026", "ART")
+        text = _fixture("art_department.html")
+        headers = {"content-type": "text/html; charset=utf-8"}
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        def get(self, url, **kwargs):
+            assert url == websoc_workflow.WEBSOC_URL
+            assert kwargs["params"]["Dept"] == "ART"
+            return FakeResponse()
+
+    result = websoc_workflow.fetch_websoc_department_restrictions(
+        term="Fall 2026",
+        department="ART",
+        session=FakeSession(),
+    )
+
+    assert result["fields"]["major_restriction_removed_at"] == (
+        "Monday, August 24th, 2026 at noon"
+    )
+    assert "event=websoc_search_started" in caplog.text
+    assert f"web_search_url={result['source_url']!r}" in caplog.text
+    assert "event=websoc_search_response" in caplog.text
+    assert "status_code=200" in caplog.text
+    assert "event=websoc_search_completed" in caplog.text
+    assert "response_department='ART'" in caplog.text
+    assert "comment_block_count=2" in caplog.text
+    assert "major_restriction_removed_at" in caplog.text
+    assert "Monday, August 24th, 2026 at noon" in caplog.text
+    assert "nors_removed_at" in caplog.text
+    assert "Friday, August 21st at noon" in caplog.text
+
+
 def test_parse_ics_websoc_comments_collects_official_deep_read_links() -> None:
     result = websoc_workflow.parse_websoc_department_html(
         _fixture("ics_department.html"),
@@ -96,7 +137,8 @@ def test_parse_ics_websoc_comments_collects_official_deep_read_links() -> None:
     )
 
 
-def test_deep_read_fetches_only_selected_official_websoc_links() -> None:
+def test_deep_read_fetches_only_selected_official_websoc_links(caplog) -> None:
+    caplog.set_level(logging.INFO, logger="app.data.websoc_workflow")
     workflow_result = websoc_workflow.parse_websoc_department_html(
         _fixture("ics_department.html"),
         term="Fall 2026",
@@ -141,6 +183,12 @@ def test_deep_read_fetches_only_selected_official_websoc_links() -> None:
     assert result["pages"][0]["domain"] == "ics.uci.edu"
     assert result["pages"][0]["link_role"] == "ics_undergraduate_restrictions"
     assert "Fall 2026 restriction details" in result["pages"][0]["text_excerpt"]
+    assert "event=websoc_linked_search_selected" in caplog.text
+    assert "event=websoc_linked_page_started" in caplog.text
+    assert "web_search_url='http://ics.uci.edu/course-enrollment-restrictions/'" in caplog.text
+    assert "event=websoc_linked_page_completed" in caplog.text
+    assert "Fall 2026 restriction details are posted by course" in caplog.text
+    assert "event=websoc_linked_search_completed" in caplog.text
 
 
 def test_deep_read_skips_links_when_websoc_comments_already_have_date() -> None:
