@@ -1091,7 +1091,58 @@ Sources:
 - 高频 deep-search trace 能为后续人工固化 workflow 提供足够统计字段。
 - 默认测试不依赖真实网络、真实搜索 API 或真实网页。
 
-## 16. 跨阶段 Definition of Done
+## 16. M12 — WebSoc Restriction Workflow 可靠性修正
+
+目标：修复 Registrar WebSoc 首页和结果页 URL 相同导致的错误抓取。所有选课限制、专业限制、NORS、authorization code 和限制解除时间问题，必须由服务端先执行开发者定义的固定 workflow，提交真实 WebSoc 表单并验证返回结果，再把证据交给模型组织答案。
+
+状态：已完成。按四个功能阶段和一个收尾阶段独立提交。
+
+### M12.1 提交真实 WebSoc 表单
+
+- [x] 先 GET `https://www.reg.uci.edu/perl/WebSoc` 读取当前可用的 term 和 department option。
+- [x] 使用 Registrar 表单要求的 POST 方法提交 `YearTerm`、`Dept`、comments、finals 和 cancelled-course 参数。
+- [x] 不再把 criteria 伪装成可复现的 GET URL；source URL 保留官方 endpoint，请求参数单独记录。
+- [x] 终端日志显示 request method、form criteria、response URL、HTTP status 和 content type。
+
+### M12.2 验证结果页而不是相信 HTTP 200
+
+- [x] POST 前验证 term/department 确实存在于当前 WebSoc 表单选项。
+- [x] POST 后验证页面标题是 `Schedule of Classes search results`。
+- [x] 验证返回的 Search Criteria department 与请求一致。
+- [x] 验证返回学期与请求一致，并确认存在 school/department comments。
+- [x] 验证失败时返回结构化 error code，禁止模型把首页或错误学期当作有效结果。
+
+### M12.3 服务端强制执行固定 Workflow
+
+- [x] 扩展开发者维护的 restriction registry，覆盖专业/选课/院系限制、NORS、authorization code、A/B/X restriction、外专业选课和 add/drop/change deadline。
+- [x] restriction workflow 在第一次 LLM 调用前由 agent loop 直接执行，模型不能跳过主来源。
+- [x] 固定 workflow 要求用户明确给出 term 和 department/course；缺少或冲突时直接澄清，不静默使用 UI 默认学期。
+- [x] availability + restriction 组合问题按固定顺序先查 live sections，再查 department restrictions。
+- [x] 模型重复调用同一主 workflow 时复用本 run 的已验证结果，不重复联网。
+
+### M12.4 WebSoc Comments 链接证据
+
+- [x] WebSoc comments 没有直接给出目标信息时，读取其中实际出现的 UCI 官方链接。
+- [x] linked page 返回限制字段、关键段落、页面内 links、domain 和 source URL。
+- [x] 聚合 linked-page restriction evidence，供模型区分 WebSoc 主证据与院系页面补充证据。
+- [x] 只有明确日期/截止时间才把解析状态标为 `complete`；一般政策说明保留为证据但标为 `partial`。
+
+### M12.5 验收与可观测性
+
+- [x] fixture 覆盖 ART 明确解除日期、ICS 跳转院系页面、错误 department、错误 term、首页误抓和 comments 缺失。
+- [x] 每次主请求和 linked-page 请求均记录 `web_search_url`、criteria/depth、response metadata、提取字段、关键段落和错误。
+- [x] 定向测试证明 server-forced workflow 发生在第一次 LLM 请求前。
+- [x] 完整离线测试、compileall、真实 Fall 2026 ART WebSoc smoke check。
+
+### M12 提交分组
+
+1. `af3e8ea`：通过 POST 提交真实 WebSoc 表单。
+2. `d0fd2d5`：验证 live form options 和返回结果页。
+3. `a3cd274`：在 LLM 前强制执行 restriction workflow。
+4. `099845a`：提取 linked-page restriction evidence。
+5. 文档、完整回归和 live smoke check：本阶段收尾提交。
+
+## 17. 跨阶段 Definition of Done
 
 每个任务只有同时满足以下条件才算完成：
 
@@ -1105,7 +1156,7 @@ Sources:
 - 对实时数据链路，必须明确 freshness、cache TTL、source 和 fallback 语义。
 - 对固定 workflow，必须有 fixture 测试证明不会绕到 agentic search。
 
-## 17. 实际提交分组
+## 18. 实际提交分组
 
 工作已按可审查、可回滚的阶段提交。每组提交都对应 ROADMAP 中的阶段性验收：
 
@@ -1121,8 +1172,9 @@ Sources:
 10. M9：联网搜索 tool、Search Skill、来源分类、引用展示和离线 fake-provider 测试。
 11. M10：Live WebSoc 可用性、专业限制 workflow、WebSoc comments 链接深读。
 12. M11：Agentic deep search tool、run 内 visited memory、SQLite trace history、workflow registry 重构。（已完成。）
+13. M12：WebSoc POST 表单、结果验证、服务端强制 restriction workflow、linked-page evidence。（已完成。）
 
-## 18. 进度记录
+## 19. 进度记录
 
 | 日期 | 阶段 | 变更 | Commit/PR | 验收结果 |
 |---|---|---|---|---|
@@ -1137,3 +1189,4 @@ Sources:
 | 2026-07-04 | M8 | Roadmap 收尾、README 按当前架构重写 | `docs: close roadmap and README` | README 删除旧 demo/mock/placeholder；README 数据检查、compileall、pip check、`121 passed, 2 deselected` 通过。 |
 | 2026-07-05 | M9 | 完成 controlled `web_search`、source classifier、Search Skill prompt、前端 chip/source badge 和离线 fake-provider 测试 | `feat: add controlled web search evidence chain` | `compileall`、`pip check`、`139 passed, 2 deselected` 通过；默认测试不联网，搜索关闭时结构化 unavailable。 |
 | 2026-07-21 | M11 | 完成 developer workflow registry、`fetch_page`、run 去重与 depth/page 预算、SQLite 公共 trace、本地相似匹配、历史强建议与 fresh-source 门禁 | `fcebe7d`–`1439583` | `compileall` 与完整离线回归通过：`202 passed`；`.idea/` 未纳入提交。 |
+| 2026-07-21 | M12 | 修复 WebSoc 同 URL 表单抓取，增加 live option/response validation、server-forced restriction workflow 和 linked-page structured evidence | `af3e8ea`–本阶段收尾提交 | `compileall`、完整离线回归 `219 passed, 2 deselected`；真实 ART POST 验证得到 major restriction `2026-08-24 noon`、NORS `2026-08-21 noon`。 |

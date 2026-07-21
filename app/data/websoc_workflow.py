@@ -849,11 +849,11 @@ def _extract_restriction_fields(text: str) -> dict[str, Any]:
             text,
         ),
         "major_restriction_removed_at": _search_text(
-            r"Major restrictions.*? removed on (.*?)(?:\.|\n)",
+            r"Major restrictions[^\n]*?removed on\s+([^\n.]+)",
             text,
         ),
         "nors_removed_at": _search_text(
-            r"New Only Restrictions\s*\(NORS\).*? removed on (.*?)(?:\.|\n)",
+            r"New Only Restrictions\s*\(NORS?\)[^\n]*?removed on\s+([^\n.]+)",
             text,
         ),
         "authorization_code_notes": _matching_lines(
@@ -907,9 +907,14 @@ def _matching_lines(
     max_items: int = 12,
 ) -> list[str]:
     matches: list[str] = []
-    for line in _clean_text(text).splitlines():
+    lines = _clean_text(text).splitlines()
+    for index, line in enumerate(lines):
         if any(re.search(pattern, line, flags=re.IGNORECASE) for pattern in patterns):
-            excerpt = _truncate(line, 700)
+            excerpt = line
+            if re.search(r"\b(?:on|at|by|until)\s*:?[\s]*$", line, re.IGNORECASE):
+                if index + 1 < len(lines):
+                    excerpt = f"{line} {lines[index + 1]}"
+            excerpt = _truncate(excerpt, 700)
             if excerpt not in matches:
                 matches.append(excerpt)
         if len(matches) >= max_items:
