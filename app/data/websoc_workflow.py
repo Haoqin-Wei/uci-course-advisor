@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from typing import Any, Optional
-from urllib.parse import urlencode, urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import requests
 
@@ -63,7 +63,11 @@ def build_websoc_department_params(term: str, department: str) -> dict[str, str]
     if not dept:
         raise ValueError("department is required")
     return {
+        "Submit": "Display Web Results",
         "YearTerm": f"{parsed.year}-{_QUARTER_CODES[parsed.quarter]}",
+        "ShowComments": "on",
+        "ShowFinals": "on",
+        "Breadth": "ANY",
         "Dept": dept,
         "CourseCodes": "",
         "InstrName": "",
@@ -83,7 +87,8 @@ def build_websoc_department_params(term: str, department: str) -> dict[str, str]
 
 
 def build_websoc_department_url(term: str, department: str) -> str:
-    return f"{WEBSOC_URL}?{urlencode(build_websoc_department_params(term, department))}"
+    build_websoc_department_params(term, department)
+    return WEBSOC_URL
 
 
 def fetch_websoc_department_restrictions(
@@ -95,7 +100,7 @@ def fetch_websoc_department_restrictions(
     """Fetch and parse a fixed Registrar WebSoc department page."""
 
     params = build_websoc_department_params(term, department)
-    source_url = f"{WEBSOC_URL}?{urlencode(params)}"
+    source_url = build_websoc_department_url(term, department)
     http = session or requests.Session()
     retrieved_at = _utc_now()
     observability.log_event(
@@ -104,18 +109,22 @@ def fetch_websoc_department_restrictions(
         "websoc_search_started",
         workflow_id="websoc_department_restrictions",
         web_search_url=source_url,
+        request_method="POST",
+        request_form=params,
         term=term,
         department=(department or "").strip().upper(),
         timeout_seconds=REQUEST_TIMEOUT_S,
     )
     try:
-        response = http.get(WEBSOC_URL, params=params, timeout=REQUEST_TIMEOUT_S)
+        response = http.post(WEBSOC_URL, data=params, timeout=REQUEST_TIMEOUT_S)
         observability.log_event(
             logger,
             logging.INFO,
             "websoc_search_response",
             workflow_id="websoc_department_restrictions",
             web_search_url=source_url,
+            request_method="POST",
+            request_form=params,
             final_url=getattr(response, "url", None) or source_url,
             status_code=getattr(response, "status_code", None),
             content_type=(getattr(response, "headers", {}) or {}).get("content-type"),
@@ -129,6 +138,8 @@ def fetch_websoc_department_restrictions(
             "websoc_search_failed",
             workflow_id="websoc_department_restrictions",
             web_search_url=source_url,
+            request_method="POST",
+            request_form=params,
             term=term,
             department=(department or "").strip().upper(),
             error_type=type(e).__name__,
@@ -142,6 +153,8 @@ def fetch_websoc_department_restrictions(
             "term": term,
             "department": department,
             "source_url": source_url,
+            "request_method": "POST",
+            "request_form": params,
             "retrieved_at": retrieved_at,
         }
 
@@ -152,12 +165,16 @@ def fetch_websoc_department_restrictions(
         source_url=source_url,
         retrieved_at=retrieved_at,
     )
+    result["request_method"] = "POST"
+    result["request_form"] = params
     observability.log_event(
         logger,
         logging.INFO,
         "websoc_search_completed",
         workflow_id=result["workflow_id"],
         web_search_url=result["source_url"],
+        request_method=result["request_method"],
+        request_form=result["request_form"],
         term=result["term"],
         requested_department=result["department"],
         response_department=(result.get("search_criteria") or {}).get("department"),

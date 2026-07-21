@@ -18,11 +18,15 @@ def _fixture(name: str) -> str:
 
 def test_build_websoc_department_url_uses_fixed_registrar_endpoint() -> None:
     url = websoc_workflow.build_websoc_department_url("Fall 2026", "ART")
+    params = websoc_workflow.build_websoc_department_params("Fall 2026", "ART")
 
-    assert url.startswith("https://www.reg.uci.edu/perl/WebSoc?")
-    assert "YearTerm=2026-92" in url
-    assert "Dept=ART" in url
-    assert "CancelledCourses=Exclude" in url
+    assert url == "https://www.reg.uci.edu/perl/WebSoc"
+    assert params["Submit"] == "Display Web Results"
+    assert params["YearTerm"] == "2026-92"
+    assert params["ShowComments"] == "on"
+    assert params["Breadth"] == "ANY"
+    assert params["Dept"] == "ART"
+    assert params["CancelledCourses"] == "Exclude"
 
 
 def test_parse_art_websoc_comments_extracts_restriction_dates_and_links() -> None:
@@ -80,9 +84,12 @@ def test_live_websoc_fetch_logs_url_response_and_parsed_result(caplog) -> None:
             return None
 
     class FakeSession:
-        def get(self, url, **kwargs):
+        def post(self, url, **kwargs):
             assert url == websoc_workflow.WEBSOC_URL
-            assert kwargs["params"]["Dept"] == "ART"
+            assert kwargs["data"]["Submit"] == "Display Web Results"
+            assert kwargs["data"]["YearTerm"] == "2026-92"
+            assert kwargs["data"]["Dept"] == "ART"
+            assert kwargs["data"]["ShowComments"] == "on"
             return FakeResponse()
 
     result = websoc_workflow.fetch_websoc_department_restrictions(
@@ -94,8 +101,13 @@ def test_live_websoc_fetch_logs_url_response_and_parsed_result(caplog) -> None:
     assert result["fields"]["major_restriction_removed_at"] == (
         "Monday, August 24th, 2026 at noon"
     )
+    assert result["source_url"] == websoc_workflow.WEBSOC_URL
+    assert result["request_method"] == "POST"
+    assert result["request_form"]["Dept"] == "ART"
     assert "event=websoc_search_started" in caplog.text
     assert f"web_search_url={result['source_url']!r}" in caplog.text
+    assert "request_method='POST'" in caplog.text
+    assert "request_form=" in caplog.text
     assert "event=websoc_search_response" in caplog.text
     assert "status_code=200" in caplog.text
     assert "event=websoc_search_completed" in caplog.text
@@ -333,7 +345,7 @@ def test_deep_read_rejects_oversized_linked_page() -> None:
 
 def test_fetch_websoc_department_restrictions_returns_structured_error() -> None:
     class FailingSession:
-        def get(self, *_args, **_kwargs):
+        def post(self, *_args, **_kwargs):
             raise requests.Timeout("slow")
 
     result = websoc_workflow.fetch_websoc_department_restrictions(
@@ -345,7 +357,10 @@ def test_fetch_websoc_department_restrictions_returns_structured_error() -> None
     assert result["ok"] is False
     assert result["workflow_id"] == "websoc_department_restrictions"
     assert result["error_code"] == "websoc_request_failed"
-    assert result["source_url"].startswith("https://www.reg.uci.edu/perl/WebSoc?")
+    assert result["source_url"] == "https://www.reg.uci.edu/perl/WebSoc"
+    assert result["request_method"] == "POST"
+    assert result["request_form"]["YearTerm"] == "2026-92"
+    assert result["request_form"]["Dept"] == "ART"
     assert "Timeout" in result["message"]
 
 
