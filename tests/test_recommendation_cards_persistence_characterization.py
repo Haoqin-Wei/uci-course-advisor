@@ -134,6 +134,7 @@ def test_recommendation_cards_in_sse_meta_are_persisted_and_restored(
     assert meta["cards"] == RECOMMENDATION_CARDS
     assert meta["followups"] == FOLLOWUPS
     assert meta["validation_report"] == VALIDATION_REPORT
+    assert meta["final_answer"] == "Here are two offline recommendation cards."
 
     turns = sessions_data.read_turns("demo_001", session_id)
 
@@ -203,6 +204,9 @@ def test_agent_path_validates_cards_before_meta_and_persistence(
     meta = _meta_event(events)
 
     assert meta["cards"] == []
+    assert meta["final_answer"] == sessions_data.read_turns(
+        "demo_001", session_id
+    )[1]["content"]
     assert meta["validation_report"]["applied_action"] == "remove"
     assert any(
         issue["code"] == "CARD_INVALID_SECTION_CODE"

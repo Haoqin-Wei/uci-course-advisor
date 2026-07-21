@@ -105,7 +105,10 @@ async function sendMessage(text) {
       fullText = fullText || 'Connection error — is the backend running?';
     }
   } finally {
-    finalizeAiMessage(aiMsg, fullText, meta || {}, stopped);
+    const finalText = (!stopped && meta && typeof meta.final_answer === 'string')
+      ? meta.final_answer
+      : fullText;
+    finalizeAiMessage(aiMsg, finalText, meta || {}, stopped);
     currentAbortController = null;
     toggleSendStop(false);
     inputEl.focus();

@@ -104,6 +104,7 @@ class ValidationContext:
     session_state: dict
     cards: list[dict] = field(default_factory=list)
     user_message: str = ""
+    retrieval_performed: bool = False
 
     @property
     def retrieved_primary_refs(self) -> set[CourseRef]:

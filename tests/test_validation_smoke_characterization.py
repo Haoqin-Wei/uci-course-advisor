@@ -132,3 +132,32 @@ def test_validation_removes_card_with_invalid_section_code(minimal_catalog):
     assert changed is True
     assert final_cards == []
     assert "CARD_INVALID_SECTION_CODE" not in final_answer
+
+
+def test_web_retrieval_allows_policy_answer_to_reference_catalog_courses(
+    minimal_catalog,
+):
+    catalog = _spring_2025_fixture_catalog(minimal_catalog)
+    answer = (
+        "The official department page says COMPSCI 161 and IN4MATX 43 "
+        "have different restriction timelines."
+    )
+    ctx = ValidationContext(
+        llm_answer=answer,
+        retrieved={"primary": [], "flagged": [], "total_found": 0},
+        catalog=catalog,
+        session_state={"term": "Spring 2025"},
+        user_message="When are department restrictions removed?",
+        retrieval_performed=True,
+    )
+
+    report = validate(ctx)
+    action = decide_action(report)
+    final_answer, _, changed = apply_report(answer, [], report, action)
+
+    assert "ANSWER_WITHOUT_RETRIEVAL" not in {
+        issue.code for issue in report.issues
+    }
+    assert action.value == "keep"
+    assert final_answer == answer
+    assert changed is False

@@ -95,7 +95,7 @@ class ConsistencyValidator(Validator):
                 ))
 
         # ── R3. Empty retrieval but answer cites courses ──
-        if not primary and not flagged and mentioned:
+        if not ctx.retrieval_performed and not primary and not flagged and mentioned:
             issues.append(Issue(
                 validator=self.name,
                 code="ANSWER_WITHOUT_RETRIEVAL",

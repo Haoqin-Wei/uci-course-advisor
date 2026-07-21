@@ -82,7 +82,6 @@ def _build_blocked_answer(report: ValidationReport) -> str:
         "I can’t provide that answer reliably because validation found "
         "ungrounded course or schedule details. Please ask again with a "
         "specific term/course, and I’ll re-check against the local catalog."
-        + _build_footer(report)
     )
 
 

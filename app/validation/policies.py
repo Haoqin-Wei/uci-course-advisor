@@ -34,6 +34,6 @@ def decide_action(report: ValidationReport) -> SuggestedAction:
         return SuggestedAction.REMOVE
     if SuggestedAction.ANNOTATE in suggested:
         return SuggestedAction.ANNOTATE
-    if report.issues:
-        return SuggestedAction.ANNOTATE
+    # INFO issues are developer diagnostics. They remain in the report/log,
+    # but must not rewrite or decorate an otherwise valid user answer.
     return SuggestedAction.KEEP

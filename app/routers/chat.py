@@ -468,6 +468,7 @@ def _validate_response(
     user_message: str,
     term_str: Optional[str],
     session_id: Optional[str],
+    retrieval_performed: bool = False,
 ) -> tuple[str, list[dict], Optional[dict]]:
     target_term = (
         Term.parse(term_str or "")
@@ -489,6 +490,7 @@ def _validate_response(
         session_state=state,
         cards=cards,
         user_message=user_message,
+        retrieval_performed=retrieval_performed,
     )
     report = validate(ctx)
     action = decide_action(report)
@@ -688,7 +690,10 @@ async def _handle_agent(
     recent_turns: Optional[list[dict]] = None,
     decisions: Optional[list[dict]] = None,
     summary: Optional[str] = None,
-) -> tuple[str, list, list, Optional[dict]]:
+) -> (
+    tuple[str, list, list, Optional[dict]]
+    | tuple[str, list, list, Optional[dict], dict]
+):
     """
     Drive a tool-using LLM turn via app.agent.loop and forward its
     events to the SSE queue.
@@ -699,7 +704,8 @@ async def _handle_agent(
     recommendation path. Mid-flight errors surface as visible error
     events — by that point the user has already seen partial output.
 
-    Returns (reply_text, cards, followups, validation) on success.
+    Returns (reply_text, cards, followups, validation, agent_meta) on the
+    normal agent path. Pre-flight fallbacks retain the legacy four-item tuple.
 
     `cards` is populated when the LLM calls the `propose_recommendation`
     tool — the loop emits a `cards_proposed` event that we accumulate
@@ -712,6 +718,7 @@ async def _handle_agent(
     accumulated = ""
     saw_any_event = False
     proposed_cards: list[dict] = []
+    successful_tools: set[str] = set()
 
     try:
         async for event in adapter.stream_agent_response(
@@ -763,6 +770,8 @@ async def _handle_agent(
                 })
             elif t == "tool_call_done":
                 ok = event.get("ok", True)
+                if ok and event.get("name"):
+                    successful_tools.add(event["name"])
                 if not ok:
                     observability.increment("agent.tool_failures", tool=event.get("name"))
                 observability.log_event(
@@ -870,7 +879,13 @@ async def _handle_agent(
         await queue.put({"type": "token", "text": fallback})
         return (fallback, [], [], None)
 
-    return (accumulated, proposed_cards, [], None)
+    return (
+        accumulated,
+        proposed_cards,
+        [],
+        None,
+        {"successful_tools": sorted(successful_tools)},
+    )
 
 
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -1029,7 +1044,9 @@ async def _stream_chat(
                 decisions=decisions,
                 summary=summary,
             )
-            reply, cards, followups, validation_dict = agent_result
+            reply, cards, followups, validation_dict = agent_result[:4]
+            agent_meta = agent_result[4] if len(agent_result) > 4 else {}
+            retrieval_performed = bool(agent_meta.get("successful_tools"))
 
             if validation_dict is None and reply:
                 reply, cards, validation_dict = _validate_response(
@@ -1040,6 +1057,7 @@ async def _stream_chat(
                     user_message=req.message,
                     term_str=req.term or state.get("term"),
                     session_id=active_session_id,
+                    retrieval_performed=retrieval_performed,
                 )
 
             mem.sync_turn(user_id, req.message, reply, active_session_id)
@@ -1065,6 +1083,7 @@ async def _stream_chat(
                 "cards": cards,
                 "followups": followups,
                 "validation_report": validation_dict,
+                "final_answer": reply,
                 "session_state": state,
                 "pending_schedule": session.get("pending_schedule", []),
             })

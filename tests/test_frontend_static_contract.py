@@ -110,6 +110,7 @@ def test_live_and_restored_messages_share_structured_renderers() -> None:
 
     assert "renderCardsBlock(meta.cards)" in chat
     assert "renderValidationFooter(meta.validation_report)" in chat
+    assert "meta.final_answer" in chat
     assert "sendFollowup(" in chat
 
     assert "renderCardsBlock(extras.cards)" in sessions
