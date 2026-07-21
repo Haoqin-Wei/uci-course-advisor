@@ -83,7 +83,11 @@ from app.agent.deep_search_history import (
     verification_required_text,
 )
 from app.agent.deep_search_state import DeepSearchRunState
-from app.agent.workflow_router import build_route_hint_message, route_solution
+from app.agent.workflow_router import (
+    build_primary_workflow_plan,
+    build_route_hint_message,
+    route_solution,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -227,6 +231,31 @@ def _messages_with_run_hints(
     ]
 
 
+def _workflow_result_message(
+    route: dict,
+    results: list[dict],
+) -> Optional[dict[str, str]]:
+    if not results:
+        return None
+    return {
+        "role": "system",
+        "content": (
+            "The server already executed the developer-owned primary workflow before "
+            "this model call. Do not call these primary tools again. Use the results "
+            "below as the primary evidence, report structured failures honestly, and "
+            "only use web_search/fetch_page for optional supplemental evidence.\n"
+            f"Workflow route: {json.dumps(route, ensure_ascii=False, default=str)}\n"
+            f"Primary workflow results: {json.dumps(results, ensure_ascii=False, default=str)}"
+        ),
+    }
+
+
+def _clarification_text(user_query: str, clarification: dict) -> str:
+    has_cjk = bool(re.search(r"[\u3400-\u9fff]", user_query or ""))
+    key = "message_zh" if has_cjk else "message_en"
+    return str(clarification.get(key) or clarification.get("message_en") or "")
+
+
 def _stash_continuation(
     messages: list,
     *,
@@ -367,16 +396,107 @@ async def _run_loop(
         "deep_search_state": deep_search_state,
     }
     workflow_route = route_solution(user_query, term=term)
+    primary_plan = build_primary_workflow_plan(workflow_route)
+    clarification = primary_plan.get("clarification")
+    if clarification:
+        clarification_text = _clarification_text(user_query, clarification)
+        observability.log_event(
+            logger,
+            logging.INFO,
+            "workflow_primary_blocked",
+            workflow_ids=workflow_route.get("workflow_ids"),
+            reason=clarification.get("reason"),
+            selected_term=term,
+            explicit_terms=workflow_route.get("explicit_terms"),
+            departments=workflow_route.get("departments"),
+            courses=workflow_route.get("course_ids"),
+        )
+        yield {"type": "token", "text": clarification_text}
+        yield {
+            "type": "final",
+            "text": clarification_text,
+            "iterations": 0,
+            "tool_calls": start_tool_count,
+            "clarification_required": True,
+        }
+        return
+
+    total_tool_calls = start_tool_count
+    forced_results: dict[str, dict] = {}
+    primary_result_records: list[dict] = []
+    for primary_call in primary_plan.get("calls") or []:
+        tool_name = primary_call["tool"]
+        args = primary_call["args"]
+        label = agent_tools.humanize_tool_call(tool_name, args)
+        total_tool_calls += 1
+        observability.log_event(
+            logger,
+            logging.INFO,
+            "workflow_primary_tool_start",
+            workflow_id=primary_call.get("workflow_id"),
+            tool=tool_name,
+            label=label,
+            args=_summarize_tool_args(args),
+            server_forced=True,
+        )
+        yield {
+            "type": "tool_call_start",
+            "name": tool_name,
+            "args": args,
+            "label": label,
+            "server_forced": True,
+        }
+        result = agent_tools.dispatch(tool_name, args, context=tool_context)
+        if asyncio.iscoroutine(result):
+            result = await result
+        tool_ok = "error" not in result and result.get("ok", True) is not False
+        forced_results[tool_name] = result
+        primary_result_records.append(
+            {
+                "workflow_id": primary_call.get("workflow_id"),
+                "tool": tool_name,
+                "args": args,
+                "result": result,
+            }
+        )
+        observability.log_event(
+            logger,
+            logging.INFO if tool_ok else logging.WARNING,
+            "workflow_primary_tool_done",
+            workflow_id=primary_call.get("workflow_id"),
+            tool=tool_name,
+            label=label,
+            ok=tool_ok,
+            result=_summarize_tool_result(result),
+            server_forced=True,
+        )
+        yield {
+            "type": "tool_call_done",
+            "name": tool_name,
+            "ok": tool_ok,
+            "label": label,
+            "server_forced": True,
+        }
+
+    tool_context["_forced_workflow_results"] = forced_results
     route_hint_message = build_route_hint_message(workflow_route)
+    workflow_result_message = _workflow_result_message(
+        workflow_route,
+        primary_result_records,
+    )
     hint_messages = [
-        hint for hint in (route_hint_message, history_hint_message) if hint is not None
+        hint
+        for hint in (
+            route_hint_message,
+            workflow_result_message,
+            history_hint_message,
+        )
+        if hint is not None
     ]
     observability.increment("solution_router.routes", route=workflow_route["route_type"])
     if workflow_route["route_type"] == "workflow":
         for intent in workflow_route.get("intents", []):
             observability.increment("workflow_router.matches", intent=intent)
-    total_tool_calls = start_tool_count
-
     for iteration in range(start_iteration, MAX_ITERATIONS):
         try:
             response = await client.chat.completions.create(
@@ -554,7 +674,19 @@ async def _run_loop(
             yield {"type": "tool_call_start",
                    "name": tc["name"], "args": args, "label": label}
 
-            result = agent_tools.dispatch(tc["name"], args, context=tool_context)
+            forced_cache = tool_context.get("_forced_workflow_results") or {}
+            if tc["name"] in forced_cache:
+                result = forced_cache[tc["name"]]
+                observability.log_event(
+                    logger,
+                    logging.INFO,
+                    "workflow_primary_tool_reused",
+                    tool=tc["name"],
+                    label=label,
+                    server_forced=True,
+                )
+            else:
+                result = agent_tools.dispatch(tc["name"], args, context=tool_context)
             # Some tool dispatchers (e.g. summarize_professor_reviews,
             # which calls the LLM internally) return a coroutine instead
             # of a dict. Await it here so the tool response is always a

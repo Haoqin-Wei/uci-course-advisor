@@ -7,6 +7,7 @@ from app import observability
 from app.agent import loop as agent_loop
 from app.agent.workflow_router import (
     WORKFLOW_REGISTRY,
+    build_primary_workflow_plan,
     build_route_hint_message,
     route_search_workflows,
     route_solution,
@@ -33,17 +34,45 @@ def test_router_classifies_live_availability_without_agentic_search() -> None:
 
 
 def test_router_classifies_department_restrictions_and_department_alias() -> None:
-    route = route_search_workflows("ICS 专业限制什么时候解除？", term="Fall 2026")
+    route = route_search_workflows(
+        "Fall 2026 ICS 专业限制什么时候解除？",
+        term="Spring 2026",
+    )
 
     assert route is not None
     assert route["intents"] == ["department_restriction"]
     assert route["recommended_tools"] == ["get_department_restrictions"]
     assert route["departments"] == ["I&C SCI"]
+    assert route["explicit_terms"] == ["Fall 2026"]
+    assert route["term"] == "Fall 2026"
+    assert route["selected_term"] == "Spring 2026"
+
+    plan = build_primary_workflow_plan(route)
+    assert plan["clarification"] is None
+    assert plan["calls"] == [
+        {
+            "workflow_id": "websoc_department_restrictions",
+            "tool": "get_department_restrictions",
+            "args": {
+                "term": "Fall 2026",
+                "follow_links": True,
+                "department": "I&C SCI",
+            },
+        }
+    ]
+
+
+def test_department_restriction_plan_requires_explicit_term() -> None:
+    route = route_solution("ART 专业限制什么时候解除？", term="Spring 2026")
+    plan = build_primary_workflow_plan(route)
+
+    assert plan["calls"] == []
+    assert plan["clarification"]["reason"] == "missing_term"
 
 
 def test_router_classifies_combined_availability_and_restriction_question() -> None:
     route = route_search_workflows(
-        "CS161 现在还有位置吗？major restriction 什么时候解除？",
+        "Fall 2026 CS161 现在还有位置吗？major restriction 什么时候解除？",
         term="Fall 2026",
     )
 
@@ -55,7 +84,7 @@ def test_router_classifies_combined_availability_and_restriction_question() -> N
     ]
     hint = build_route_hint_message(route)
     assert hint is not None
-    assert "call get_live_sections first, then get_department_restrictions" in hint["content"]
+    assert "execute get_live_sections first, then get_department_restrictions" in hint["content"]
     assert "optional supplemental tools" in hint["content"]
     assert "present both claims and both sources" in hint["content"]
 

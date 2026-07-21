@@ -216,6 +216,11 @@ def test_fixed_workflow_can_deep_read_supplement_after_primary_tool(monkeypatch)
             "links": [{"url": supplement_url}],
         },
     )
+    monkeypatch.setattr(
+        agent_tools.websoc_workflow,
+        "fetch_linked_official_pages",
+        lambda _result: {"ok": True, "pages": [], "errors": []},
+    )
     deep_search.set_fake_pages(
         [
             {
@@ -224,15 +229,8 @@ def test_fixed_workflow_can_deep_read_supplement_after_primary_tool(monkeypatch)
             }
         ]
     )
-    messages = [{"role": "user", "content": "ICS 专业限制什么时候解除？"}]
+    messages = [{"role": "user", "content": "Fall 2026 ICS 专业限制什么时候解除？"}]
     client = ScriptedLLMClient(
-        tool_response(
-            tool_call(
-                "get_department_restrictions",
-                {"term": "Fall 2026", "department": "I&C SCI", "follow_links": False},
-                call_id="call_workflow",
-            )
-        ),
         tool_response(
             tool_call("fetch_page", {"url": supplement_url}, call_id="call_supplement")
         ),
@@ -257,7 +255,8 @@ def test_fixed_workflow_can_deep_read_supplement_after_primary_tool(monkeypatch)
     assert tool_names == ["get_department_restrictions", "fetch_page"]
     prompt = "\n".join(message.get("content") or "" for message in client.calls[0].messages)
     assert "Developer workflow registry match" in prompt
+    assert "server already executed" in prompt
     assert "present both claims and both sources" in prompt
-    page_payload = json.loads(messages[4]["content"])
+    page_payload = json.loads(messages[2]["content"])
     assert page_payload["ok"] is True
     assert page_payload["depth"] == 1

@@ -13,6 +13,7 @@ from typing import Any, Optional
 
 from app.catalog.departments import DEPARTMENT_ALIASES
 from app.catalog.normalization import iter_course_mentions
+from app.catalog.term import Term
 
 
 @dataclass(frozen=True)
@@ -100,6 +101,7 @@ def route_solution(user_text: str, *, term: Optional[str] = None) -> dict[str, A
 
     courses = [ref.display() for ref, _start, _end in iter_course_mentions(text)]
     tools = [tool for rule in matches for tool in rule.tools]
+    explicit_terms = _extract_terms(text)
     return {
         "route_type": "workflow",
         "mode": "developer_workflow",
@@ -107,11 +109,97 @@ def route_solution(user_text: str, *, term: Optional[str] = None) -> dict[str, A
         "intents": [rule.intent for rule in matches],
         "recommended_tools": list(dict.fromkeys(tools)),
         "primary_sources": [rule.primary_source for rule in matches],
-        "term": term,
+        "term": explicit_terms[0] if len(explicit_terms) == 1 else term,
+        "selected_term": term,
+        "explicit_terms": explicit_terms,
         "course_ids": list(dict.fromkeys(courses)),
         "departments": _extract_departments(text),
         "search_tools_are_supplemental": True,
         "source_conflict_policy": "present_both",
+    }
+
+
+def build_primary_workflow_plan(route: dict[str, Any]) -> dict[str, Any]:
+    """Build server-owned primary calls for workflows that require hard execution."""
+
+    if route.get("route_type") != "workflow":
+        return {"calls": [], "clarification": None}
+    if "websoc_department_restrictions" not in route.get("workflow_ids", []):
+        return {"calls": [], "clarification": None}
+
+    explicit_terms = route.get("explicit_terms") or []
+    if len(explicit_terms) != 1:
+        reason = "missing_term" if not explicit_terms else "ambiguous_term"
+        return {
+            "calls": [],
+            "clarification": {
+                "reason": reason,
+                "message_en": "Which quarter should I check (for example, Fall 2026)?",
+                "message_zh": "请说明要查询的学期，例如 Fall 2026。",
+            },
+        }
+
+    departments = route.get("departments") or []
+    courses = route.get("course_ids") or []
+    if len(departments) > 1 or (not departments and len(courses) > 1):
+        return {
+            "calls": [],
+            "clarification": {
+                "reason": "ambiguous_department",
+                "message_en": "Which single department or course should I check in WebSoc?",
+                "message_zh": "请指定一个要在 WebSoc 查询的 Department 或课程。",
+            },
+        }
+    if not departments and not courses:
+        return {
+            "calls": [],
+            "clarification": {
+                "reason": "missing_department",
+                "message_en": "Which department or course should I check in WebSoc?",
+                "message_zh": "请说明要查询的 Department 或课程。",
+            },
+        }
+
+    calls: list[dict[str, Any]] = []
+    if "websoc_live_availability" in route.get("workflow_ids", []):
+        if len(courses) != 1:
+            return {
+                "calls": [],
+                "clarification": {
+                    "reason": "missing_or_ambiguous_course",
+                    "message_en": "Which single course should I check for live availability?",
+                    "message_zh": "请指定一门要查询实时余位的课程。",
+                },
+            }
+        calls.append(
+            {
+                "workflow_id": "websoc_live_availability",
+                "tool": "get_live_sections",
+                "args": {
+                    "course_id": courses[0],
+                    "term": explicit_terms[0],
+                },
+            }
+        )
+
+    restriction_args: dict[str, Any] = {
+        "term": explicit_terms[0],
+        "follow_links": True,
+    }
+    if departments:
+        restriction_args["department"] = departments[0]
+    else:
+        restriction_args["course_id"] = courses[0]
+    calls.append(
+        {
+            "workflow_id": "websoc_department_restrictions",
+            "tool": "get_department_restrictions",
+            "args": restriction_args,
+        }
+    )
+    return {
+        "calls": calls,
+        "clarification": None,
     }
 
 
@@ -125,15 +213,29 @@ def route_search_workflows(user_text: str, *, term: Optional[str] = None) -> Opt
 def build_route_hint_message(route: Optional[dict[str, Any]]) -> Optional[dict[str, str]]:
     if not route or route.get("route_type") != "workflow":
         return None
+    has_restriction = "websoc_department_restrictions" in route.get(
+        "workflow_ids", []
+    )
+    execution_instruction = (
+        "The server executes the required primary workflow tools before the model "
+        "acts, and their results are supplied in a separate system message. Do not "
+        "repeat those primary calls. "
+        if has_restriction
+        else (
+            "This request must start with the declared workflow primary tools before "
+            "the model answers. "
+        )
+    )
     return {
         "role": "system",
         "content": (
-            "Developer workflow registry match: this request must start with "
+            "Developer workflow registry match: "
             f"workflow(s) {route['workflow_ids']} and primary tool(s) "
             f"{route['recommended_tools']} for term {route.get('term') or 'selected term'}. "
+            f"{execution_instruction}"
             "web_search and fetch_page are optional supplemental tools, not route "
             "selectors. If both availability and department restriction workflows "
-            "match, call get_live_sections first, then get_department_restrictions, "
+            "match, execute get_live_sections first, then get_department_restrictions, "
             "and keep their sources separate. If a workflow primary source conflicts "
             "with a supplemental web source, present both claims and both sources. "
             f"Detected courses: {route.get('course_ids') or []}. "
@@ -150,6 +252,20 @@ def _extract_departments(text: str) -> list[str]:
                 found.append(canonical)
                 break
     return list(dict.fromkeys(found))
+
+
+def _extract_terms(text: str) -> list[str]:
+    matches = re.findall(
+        r"(?:Fall|Winter|Spring|Summer)\s*\d{4}|\d{4}\s*(?:Fall|Winter|Spring|Summer)",
+        text or "",
+        flags=re.IGNORECASE,
+    )
+    terms: list[str] = []
+    for raw in matches:
+        parsed = Term.parse(re.sub(r"\s+", " ", raw).strip())
+        if parsed:
+            terms.append(parsed.display())
+    return list(dict.fromkeys(terms))
 
 
 def _contains_token(text: str, token: str) -> bool:

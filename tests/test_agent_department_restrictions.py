@@ -187,19 +187,8 @@ def test_agent_can_dispatch_department_restrictions_with_sse_chip(
         lambda _result: {"ok": True, "pages": []},
     )
 
-    messages = [{"role": "user", "content": "ART 专业限制什么时候解除？"}]
+    messages = [{"role": "user", "content": "Fall 2026 ART 专业限制什么时候解除？"}]
     client = ScriptedLLMClient(
-        tool_response(
-            tool_call(
-                "get_department_restrictions",
-                {
-                    "term": "Fall 2026",
-                    "department": "ART",
-                    "restriction_type": "major_restriction",
-                },
-                call_id="call_restrictions",
-            )
-        ),
         text_response("ART restrictions are removed on Monday, August 24th, 2026 at noon."),
     )
 
@@ -218,17 +207,47 @@ def test_agent_can_dispatch_department_restrictions_with_sse_chip(
     assert events[0]["type"] == "tool_call_start"
     assert events[0]["name"] == "get_department_restrictions"
     assert events[0]["label"] == "读取 WebSoc 部门说明 · ART · Fall 2026"
+    assert events[0]["server_forced"] is True
     assert events[1]["ok"] is True
-    tool_payload = json.loads(messages[2]["content"])
-    assert tool_payload["workflow_id"] == "websoc_department_restrictions"
-    assert (
-        tool_payload["fields"]["major_restriction_removed_at"]
-        == "Monday, August 24th, 2026 at noon"
+    assert events[1]["server_forced"] is True
+    prompt = "\n".join(
+        message.get("content") or "" for message in client.calls[0].messages
     )
-    assert "event=agent_tool_call_done" in caplog.text
+    assert "server already executed" in prompt
+    assert "Primary workflow results" in prompt
+    assert "Monday, August 24th, 2026 at noon" in prompt
+    assert "event=workflow_primary_tool_done" in caplog.text
     assert "workflow_id" in caplog.text
     assert "source_url" in caplog.text
     assert "https://www.reg.uci.edu/perl/WebSoc?Dept=ART" in caplog.text
     assert "restriction_fields" in caplog.text
     assert "Monday, August 24th, 2026 at noon" in caplog.text
     client.assert_exhausted()
+
+
+def test_agent_asks_for_term_before_forced_restriction_workflow(monkeypatch) -> None:
+    monkeypatch.setattr(
+        agent_tools.websoc_workflow,
+        "fetch_websoc_department_restrictions",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("workflow must not run without an explicit term")
+        ),
+    )
+    messages = [{"role": "user", "content": "ART 专业限制什么时候解除？"}]
+    client = ScriptedLLMClient()
+
+    events = asyncio.run(
+        _collect(
+            agent_loop.run_agent(
+                messages,
+                client=client,
+                model="fake-model",
+                user_id="student_001",
+                term="Spring 2026",
+            )
+        )
+    )
+
+    assert events[-1]["clarification_required"] is True
+    assert "Fall 2026" in events[-1]["text"]
+    assert client.calls == []
