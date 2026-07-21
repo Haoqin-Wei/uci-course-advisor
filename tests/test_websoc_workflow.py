@@ -55,6 +55,10 @@ def test_parse_art_websoc_comments_extracts_restriction_dates_and_links() -> Non
         == "Monday, August 24th, 2026 at noon"
     )
     assert result["fields"]["nors_removed_at"] == "Friday, August 21st at noon"
+    assert result["fields"]["restriction_update_notes"]
+    assert "Monday, August 24th, 2026 at noon" in (
+        result["fields"]["restriction_update_notes"][0]
+    )
     assert result["fields"]["contact_emails"] == ["artscounselor@uci.edu"]
     assert result["links"] == [
         {
@@ -264,7 +268,9 @@ def test_deep_read_fetches_only_selected_official_websoc_links(caplog) -> None:
             self.text = """
             <html><body>
               <h1>ICS Course Enrollment Restrictions</h1>
-              <p>Fall 2026 restriction details are posted by course.</p>
+              <p>Major restrictions will be removed on Monday, August 24th, 2026 at noon.</p>
+              <p>A B restriction requires an authorization code from the instructor.</p>
+              <a href="/academics/policies/">Student policies</a>
             </body></html>
             """
 
@@ -290,12 +296,23 @@ def test_deep_read_fetches_only_selected_official_websoc_links(caplog) -> None:
     ]
     assert result["pages"][0]["domain"] == "ics.uci.edu"
     assert result["pages"][0]["link_role"] == "ics_undergraduate_restrictions"
-    assert "Fall 2026 restriction details" in result["pages"][0]["text_excerpt"]
+    assert "Major restrictions will be removed" in result["pages"][0]["text_excerpt"]
+    assert result["pages"][0]["restriction_fields"][
+        "major_restriction_removed_at"
+    ] == "Monday, August 24th, 2026 at noon"
+    assert result["pages"][0]["restriction_fields"]["authorization_code_notes"]
+    assert result["pages"][0]["relevant_passages"]
+    assert result["pages"][0]["links"][0]["url"] == (
+        "http://ics.uci.edu/academics/policies/"
+    )
+    assert result["restriction_evidence"][0]["fields"][
+        "major_restriction_removed_at"
+    ] == "Monday, August 24th, 2026 at noon"
     assert "event=websoc_linked_search_selected" in caplog.text
     assert "event=websoc_linked_page_started" in caplog.text
     assert "web_search_url='http://ics.uci.edu/course-enrollment-restrictions/'" in caplog.text
     assert "event=websoc_linked_page_completed" in caplog.text
-    assert "Fall 2026 restriction details are posted by course" in caplog.text
+    assert "Monday, August 24th, 2026 at noon" in caplog.text
     assert "event=websoc_linked_search_completed" in caplog.text
 
 

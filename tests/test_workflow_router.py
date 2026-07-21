@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 
+import pytest
+
 from app import observability
 from app.agent import loop as agent_loop
 from app.agent.workflow_router import (
@@ -68,6 +70,22 @@ def test_department_restriction_plan_requires_explicit_term() -> None:
 
     assert plan["calls"] == []
     assert plan["clarification"]["reason"] == "missing_term"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Fall 2026 ICS enrollment restrictions",
+        "Fall 2026 ICS authorization code requirements",
+        "Fall 2026 ART B restriction什么时候解除",
+        "Fall 2026 ART 选课限制什么时候解除",
+        "Fall 2026 ART 外专业什么时候能选",
+    ],
+)
+def test_restriction_workflow_covers_supported_restriction_phrases(query) -> None:
+    route = route_solution(query, term="Spring 2026")
+
+    assert "websoc_department_restrictions" in route["workflow_ids"]
 
 
 def test_router_classifies_combined_availability_and_restriction_question() -> None:

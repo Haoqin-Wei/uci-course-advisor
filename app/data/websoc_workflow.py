@@ -343,7 +343,17 @@ def parse_websoc_department_html(
     ).strip()
     links = _assign_links_to_blocks(parsed.links, blocks, source_url=source_url)
     fields = _extract_restriction_fields("\n\n".join(block["text"] for block in blocks))
-    extracted_any = any(v not in (None, "", []) for v in fields.values())
+    concrete_field_names = (
+        "add_deadline",
+        "drop_deadline",
+        "change_deadline",
+        "major_restriction_removed_at",
+        "nors_removed_at",
+    )
+    extracted_any = any(
+        fields.get(field_name) not in (None, "", [])
+        for field_name in concrete_field_names
+    )
     requested_term = Term.parse(term)
     response_term = _extract_result_term(text)
     requested_department = _normalize_department(department)
@@ -697,6 +707,9 @@ def fetch_linked_official_pages(
             continue
 
         parsed = _parse_html(response.text)
+        restriction_fields = _extract_restriction_fields(parsed.text)
+        relevant_passages = _extract_restriction_passages(parsed.text)
+        page_links = _normalize_page_links(parsed.links, source_url=final_url)
         page = {
             "url": final_url,
             "domain": _domain_from_url(final_url),
@@ -705,6 +718,9 @@ def fetch_linked_official_pages(
             "source_block": link.get("source_block"),
             "link_role": link.get("link_role"),
             "text_excerpt": _truncate(parsed.text, LINK_TEXT_MAX_CHARS),
+            "restriction_fields": restriction_fields,
+            "relevant_passages": relevant_passages,
+            "links": page_links,
         }
         pages.append(page)
         observability.log_event(
@@ -716,8 +732,10 @@ def fetch_linked_official_pages(
             final_url=final_url,
             link_role=link.get("link_role"),
             text_excerpt=_log_text(page["text_excerpt"]),
-            link_count=len(parsed.links),
-            result_urls=[item.get("url") for item in parsed.links[:10]],
+            restriction_fields=restriction_fields,
+            relevant_passages=relevant_passages,
+            link_count=len(page_links),
+            result_urls=[item.get("url") for item in page_links[:10]],
         )
 
     result = {
@@ -726,6 +744,15 @@ def fetch_linked_official_pages(
         "source_url": workflow_result.get("source_url"),
         "selected_count": len(selected),
         "pages": pages,
+        "restriction_evidence": [
+            {
+                "url": page["url"],
+                "link_role": page.get("link_role"),
+                "fields": page.get("restriction_fields") or {},
+                "passages": page.get("relevant_passages") or [],
+            }
+            for page in pages
+        ],
         "errors": errors,
     }
     observability.log_event(
@@ -829,11 +856,89 @@ def _extract_restriction_fields(text: str) -> dict[str, Any]:
             r"New Only Restrictions\s*\(NORS\).*? removed on (.*?)(?:\.|\n)",
             text,
         ),
-        "contact_emails": sorted(set(re.findall(
-            r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}",
+        "authorization_code_notes": _matching_lines(
             text,
-        ))),
+            patterns=(
+                r"authorization code",
+                r"\b[ABX]\s+(?:or\s+[ABX]\s+)?restriction",
+                r"\b[ABX]-restricted",
+            ),
+        ),
+        "restriction_update_notes": _matching_lines(
+            text,
+            patterns=(
+                r"major restriction",
+                r"new only restriction",
+                r"enrollment restriction",
+                r"restriction.*(?:removed|lifted|release|timeline|update)",
+            ),
+        ),
+        "contact_emails": sorted(
+            set(
+                re.findall(
+                    r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}",
+                    text,
+                )
+            )
+        ),
     }
+
+
+def _extract_restriction_passages(text: str, *, max_passages: int = 8) -> list[str]:
+    return _matching_lines(
+        text,
+        patterns=(
+            r"restriction",
+            r"authorization code",
+            r"\bNORS?\b",
+            r"\bADD(?:ING)?\b",
+            r"\bDROP(?:PING)?\b",
+            r"grade option",
+            r"waitlist",
+        ),
+        max_items=max_passages,
+    )
+
+
+def _matching_lines(
+    text: str,
+    *,
+    patterns: tuple[str, ...],
+    max_items: int = 12,
+) -> list[str]:
+    matches: list[str] = []
+    for line in _clean_text(text).splitlines():
+        if any(re.search(pattern, line, flags=re.IGNORECASE) for pattern in patterns):
+            excerpt = _truncate(line, 700)
+            if excerpt not in matches:
+                matches.append(excerpt)
+        if len(matches) >= max_items:
+            break
+    return matches
+
+
+def _normalize_page_links(
+    links: list[dict[str, Any]],
+    *,
+    source_url: str,
+) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for link in links:
+        absolute_url = urljoin(source_url, link.get("url") or "")
+        if absolute_url in seen or not _domain_from_url(absolute_url):
+            continue
+        seen.add(absolute_url)
+        normalized.append(
+            {
+                "text": link.get("text") or absolute_url,
+                "url": absolute_url,
+                "domain": _domain_from_url(absolute_url),
+                "source_url": source_url,
+                "is_uci_official": _is_uci_domain(absolute_url),
+            }
+        )
+    return normalized
 
 
 def _extract_result_term(text: str) -> Optional[str]:
