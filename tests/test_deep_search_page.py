@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from app.data import deep_search
 
 
@@ -25,8 +27,9 @@ def test_validate_public_url_rejects_local_and_private_targets() -> None:
         assert result["error_code"] == error_code
 
 
-def test_fetch_fake_page_returns_bounded_structured_content(monkeypatch) -> None:
+def test_fetch_fake_page_returns_bounded_structured_content(monkeypatch, caplog) -> None:
     monkeypatch.setenv("WEB_SEARCH_ENABLED", "false")
+    caplog.set_level(logging.INFO, logger="app.data.deep_search")
     deep_search.set_fake_pages(
         [
             {
@@ -72,6 +75,71 @@ def test_fetch_fake_page_returns_bounded_structured_content(monkeypatch) -> None
     assert result["links"][0]["source_position"]["html_line"] > 0
     assert result["links"][1]["source_class"] == "reddit"
     assert result["links"][1]["trust_level"] == "low"
+    assert "event=deep_search_page_started" in caplog.text
+    assert "web_search_url='https://ics.uci.edu/course-enrollment-restrictions/" in caplog.text
+    assert "event=deep_search_page_completed" in caplog.text
+    assert "title='ICS Enrollment Restrictions'" in caplog.text
+    assert "Major restrictions for Fall 2026 are removed on August 24 at noon" in caplog.text
+    assert "result_urls=['https://ics.uci.edu/academics/policies/" in caplog.text
+
+
+def test_live_page_logs_each_request_redirect_response_and_result(monkeypatch, caplog) -> None:
+    caplog.set_level(logging.INFO, logger="app.data.deep_search")
+    monkeypatch.setenv("WEB_SEARCH_ENABLED", "true")
+    start_url = "https://example.com/start"
+    final_url = "https://example.com/final"
+
+    class FakeResponse:
+        def __init__(self, *, url, status_code, body=b"", location=None):
+            self.url = url
+            self.status_code = status_code
+            self.headers = {"content-type": "text/html"}
+            if location:
+                self.headers["location"] = location
+            self.is_redirect = 300 <= status_code < 400
+            self.is_permanent_redirect = status_code in {301, 308}
+            self.encoding = "utf-8"
+            self._body = body
+
+        def iter_content(self, chunk_size):
+            del chunk_size
+            yield self._body
+
+    responses = [
+        FakeResponse(url=start_url, status_code=302, location="/final"),
+        FakeResponse(
+            url=final_url,
+            status_code=200,
+            body=b"<html><title>Final page</title><p>Useful final evidence for the answer.</p></html>",
+        ),
+    ]
+
+    class FakeSession:
+        def get(self, url, **kwargs):
+            del url, kwargs
+            return responses.pop(0)
+
+    monkeypatch.setattr(deep_search.requests, "Session", FakeSession)
+    monkeypatch.setattr(
+        deep_search,
+        "validate_public_url",
+        lambda url, resolve_dns=False: {
+            "ok": True,
+            "normalized_url": url,
+            "domain": "example.com",
+        },
+    )
+
+    result = deep_search.fetch_page(start_url)
+
+    assert result["ok"] is True
+    assert result["final_url"] == final_url
+    assert caplog.text.count("event=deep_search_page_request") == 2
+    assert caplog.text.count("event=deep_search_page_response") == 2
+    assert "event=deep_search_page_redirect" in caplog.text
+    assert f"final_url={final_url!r}" in caplog.text
+    assert "event=deep_search_page_completed" in caplog.text
+    assert "Useful final evidence for the answer" in caplog.text
 
 
 def test_fetch_fake_page_rejects_non_text_and_oversized_content() -> None:
@@ -101,8 +169,11 @@ def test_fetch_fake_page_rejects_non_text_and_oversized_content() -> None:
     assert oversized["error_code"] == "page_too_large"
 
 
-def test_fetch_page_missing_fake_stays_offline(monkeypatch) -> None:
+def test_fetch_page_missing_fake_stays_offline(monkeypatch, caplog) -> None:
     monkeypatch.setenv("WEB_SEARCH_ENABLED", "false")
+    caplog.set_level(logging.WARNING, logger="app.data.deep_search")
     result = deep_search.fetch_page("https://example.com/not-installed")
     assert result["ok"] is False
     assert result["error_code"] == "page_fetch_disabled"
+    assert "event=deep_search_page_failed" in caplog.text
+    assert "error_code='page_fetch_disabled'" in caplog.text

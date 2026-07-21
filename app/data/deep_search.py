@@ -6,6 +6,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 import ipaddress
+import logging
 import re
 import socket
 from typing import Any, Iterable, Optional
@@ -15,6 +16,9 @@ import requests
 
 from app import config, observability
 from app.data.web_search import USER_AGENT, classify_url
+
+
+logger = logging.getLogger(__name__)
 
 
 MAX_REDIRECTS = 3
@@ -171,19 +175,28 @@ def clear_deep_search_state() -> None:
 def fetch_page(url: str) -> dict[str, Any]:
     """Fetch one public page and return bounded, model-facing fields."""
 
+    started = observability.now()
     requested_at = _utc_now()
+    observability.log_event(
+        logger,
+        logging.INFO,
+        "deep_search_page_started",
+        web_search_url=url,
+    )
     validation = validate_public_url(url, resolve_dns=False)
     if not validation["ok"]:
-        return {
+        result = {
             **validation,
             "source_url": url,
             "retrieved_at": requested_at,
         }
+        _log_fetch_result(result, started=started, fetch_mode="rejected")
+        return result
 
     normalized = validation["normalized_url"]
     fake = _fake_pages.get(normalized)
     if fake is not None:
-        return _extract_response(
+        result = _extract_response(
             source_url=url,
             final_url=str(fake.get("final_url") or fake.get("url") or normalized),
             body=str(fake.get("html") or fake.get("text") or ""),
@@ -191,23 +204,38 @@ def fetch_page(url: str) -> dict[str, Any]:
             status_code=int(fake.get("status_code") or 200),
             retrieved_at=requested_at,
         )
+        _log_fetch_result(result, started=started, fetch_mode="fake")
+        return result
 
     if not config.web_search_enabled():
-        return _fetch_error(
+        result = _fetch_error(
             url,
             requested_at,
             "page_fetch_disabled",
             "page fetching is disabled with web search",
             normalized_url=normalized,
         )
+        _log_fetch_result(result, started=started, fetch_mode="disabled")
+        return result
 
-    return _fetch_live_page(url, retrieved_at=requested_at)
+    result = _fetch_live_page(url, retrieved_at=requested_at)
+    _log_fetch_result(result, started=started, fetch_mode="live")
+    return result
 
 
 def _fetch_live_page(url: str, *, retrieved_at: str) -> dict[str, Any]:
     current_url = url
     session = requests.Session()
     for redirect_count in range(MAX_REDIRECTS + 1):
+        observability.log_event(
+            logger,
+            logging.INFO,
+            "deep_search_page_request",
+            web_search_url=current_url,
+            source_url=url,
+            redirect_count=redirect_count,
+            timeout_seconds=config.web_search_timeout_seconds(),
+        )
         validation = validate_public_url(current_url, resolve_dns=True)
         if not validation["ok"]:
             return {
@@ -234,13 +262,37 @@ def _fetch_live_page(url: str, *, retrieved_at: str) -> dict[str, Any]:
                 normalized_url=validation["normalized_url"],
             )
 
+        observability.log_event(
+            logger,
+            logging.INFO,
+            "deep_search_page_response",
+            web_search_url=current_url,
+            source_url=url,
+            final_url=getattr(response, "url", None) or current_url,
+            redirect_count=redirect_count,
+            status_code=response.status_code,
+            content_type=response.headers.get("content-type", ""),
+            content_length=_safe_int(response.headers.get("content-length")),
+        )
+
         if response.is_redirect or response.is_permanent_redirect:
             location = response.headers.get("location")
             if not location:
                 return _fetch_error(url, retrieved_at, "invalid_redirect", "redirect has no location", final_url=current_url)
             if redirect_count >= MAX_REDIRECTS:
                 return _fetch_error(url, retrieved_at, "too_many_redirects", "page exceeded redirect limit", final_url=current_url)
-            current_url = urljoin(current_url, location)
+            next_url = urljoin(current_url, location)
+            observability.log_event(
+                logger,
+                logging.INFO,
+                "deep_search_page_redirect",
+                web_search_url=current_url,
+                source_url=url,
+                final_url=next_url,
+                redirect_count=redirect_count + 1,
+                status_code=response.status_code,
+            )
+            current_url = next_url
             continue
 
         if response.status_code >= 400:
@@ -541,6 +593,69 @@ def _fetch_error(
         "retrieved_at": retrieved_at,
         **extra,
     }
+
+
+def _log_fetch_result(
+    result: dict[str, Any],
+    *,
+    started: float,
+    fetch_mode: str,
+) -> None:
+    duration_ms = observability.elapsed_ms(started)
+    source_url = result.get("source_url") or result.get("normalized_url")
+    if result.get("ok"):
+        passages = [
+            passage.get("text")
+            for passage in (result.get("key_passages") or [])[:MAX_PASSAGES]
+            if isinstance(passage, dict) and passage.get("text")
+        ]
+        links = result.get("links") or []
+        observability.log_event(
+            logger,
+            logging.INFO,
+            "deep_search_page_completed",
+            fetch_mode=fetch_mode,
+            web_search_url=source_url,
+            final_url=result.get("final_url"),
+            status_code=result.get("status_code"),
+            content_type=result.get("content_type"),
+            domain=result.get("domain"),
+            title=result.get("title"),
+            summary=result.get("summary"),
+            key_passages=passages,
+            link_count=len(links),
+            result_urls=[link.get("url") for link in links[:20] if isinstance(link, dict)],
+            source_class=result.get("source_class"),
+            trust_level=result.get("trust_level"),
+            usable_as_fact=result.get("usable_as_fact"),
+            duration_ms=duration_ms,
+        )
+        observability.observe_ms(
+            "deep_search.fetch_latency_ms",
+            duration_ms,
+            fetch_mode=fetch_mode,
+            status="ok",
+        )
+        return
+
+    observability.log_event(
+        logger,
+        logging.WARNING,
+        "deep_search_page_failed",
+        fetch_mode=fetch_mode,
+        web_search_url=source_url,
+        final_url=result.get("final_url"),
+        status_code=result.get("status_code"),
+        error_code=result.get("error_code"),
+        message=result.get("message"),
+        duration_ms=duration_ms,
+    )
+    observability.observe_ms(
+        "deep_search.fetch_latency_ms",
+        duration_ms,
+        fetch_mode=fetch_mode,
+        status="failed",
+    )
 
 
 def _collapse_ws(value: str) -> str:
