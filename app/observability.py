@@ -27,6 +27,7 @@ _timings: dict[str, list[float]] = defaultdict(list)
 
 _LOG_VALUE_MAX_CHARS = 160
 _LOG_URL_MAX_CHARS = 2048
+_LOG_COLLECTION_MAX_ITEMS = 10
 _URL_FIELD_NAMES = {"url", "web_search_url", "source_url", "final_url"}
 
 
@@ -151,6 +152,24 @@ def _safe_log_value(key: str, value: Any) -> Any:
         if len(value) > _LOG_URL_MAX_CHARS:
             return value[: _LOG_URL_MAX_CHARS - 3] + "..."
         return value
+    if isinstance(value, dict):
+        items = list(value.items())
+        safe = {
+            item_key: _safe_log_value(str(item_key), item_value)
+            for item_key, item_value in items[:_LOG_COLLECTION_MAX_ITEMS]
+        }
+        if len(items) > _LOG_COLLECTION_MAX_ITEMS:
+            safe["_truncated_items"] = len(items) - _LOG_COLLECTION_MAX_ITEMS
+        return safe
+    if isinstance(value, (list, tuple, set)):
+        items = list(value)
+        safe_items = [
+            _safe_log_value(key, item)
+            for item in items[:_LOG_COLLECTION_MAX_ITEMS]
+        ]
+        if len(items) > _LOG_COLLECTION_MAX_ITEMS:
+            safe_items.append(f"... ({len(items) - _LOG_COLLECTION_MAX_ITEMS} more)")
+        return safe_items
     return _safe_value(value)
 
 

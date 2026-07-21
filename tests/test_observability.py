@@ -22,6 +22,23 @@ def test_log_event_keeps_full_search_urls_but_bounds_regular_text(caplog):
     assert "summary='" + "x" * 157 + "...'" in caplog.text
 
 
+def test_log_event_bounds_nested_collections(caplog):
+    logger = logging.getLogger("tests.collection_logging")
+    caplog.set_level(logging.INFO, logger=logger.name)
+
+    observability.log_event(
+        logger,
+        logging.INFO,
+        "collection_test",
+        result_urls=[f"https://example.com/{index}" for index in range(25)],
+        details={f"key_{index}": "x" * 300 for index in range(15)},
+    )
+
+    assert "... (15 more)" in caplog.text
+    assert "_truncated_items" in caplog.text
+    assert "x" * 200 not in caplog.text
+
+
 def test_health_live_returns_trace_id(app_client):
     response = app_client.get("/health/live", headers={"X-Trace-Id": "trace-test"})
 

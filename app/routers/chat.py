@@ -690,10 +690,8 @@ async def _handle_agent(
     recent_turns: Optional[list[dict]] = None,
     decisions: Optional[list[dict]] = None,
     summary: Optional[str] = None,
-) -> (
-    tuple[str, list, list, Optional[dict]]
-    | tuple[str, list, list, Optional[dict], dict]
-):
+    execution_meta: Optional[dict] = None,
+) -> tuple[str, list, list, Optional[dict]]:
     """
     Drive a tool-using LLM turn via app.agent.loop and forward its
     events to the SSE queue.
@@ -704,8 +702,9 @@ async def _handle_agent(
     recommendation path. Mid-flight errors surface as visible error
     events — by that point the user has already seen partial output.
 
-    Returns (reply_text, cards, followups, validation, agent_meta) on the
-    normal agent path. Pre-flight fallbacks retain the legacy four-item tuple.
+    Returns (reply_text, cards, followups, validation). When supplied,
+    ``execution_meta`` is populated with tool execution facts needed by the
+    caller without changing this internal return contract.
 
     `cards` is populated when the LLM calls the `propose_recommendation`
     tool — the loop emits a `cards_proposed` event that we accumulate
@@ -879,13 +878,9 @@ async def _handle_agent(
         await queue.put({"type": "token", "text": fallback})
         return (fallback, [], [], None)
 
-    return (
-        accumulated,
-        proposed_cards,
-        [],
-        None,
-        {"successful_tools": sorted(successful_tools)},
-    )
+    if execution_meta is not None:
+        execution_meta["successful_tools"] = sorted(successful_tools)
+    return (accumulated, proposed_cards, [], None)
 
 
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -1030,6 +1025,7 @@ async def _stream_chat(
             # Agent loop is the only chat chain. Pre-flight failures
             # return a deterministic grounded fallback from _handle_agent;
             # no legacy LLM recommendation path is started.
+            agent_meta: dict = {}
             agent_result = await _handle_agent(
                 req.message, state, memory_context,
                 user_id=user_id,
@@ -1043,9 +1039,9 @@ async def _stream_chat(
                 recent_turns=recent_turns,
                 decisions=decisions,
                 summary=summary,
+                execution_meta=agent_meta,
             )
-            reply, cards, followups, validation_dict = agent_result[:4]
-            agent_meta = agent_result[4] if len(agent_result) > 4 else {}
+            reply, cards, followups, validation_dict = agent_result
             retrieval_performed = bool(agent_meta.get("successful_tools"))
 
             if validation_dict is None and reply:

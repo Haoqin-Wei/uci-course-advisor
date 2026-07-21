@@ -340,6 +340,84 @@ def test_deep_read_skips_links_when_websoc_comments_already_have_date() -> None:
     assert result["errors"] == []
 
 
+def test_websoc_keeps_comment_links_but_excludes_course_table_links() -> None:
+    html = """
+    <html><body>
+      <h1>Schedule of Classes search results</h1>
+      <p>Department: ART</p><p>Fall Quarter, 2026</p>
+      <div><b>Arts school comments:</b>
+        <a href="https://arts.uci.edu/restrictions">Restriction details</a>
+      </div>
+      <div><b>Art department comments:</b>
+        See <a href="https://arts.uci.edu/restrictions">Restriction details</a>.
+      </div>
+      <div>Art 1A</div>
+      <table><tr><th>Code</th><th>Type</th><th>Sec</th><th>Units</th><th>Instructor</th></tr>
+        <tr><td><a href="https://uci.bncollege.com/book">Bookstore</a></td></tr>
+      </table>
+    </body></html>
+    """
+
+    result = websoc_workflow.parse_websoc_department_html(
+        html,
+        term="Fall 2026",
+        department="ART",
+        source_url=websoc_workflow.WEBSOC_URL,
+    )
+
+    urls = [link["url"] for link in result["links"]]
+    assert urls.count("https://arts.uci.edu/restrictions") == 2
+    assert "https://uci.bncollege.com/book" not in urls
+    assert "Bookstore" not in (result["department_comments"] or "")
+
+
+def test_deep_read_deduplicates_same_comment_url() -> None:
+    duplicate_link = {
+        "text": "Restriction details",
+        "url": "https://arts.uci.edu/restrictions/",
+        "allowed_for_deep_read": True,
+        "link_role": "restriction_details",
+        "source_block": "Arts comments:",
+    }
+    workflow_result = {
+        "ok": True,
+        "workflow_id": "websoc_department_restrictions",
+        "source_url": websoc_workflow.WEBSOC_URL,
+        "fields": {"major_restriction_removed_at": None},
+        "links": [duplicate_link, {**duplicate_link, "url": "http://arts.uci.edu/restrictions"}],
+    }
+    calls: list[str] = []
+
+    class FakeResponse:
+        text = """
+        <html><head>
+          <style>.restriction { display: block; }</style>
+          <script>const restrictionNoise = 'ignore me';</script>
+        </head><body>Major restrictions lift on September 1.</body></html>
+        """
+        url = "https://arts.uci.edu/restrictions/"
+        headers = {"content-type": "text/html"}
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        def get(self, url, **_kwargs):
+            calls.append(url)
+            return FakeResponse()
+
+    result = websoc_workflow.fetch_linked_official_pages(
+        workflow_result,
+        session=FakeSession(),
+        max_pages=3,
+    )
+
+    assert result["selected_count"] == 1
+    assert calls == ["https://arts.uci.edu/restrictions/"]
+    assert "restrictionNoise" not in result["pages"][0]["text_excerpt"]
+    assert "Major restrictions lift" in result["pages"][0]["text_excerpt"]
+
+
 def test_deep_read_rejects_non_uci_redirect() -> None:
     workflow_result = {
         "ok": True,

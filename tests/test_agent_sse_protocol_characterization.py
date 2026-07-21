@@ -79,6 +79,7 @@ def test_handle_agent_forwards_tool_limit_and_merges_fallback_cards(monkeypatch)
 
     monkeypatch.setattr(adapter, "stream_agent_response", fake_stream_agent_response)
     queue: asyncio.Queue = asyncio.Queue()
+    execution_meta: dict = {}
 
     result = asyncio.run(
         chat_router._handle_agent(
@@ -89,6 +90,7 @@ def test_handle_agent_forwards_tool_limit_and_merges_fallback_cards(monkeypatch)
             term="Spring 2025",
             system_prompt=None,
             queue=queue,
+            execution_meta=execution_meta,
         )
     )
     queued = asyncio.run(_queue_items(queue))
@@ -102,6 +104,7 @@ def test_handle_agent_forwards_tool_limit_and_merges_fallback_cards(monkeypatch)
         [],
         None,
     )
+    assert execution_meta == {"successful_tools": ["get_policy"]}
     assert [event["type"] for event in queued] == [
         "token",
         "tool_call_start",

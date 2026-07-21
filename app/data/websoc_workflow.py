@@ -48,6 +48,8 @@ _ICS_LINK_ROLES = (
     ("undergraduate-academic-advising/concurrent-enrollment", "ics_concurrent_enrollment"),
 )
 
+_IGNORED_HTML_TAGS = {"script", "style", "noscript", "svg"}
+
 
 @dataclass
 class ParsedHTML:
@@ -155,7 +157,7 @@ def fetch_websoc_department_restrictions(
         workflow_id="websoc_department_restrictions",
         web_search_url=source_url,
         request_method="POST",
-        request_form=params,
+        request_form=_summarize_request_form(params),
         term=term,
         department=(department or "").strip().upper(),
         timeout_seconds=REQUEST_TIMEOUT_S,
@@ -169,7 +171,7 @@ def fetch_websoc_department_restrictions(
             workflow_id="websoc_department_restrictions",
             web_search_url=source_url,
             request_method="POST",
-            request_form=params,
+            request_form=_summarize_request_form(params),
             final_url=getattr(response, "url", None) or source_url,
             status_code=getattr(response, "status_code", None),
             content_type=(getattr(response, "headers", {}) or {}).get("content-type"),
@@ -184,7 +186,7 @@ def fetch_websoc_department_restrictions(
             workflow_id="websoc_department_restrictions",
             web_search_url=source_url,
             request_method="POST",
-            request_form=params,
+            request_form=_summarize_request_form(params),
             term=term,
             department=(department or "").strip().upper(),
             error_type=type(e).__name__,
@@ -219,7 +221,7 @@ def fetch_websoc_department_restrictions(
         workflow_id=result["workflow_id"],
         web_search_url=result["source_url"],
         request_method=result["request_method"],
-        request_form=result["request_form"],
+        request_form=_summarize_request_form(result["request_form"]),
         term=result["term"],
         response_term=result.get("response_term"),
         requested_department=result["department"],
@@ -231,9 +233,9 @@ def fetch_websoc_department_restrictions(
         comment_block_count=len(result.get("comment_blocks") or []),
         school_comments=_log_text(result.get("school_comments")),
         department_comments=_log_text(result.get("department_comments")),
-        restriction_fields=result.get("fields"),
+        restriction_fields=_summarize_restriction_fields(result.get("fields")),
         link_count=len(result.get("links") or []),
-        result_urls=[link.get("url") for link in result.get("links") or []],
+        result_urls=[link.get("url") for link in (result.get("links") or [])[:10]],
     )
     return result
 
@@ -495,8 +497,14 @@ class _WebSocTopHTMLParser(HTMLParser):
         self.links: list[dict[str, Any]] = []
         self._active_href: Optional[str] = None
         self._active_link_parts: list[str] = []
+        self._ignored_depth = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
+        if tag in _IGNORED_HTML_TAGS:
+            self._ignored_depth += 1
+            return
+        if self._ignored_depth:
+            return
         attr = {k.lower(): v or "" for k, v in attrs}
         if tag == "a":
             self._active_href = attr.get("href")
@@ -505,11 +513,18 @@ class _WebSocTopHTMLParser(HTMLParser):
             self.text_parts.append("\n")
 
     def handle_data(self, data: str) -> None:
+        if self._ignored_depth:
+            return
         if self._active_href is not None:
             self._active_link_parts.append(data)
         self.text_parts.append(data)
 
     def handle_endtag(self, tag: str) -> None:
+        if tag in _IGNORED_HTML_TAGS and self._ignored_depth:
+            self._ignored_depth -= 1
+            return
+        if self._ignored_depth:
+            return
         if tag == "a" and self._active_href is not None:
             text = _collapse_ws(" ".join(self._active_link_parts))
             self.links.append(
@@ -531,6 +546,13 @@ def _extract_comment_blocks(text: str) -> list[dict[str, Any]]:
     for idx, match in enumerate(matches):
         start = match.start()
         end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+        table_header = re.search(
+            r"\nCode\nType\nSec\nUnits\nInstructor(?:\n|$)",
+            text[match.end():end],
+            flags=re.IGNORECASE,
+        )
+        if table_header:
+            end = match.end() + table_header.start()
         block_text = _clean_text(text[start:end])
         title = _collapse_ws(match.group(1))
         title_lower = title.lower()
@@ -559,14 +581,19 @@ def _assign_links_to_blocks(
         occurrence_index = seen.get(key, 0)
         seen[key] = occurrence_index + 1
         assigned = _find_nth_link_block(link, blocks, occurrence_index)
+        if assigned is None:
+            continue
+        identity = _url_identity(absolute_url)
+        if identity is None:
+            continue
         out.append(
             {
                 "text": link.get("text") or absolute_url,
                 "url": absolute_url,
                 "domain": _domain_from_url(absolute_url),
                 "link_role": _classify_link_role(absolute_url, link.get("text") or ""),
-                "source_block": assigned["title"] if assigned else None,
-                "source_block_type": assigned["block_type"] if assigned else None,
+                "source_block": assigned["title"],
+                "source_block_type": assigned["block_type"],
                 "source_url": source_url,
                 "is_uci_official": _is_uci_domain(absolute_url),
                 "allowed_for_deep_read": _is_uci_domain(absolute_url),
@@ -597,10 +624,19 @@ def fetch_linked_official_pages(
             "pages": [],
         }
 
-    selected = [
-        link for link in workflow_result.get("links", [])
-        if _should_deep_read_link(link, workflow_result)
-    ][:max(0, max_pages)]
+    selected: list[dict[str, Any]] = []
+    seen_selected: set[tuple[str, str, str]] = set()
+    page_limit = max(0, max_pages)
+    for link in workflow_result.get("links", []):
+        if len(selected) >= page_limit:
+            break
+        if not _should_deep_read_link(link, workflow_result):
+            continue
+        identity = _url_identity(link.get("url") or "")
+        if identity is None or identity in seen_selected:
+            continue
+        seen_selected.add(identity)
+        selected.append(link)
     observability.log_event(
         logger,
         logging.INFO,
@@ -732,8 +768,8 @@ def fetch_linked_official_pages(
             final_url=final_url,
             link_role=link.get("link_role"),
             text_excerpt=_log_text(page["text_excerpt"]),
-            restriction_fields=restriction_fields,
-            relevant_passages=relevant_passages,
+            restriction_fields=_summarize_restriction_fields(restriction_fields),
+            relevant_passages=[_log_text(item) for item in relevant_passages[:5]],
             link_count=len(page_links),
             result_urls=[item.get("url") for item in page_links[:10]],
         )
@@ -1024,6 +1060,40 @@ def _log_text(value: Optional[str]) -> Optional[str]:
     if not value:
         return None
     return _truncate(value, LOG_TEXT_MAX_CHARS)
+
+
+def _summarize_request_form(form: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "Submit",
+        "YearTerm",
+        "Dept",
+        "ShowComments",
+        "ShowFinals",
+        "CancelledCourses",
+    )
+    return {key: form.get(key) for key in keys if form.get(key) not in (None, "")}
+
+
+def _summarize_restriction_fields(fields: Optional[dict[str, Any]]) -> dict[str, Any]:
+    summary: dict[str, Any] = {}
+    for key, value in (fields or {}).items():
+        if value in (None, "", []):
+            continue
+        if isinstance(value, list):
+            summary[key] = [_truncate(str(item), 240) for item in value[:3]]
+            if len(value) > 3:
+                summary[f"{key}_remaining"] = len(value) - 3
+        else:
+            summary[key] = value
+    return summary
+
+
+def _url_identity(url: str) -> Optional[tuple[str, str, str]]:
+    parsed = urlsplit(url)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        return None
+    path = parsed.path.rstrip("/") or "/"
+    return parsed.hostname.lower(), path, parsed.query
 
 
 def _domain_from_url(url: Optional[str]) -> Optional[str]:
