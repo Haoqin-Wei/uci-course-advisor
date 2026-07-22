@@ -11,10 +11,18 @@ from app.terms.models import (
     TermParseResult,
 )
 from app.terms.parser import parse_term_key, parse_term_text
+from app.terms.store import (
+    InMemoryTermStateStore,
+    JsonFileTermStateStore,
+    TermStateSnapshot,
+    TermStateStore,
+)
 
 __all__ = [
     "Clock",
     "FixedClock",
+    "InMemoryTermStateStore",
+    "JsonFileTermStateStore",
     "LOS_ANGELES",
     "REGULAR_QUARTERS",
     "ResolvedTerm",
@@ -24,8 +32,9 @@ __all__ = [
     "TermKey",
     "TermParseError",
     "TermParseResult",
+    "TermStateSnapshot",
+    "TermStateStore",
     "calculate_week2_friday_cutoff",
     "parse_term_key",
     "parse_term_text",
 ]
-

@@ -7,6 +7,7 @@ monkeypatch production/dev behavior without re-importing the app.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -95,3 +96,7 @@ def web_search_max_results() -> int:
 
 def web_search_timeout_seconds() -> float:
     return max(0.5, min(float_env("WEB_SEARCH_TIMEOUT_SECONDS", 5.0), 30.0))
+
+
+def term_state_path() -> Path:
+    return Path(os.environ.get("TERM_STATE_PATH", "data/runtime/term_state.json"))

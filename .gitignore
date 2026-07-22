@@ -18,6 +18,7 @@ coverage.xml
 data/memory/
 data/grades_cache/
 data/logs/
+data/runtime/
 data/auth.db
 data/auth.secret
 data/professor/summaries/

@@ -41,6 +41,21 @@ async def lifespan(app: FastAPI):
             )
     threading.Thread(target=_warm, daemon=True, name="anteater-warmup").start()
 
+    def _sync_terms():
+        try:
+            from app.terms.sync import get_term_synchronizer
+            get_term_synchronizer().sync_if_due()
+        except Exception as e:
+            observability.increment("term.sync", result="startup_error")
+            observability.log_event(
+                logger,
+                logging.WARNING,
+                "term_sync_failed",
+                phase="startup",
+                error=f"{type(e).__name__}: {e}",
+            )
+    threading.Thread(target=_sync_terms, daemon=True, name="term-state-sync").start()
+
     yield
     # On shutdown, flush any in-memory state to disk.
     get_memory_manager().shutdown()
