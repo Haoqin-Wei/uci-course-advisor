@@ -15,13 +15,21 @@ Quarter = Literal[
     "Summer10wk",
     "Summer2",
 ]
-TermSource = Literal["anteater", "cache", "last_known_good", "code_fallback", "explicit"]
+TermSource = Literal[
+    "anteater",
+    "cache",
+    "last_known_good",
+    "code_fallback",
+    "explicit",
+    "conversation_pinned",
+]
 TermStatus = Literal[
     "available",
     "unavailable",
     "partial",
     "stale",
     "fallback",
+    "fresh",
     "error",
     "unknown",
 ]
@@ -149,4 +157,3 @@ class TermParseResult:
         if len(self.terms) > 1:
             return "multi"
         return "none"
-

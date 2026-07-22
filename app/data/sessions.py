@@ -44,6 +44,7 @@ from typing import Optional, Any
 MEMORY_ROOT = Path("data/memory")
 SESSION_ID_PREFIX = "sess_"
 SESSION_ID_BYTES = 3                  # 6 hex chars → 16M possibilities
+TERM_METADATA_MIGRATION_VERSION = 1
 
 
 # ── Exceptions ───────────────────────────────────────────
@@ -208,6 +209,10 @@ def create_session(
         "user_id":               user_id,
         "title":                 title or "New session",
         "term_scope":            term_scope,
+        "term_mode":             "auto",
+        "term_source":           "automatic",
+        "term_updated_at":       now,
+        "term_migration_version": TERM_METADATA_MIGRATION_VERSION,
         "created_at":            now,
         "last_active_at":        now,
         "turn_count":            0,
@@ -218,6 +223,42 @@ def create_session(
     _write_json(_meta_path(user_id, session_id), meta)
     _write_json(_state_path(user_id, session_id), _default_session_state(term_scope))
     return session_id
+
+
+def migrate_term_metadata(memory_root: Optional[Path] = None) -> dict:
+    """Idempotently mark every pre-M13 conversation as automatic.
+
+    Legacy ``term_scope`` is retained only as compatibility data; because
+    ``term_mode`` is auto, it is never interpreted as a user pin.
+    """
+    root = Path(memory_root) if memory_root is not None else MEMORY_ROOT
+    migrated = 0
+    skipped = 0
+    failed = 0
+    for meta_path in root.glob("*/sessions/sess_*/meta.json"):
+        raw = _read_json(meta_path)
+        if not isinstance(raw, dict):
+            failed += 1
+            continue
+        if raw.get("term_migration_version") == TERM_METADATA_MIGRATION_VERSION:
+            skipped += 1
+            continue
+        updated = dict(raw)
+        updated.update(
+            {
+                "term_mode": "auto",
+                "term_source": "migration",
+                "term_updated_at": _now_iso(),
+                "term_migration_version": TERM_METADATA_MIGRATION_VERSION,
+            }
+        )
+        try:
+            _write_json(meta_path, updated)
+        except OSError:
+            failed += 1
+            continue
+        migrated += 1
+    return {"migrated": migrated, "skipped": skipped, "failed": failed}
 
 
 def get_session_meta(user_id: str, session_id: str) -> dict:

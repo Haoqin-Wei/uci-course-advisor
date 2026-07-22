@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Memory provider self-initializes per session on first request.
+    from app.data.sessions import migrate_term_metadata
+    migrate_term_metadata()
     # Warm the Anteater all-courses cache in the background so the
     # first user to hit Step 4 of the wizard doesn't pay a ~40s wait
     # for the ~90-page cursor-paginated fetch.
