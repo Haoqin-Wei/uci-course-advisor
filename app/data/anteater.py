@@ -32,18 +32,65 @@ from __future__ import annotations
 import logging
 import os
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Generic, Literal, Optional, TypeVar
 
 import requests
 
 from app import observability
+from app.terms import TermKey
 
 logger = logging.getLogger(__name__)
 
 ANTEATER_BASE_URL = "https://anteaterapi.com/v2/rest"
 REQUEST_TIMEOUT_S = 12
 LIVE_WEBSOC_TTL_SECONDS = 5 * 60
+CALENDAR_ALL_URL = f"{ANTEATER_BASE_URL}/calendar/all"
+WEBSOC_TERMS_URL = f"{ANTEATER_BASE_URL}/websoc/terms"
+WEBSOC_URL = f"{ANTEATER_BASE_URL}/websoc"
+
+T = TypeVar("T")
+AnteaterResultStatus = Literal[
+    "ok",
+    "timeout",
+    "network_error",
+    "non_200",
+    "invalid_json",
+    "api_error",
+    "schema_error",
+]
+
+
+@dataclass(frozen=True)
+class AnteaterResult(Generic[T]):
+    """Structured transport/schema result for sync-sensitive endpoints."""
+
+    status: AnteaterResultStatus
+    url: str
+    checked_at: str
+    data: Optional[T] = None
+    error: Optional[str] = None
+    http_status: Optional[int] = None
+    content_length: Optional[int] = None
+
+    @property
+    def ok(self) -> bool:
+        return self.status == "ok"
+
+
+@dataclass(frozen=True)
+class TermAvailabilityResult:
+    term: TermKey
+    available: bool
+    course_count: int
+    section_count: int
+    status: AnteaterResultStatus
+    source_url: str
+    checked_at: str
+    error: Optional[str] = None
+    http_status: Optional[int] = None
+    content_length: Optional[int] = None
 
 # ── In-process cache ────────────────────────────────────
 # Keyed by request shape; values are the parsed `data` field from the
@@ -103,6 +150,105 @@ def _get_json(url: str, params: Optional[dict] = None) -> Optional[dict]:
     return body
 
 
+def _get_json_result(url: str, params: Optional[dict] = None) -> AnteaterResult[Any]:
+    """GET an Anteater envelope without collapsing distinct failure modes."""
+    checked_at = _utc_now()
+    try:
+        response = requests.get(
+            url,
+            params=params,
+            headers=_headers(),
+            timeout=REQUEST_TIMEOUT_S,
+        )
+    except requests.Timeout as exc:
+        observability.increment("anteater.request", endpoint=url, result="timeout")
+        logger.warning("Anteater timeout (%s %s): %s", url, params, exc)
+        return AnteaterResult("timeout", url, checked_at, error=str(exc))
+    except requests.RequestException as exc:
+        observability.increment("anteater.request", endpoint=url, result="network_error")
+        logger.warning("Anteater request failed (%s %s): %s", url, params, exc)
+        return AnteaterResult("network_error", url, checked_at, error=str(exc))
+
+    content_length = len(response.content or b"")
+    if response.status_code != 200:
+        observability.increment(
+            "anteater.request",
+            endpoint=url,
+            result="non_200",
+            status=response.status_code,
+        )
+        logger.warning(
+            "Anteater non-200 endpoint=%s status=%s content_length=%s",
+            url,
+            response.status_code,
+            content_length,
+        )
+        return AnteaterResult(
+            "non_200",
+            url,
+            checked_at,
+            error=f"HTTP {response.status_code}",
+            http_status=response.status_code,
+            content_length=content_length,
+        )
+    try:
+        body = response.json()
+    except ValueError as exc:
+        observability.increment("anteater.request", endpoint=url, result="invalid_json")
+        logger.warning(
+            "Anteater invalid JSON endpoint=%s content_length=%s",
+            url,
+            content_length,
+        )
+        return AnteaterResult(
+            "invalid_json",
+            url,
+            checked_at,
+            error=str(exc),
+            http_status=response.status_code,
+            content_length=content_length,
+        )
+    if not isinstance(body, dict):
+        return AnteaterResult(
+            "schema_error",
+            url,
+            checked_at,
+            error="response envelope must be an object",
+            http_status=response.status_code,
+            content_length=content_length,
+        )
+    if body.get("ok") is not True:
+        message = str(body.get("message") or "Anteater returned ok=false")
+        observability.increment("anteater.request", endpoint=url, result="api_error")
+        logger.warning("Anteater ok=false endpoint=%s message=%s", url, message[:200])
+        return AnteaterResult(
+            "api_error",
+            url,
+            checked_at,
+            error=message,
+            http_status=response.status_code,
+            content_length=content_length,
+        )
+    if "data" not in body:
+        return AnteaterResult(
+            "schema_error",
+            url,
+            checked_at,
+            error="response envelope is missing data",
+            http_status=response.status_code,
+            content_length=content_length,
+        )
+    observability.increment("anteater.request", endpoint=url, result="ok")
+    return AnteaterResult(
+        "ok",
+        url,
+        checked_at,
+        data=body["data"],
+        http_status=response.status_code,
+        content_length=content_length,
+    )
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -115,6 +261,115 @@ def _flatten_websoc_sections(data: dict) -> list[dict]:
                 for sec in course.get("sections", []):
                     flat.append(sec)
     return flat
+
+
+def _websoc_counts(data: dict) -> tuple[int, int]:
+    course_count = 0
+    section_count = 0
+    for school in data.get("schools", []):
+        if not isinstance(school, dict):
+            continue
+        for department in school.get("departments", []):
+            if not isinstance(department, dict):
+                continue
+            for course in department.get("courses", []):
+                if not isinstance(course, dict):
+                    continue
+                course_count += 1
+                sections = course.get("sections")
+                if isinstance(sections, list):
+                    section_count += sum(isinstance(section, dict) for section in sections)
+    return course_count, section_count
+
+
+# ── Automatic-term sync endpoints ──────────────────────
+
+def fetch_calendar_all() -> AnteaterResult[list[dict]]:
+    result = _get_json_result(CALENDAR_ALL_URL)
+    if not result.ok:
+        return result
+    if not isinstance(result.data, list) or not all(
+        isinstance(record, dict) for record in result.data
+    ):
+        return AnteaterResult(
+            "schema_error",
+            result.url,
+            result.checked_at,
+            error="calendar data must be a list of objects",
+            http_status=result.http_status,
+            content_length=result.content_length,
+        )
+    return result
+
+
+def fetch_websoc_terms() -> AnteaterResult[list[dict]]:
+    result = _get_json_result(WEBSOC_TERMS_URL)
+    if not result.ok:
+        return result
+    if not isinstance(result.data, list) or not all(
+        isinstance(record, dict)
+        and isinstance(record.get("shortName"), str)
+        and bool(record["shortName"].strip())
+        for record in result.data
+    ):
+        return AnteaterResult(
+            "schema_error",
+            result.url,
+            result.checked_at,
+            error="WebSoc terms must contain non-empty shortName values",
+            http_status=result.http_status,
+            content_length=result.content_length,
+        )
+    return result
+
+
+def fetch_full_websoc(term: TermKey) -> AnteaterResult[dict]:
+    result = _get_json_result(
+        WEBSOC_URL,
+        params={"year": str(term.year), "quarter": term.quarter},
+    )
+    if not result.ok:
+        return result
+    if not isinstance(result.data, dict) or not isinstance(result.data.get("schools"), list):
+        return AnteaterResult(
+            "schema_error",
+            result.url,
+            result.checked_at,
+            error="full WebSoc data must contain a schools list",
+            http_status=result.http_status,
+            content_length=result.content_length,
+        )
+    return result
+
+
+def check_term_data_availability(term: TermKey) -> TermAvailabilityResult:
+    """Probe a complete term; a shell is not considered available."""
+    result = fetch_full_websoc(term)
+    if not result.ok or not isinstance(result.data, dict):
+        return TermAvailabilityResult(
+            term=term,
+            available=False,
+            course_count=0,
+            section_count=0,
+            status=result.status,
+            source_url=result.url,
+            checked_at=result.checked_at,
+            error=result.error,
+            http_status=result.http_status,
+            content_length=result.content_length,
+        )
+    course_count, section_count = _websoc_counts(result.data)
+    return TermAvailabilityResult(
+        term=term,
+        available=course_count > 0 and section_count > 0,
+        course_count=course_count,
+        section_count=section_count,
+        status=result.status,
+        source_url=result.url,
+        checked_at=result.checked_at,
+        http_status=result.http_status,
+        content_length=result.content_length,
+    )
 
 
 # ── Courses ──────────────────────────────────────────────

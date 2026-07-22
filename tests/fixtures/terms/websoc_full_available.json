@@ -1,0 +1,24 @@
+{
+  "ok": true,
+  "data": {
+    "schools": [
+      {
+        "schoolName": "Information and Computer Sciences",
+        "departments": [
+          {
+            "deptCode": "COMPSCI",
+            "courses": [
+              {
+                "courseId": "COMPSCI161",
+                "courseNumber": "161",
+                "sections": [
+                  {"sectionCode": "36000", "sectionNum": "A", "sectionType": "Lec"}
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
