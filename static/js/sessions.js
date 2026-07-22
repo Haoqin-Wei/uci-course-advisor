@@ -92,6 +92,7 @@ function startNewChat() {
   if (currentAbortController) currentAbortController.abort();
 
   currentSessionId = null;
+  useAutomaticTermContext();
   resetChatToWelcome();
   // Highlight nothing in the sidebar
   document.querySelectorAll('.session-item.is-active')
@@ -107,7 +108,7 @@ function resetChatToWelcome() {
   scrollEl.innerHTML = `
     <div class="welcome-state" id="welcomeState">
       <div class="welcome-greeting" id="welcomeGreeting">What can I help with today?</div>
-      <div class="welcome-sub">Ask about courses, professors, or build your schedule for <span id="welcomeTerm">the selected term</span>.</div>
+      <div class="welcome-sub">Ask about courses, professors, or build your schedule for <span id="welcomeTerm">the current term</span>.</div>
       <div class="followups" id="welcomeFollowups">
         <button class="followup-chip" onclick="sendFollowup('Recommend courses for next quarter')">Recommend courses</button>
         <button class="followup-chip" onclick="sendFollowup('What are some easy GE courses?')">Easy GE courses</button>
@@ -118,16 +119,15 @@ function resetChatToWelcome() {
   scrollEl.classList.add('is-empty');
   // Re-apply the personalized greeting if we already have profile data.
   loadSidebar();
-  // Sync the term in the welcome sub-line to the current dropdown value.
+  // Sync the welcome sub-line to the current read-only context.
   updateWelcomeTerm();
 }
 
-/* Reflect the term selector value into the welcome-state sub-line. */
+/* Reflect the backend-resolved term into the welcome-state sub-line. */
 function updateWelcomeTerm() {
   const span = document.getElementById('welcomeTerm');
   if (!span) return;  // welcome state already replaced by chat messages
-  const term = document.getElementById('termSelect')?.value;
-  span.textContent = term || 'Terms unavailable';
+  span.textContent = currentTermContext?.term || 'the current term';
 }
 
 async function loadSession(sessionId) {
@@ -143,6 +143,10 @@ async function loadSession(sessionId) {
     }
     const data = await r.json();
     currentSessionId = sessionId;
+    // Update only after the selected session has resolved. Keeping the old
+    // label during the request prevents a pinned conversation from flashing
+    // back to the automatic term.
+    applyTermPayload(data);
 
     // Replace the chat scroll with the historical turns. Assistant
     // turns reuse the same card/followup/validation renderers as live

@@ -1,7 +1,8 @@
 """
 Read-only metadata endpoints consumed by the frontend on page load.
 
-  GET /api/terms          List available terms + default
+  GET /api/term-state     Backend-resolved automatic term and cache health
+  GET /api/terms          Legacy catalog coverage listing
   GET /api/system_prompt  Current default LLM system prompt
 
 These exist so the frontend doesn't have to hard-code terms or guess
@@ -23,9 +24,16 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 
 from app import config, observability
+from app.terms.service import get_term_resolution_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+@router.get("/api/term-state")
+def get_term_state() -> dict:
+    """Return the backend-resolved automatic term and cache health."""
+    return get_term_resolution_service().automatic_state()
 
 
 # ── /api/terms ───────────────────────────────────────────

@@ -71,7 +71,9 @@ input { font-family: inherit; }
   height: 22px;
   background: var(--border-default);
 }
-.term-select {
+.term-display {
+  flex: 0 0 224px;
+  min-width: 224px;
   background: var(--bg-panel-2);
   border: 1px solid var(--border-default);
   color: var(--text-secondary);
@@ -79,15 +81,10 @@ input { font-family: inherit; }
   font-weight: var(--weight-medium);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
-  cursor: pointer;
-  outline: none;
-  transition: all var(--transition);
+  line-height: 1.2;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
-.term-select:hover, .term-select:focus {
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-}
-.term-select option { background: var(--bg-panel); }
 .topbar-right {
   margin-left: auto;
   display: flex;
@@ -1951,6 +1948,34 @@ body.schedule-open .input-row {
   .schedule-panel.open { width: 420px; min-width: 360px; }
 }
 @media (max-width: 680px) {
+  .topbar {
+    padding: 0 var(--space-3);
+    gap: var(--space-2);
+  }
+  .topbar-brand {
+    gap: 0;
+    font-size: 0;
+  }
+  .topbar-brand svg {
+    width: 18px;
+    height: 18px;
+  }
+  .topbar-sep,
+  .topbar-status {
+    display: none;
+  }
+  .term-display {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-inline: var(--space-2);
+    font-size: 11px;
+  }
+  .topbar-right {
+    gap: var(--space-2);
+  }
+  .topbar-btn {
+    padding-inline: var(--space-2);
+  }
   .schedule-panel.open {
     width: 100% !important;
     min-width: 0;

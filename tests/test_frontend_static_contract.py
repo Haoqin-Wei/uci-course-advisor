@@ -43,6 +43,26 @@ def test_frontend_does_not_fake_term_or_duplicate_palette_tokens() -> None:
     assert "rgba(79, 93, 128, 0.12)']" not in text
 
 
+def test_frontend_term_is_read_only_and_backend_resolved() -> None:
+    text = _frontend_text()
+    index = (STATIC / "index.html").read_text(encoding="utf-8")
+    api_client = (STATIC / "js" / "api-client.js").read_text(encoding="utf-8")
+    chat = (STATIC / "js" / "chat.js").read_text(encoding="utf-8")
+    sessions = (STATIC / "js" / "sessions.js").read_text(encoding="utf-8")
+
+    assert 'id="termDisplay"' in index
+    assert 'aria-label="Current academic term"' in index
+    assert "termSelect" not in text
+    assert "term-select" not in text
+    assert "loadTerms(" not in text
+    assert "/api/term-state" in api_client
+    assert "· fallback" in api_client
+    assert "payload.term" not in chat
+    assert "applyTermPayload(event)" in chat
+    assert "useAutomaticTermContext()" in sessions
+    assert "applyTermPayload(data)" in sessions
+
+
 def test_frontend_assets_are_split_into_roadmap_modules() -> None:
     missing = [path.relative_to(ROOT).as_posix() for path in EXPECTED_FRONTEND_MODULES if not path.exists()]
     assert missing == []
@@ -122,7 +142,7 @@ def test_frontend_accessibility_and_mobile_contracts() -> None:
     index = (STATIC / "index.html").read_text(encoding="utf-8")
     css = (STATIC / "styles" / "components.css").read_text(encoding="utf-8")
 
-    assert 'aria-label="Select academic term"' in index
+    assert 'aria-label="Current academic term"' in index
     assert 'aria-label="Ask ZotAdvisor a question"' in index
     assert 'role="log"' in index
     assert 'aria-live="polite"' in index

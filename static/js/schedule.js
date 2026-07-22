@@ -20,7 +20,6 @@ async function _postAddCourse(courseId, section, confirmConflicts=false) {
       session_id: currentSessionId || '',
       course_id:  courseId,
       section:    section,
-      term:       document.getElementById('termSelect').value || null,
       confirm_conflicts: !!confirmConflicts,
     }),
   });
@@ -54,7 +53,6 @@ async function removeCourse(courseId, btnEl, section) {
       session_id: currentSessionId || '',
       course_id:  courseId,
       section:    section || null,   // section-aware remove (Phase E4 picker)
-      term:       document.getElementById('termSelect').value || null,
     }),
   });
   const data = await res.json();
@@ -106,10 +104,7 @@ async function clearSchedule() {
     const res = await fetch(`${API}/api/schedule/clear`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        session_id: currentSessionId || '',
-        term: document.getElementById('termSelect').value || null,
-      }),
+      body: JSON.stringify({session_id: currentSessionId || ''}),
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.reason || 'clear failed');

@@ -26,10 +26,8 @@ async function sendMessage(text) {
   const isNewSession = !currentSessionId;
 
   // Build request payload — send currentSessionId or "" for "new session"
-  const term = document.getElementById('termSelect').value || null;
   const customPrompt = getActivePrompt();
   const payload = { message: msg, session_id: currentSessionId || '' };
-  if (term) payload.term = term;
   if (customPrompt) payload.system_prompt = customPrompt;
 
   // Create the AI message bubble up-front; tokens stream into its body.
@@ -58,6 +56,7 @@ async function sendMessage(text) {
       },
       meta(event) {
         meta = event;
+        applyTermPayload(event);
         // Phase 3 R3 — backend's authoritative session_id. If this
         // is the first turn (we were sending "" before), capture
         // the new sess_XXXXXX so subsequent turns route to the

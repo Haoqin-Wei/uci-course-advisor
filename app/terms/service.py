@@ -13,8 +13,12 @@ from app.terms.clock import Clock, SystemClock
 from app.terms.models import ResolvedTerm, TermKey, TermParseError, TermParseResult
 from app.terms.parser import parse_term_key, parse_term_text
 from app.terms.store import TermStateSnapshot, TermStateStore
-from app.terms.sync import FALLBACK_AUTOMATIC_TERM, TermStateSynchronizer
-from app.terms.sync import get_term_synchronizer
+from app.terms.sync import (
+    FALLBACK_AUTOMATIC_TERM,
+    TermStateSynchronizer,
+    cache_age,
+    get_term_synchronizer,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -210,6 +214,45 @@ class TermResolutionService:
             force_available=True,
             source="conversation_pinned",
         )
+
+    def automatic_state(self) -> dict:
+        """Return the read-only operational view used by APIs and health."""
+        automatic = self.automatic_term()
+        state = self.store.load() or TermStateSnapshot()
+        age = cache_age(state, self.clock.now())
+        return {
+            "automatic_term": automatic.canonical_name,
+            "source": automatic.source,
+            "status": automatic.status,
+            "last_success_at": state.last_success_at,
+            "last_attempt_at": state.last_attempt_at,
+            "last_error": state.last_error,
+            "next_cutoff": (
+                automatic.week2_friday_cutoff.isoformat()
+                if automatic.week2_friday_cutoff
+                else None
+            ),
+            "checked_at": automatic.checked_at.isoformat(),
+            "cache_age_days": (
+                round(age.total_seconds() / 86_400, 3) if age is not None else None
+            ),
+            "availability": state.availability.get(automatic.canonical_name),
+            "transition": state.transition or None,
+            "fallback": (
+                automatic.source == "code_fallback"
+                or automatic.status == "fallback"
+            ),
+        }
+
+    def conversation_state(self, meta: dict) -> dict:
+        effective = self.effective_for_conversation(meta)
+        return {
+            "effective_term": effective.canonical_name,
+            "term_mode": meta.get("term_mode", "auto"),
+            "term_source": effective.source,
+            "term_status": effective.status,
+            "term_checked_at": effective.checked_at.isoformat(),
+        }
 
     def _resolved(
         self,

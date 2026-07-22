@@ -20,9 +20,8 @@
     ZotAdvisor
   </div>
   <div class="topbar-sep"></div>
-  <select class="term-select" id="termSelect" aria-label="Select academic term">
-    <option value="" disabled selected>Loading terms…</option>
-  </select>
+  <div class="term-display" id="termDisplay" aria-label="Current academic term"
+       aria-live="polite">Term: Loading…</div>
   <div class="topbar-right">
     <div class="topbar-status"><span class="dot"></span>System ready</div>
     <button class="topbar-btn topbar-icon-btn" id="settingsBtn"
@@ -124,7 +123,7 @@
     <div class="chat-scroll is-empty" id="chatScroll" role="log" aria-live="polite" aria-relevant="additions text">
       <div class="welcome-state" id="welcomeState">
         <div class="welcome-greeting" id="welcomeGreeting">What can I help with today?</div>
-        <div class="welcome-sub">Ask about courses, professors, or build your schedule for <span id="welcomeTerm">the selected term</span>.</div>
+        <div class="welcome-sub">Ask about courses, professors, or build your schedule for <span id="welcomeTerm">the current term</span>.</div>
         <div class="followups" id="welcomeFollowups">
           <button class="followup-chip" onclick="sendFollowup('Recommend courses for next quarter')">Recommend courses</button>
           <button class="followup-chip" onclick="sendFollowup('What are some easy GE courses?')">Easy GE courses</button>

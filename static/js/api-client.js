@@ -23,6 +23,8 @@ let USER_ID = 'demo_001';
 // null = guest (backend will route to demo_001).
 let currentAuthUser = null;
 let currentSessionId = null;
+let automaticTermContext = null;
+let currentTermContext = null;
 let addedCourses = new Set();
 // Per-section add state for Phase E4's section picker. Keys are
 // "<course_id>:<section_num>" — e.g. "CS161:A" for the Lec, "CS161:A1"
@@ -64,36 +66,40 @@ inputEl.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
 
-// Keep the welcome-state subtitle in sync when the user toggles term.
-// The select exists from page load; loadTerms() only populates options,
-// so attaching the listener immediately is safe.
-document.getElementById('termSelect')?.addEventListener('change', () => updateWelcomeTerm());
+function setTermContext(term, source, status) {
+  if (!term) return;
+  currentTermContext = {term, source: source || null, status: status || null};
+  const fallback = source === 'code_fallback' || status === 'fallback';
+  const label = `Term: ${term}${fallback ? ' · fallback' : ''}`;
+  const display = document.getElementById('termDisplay');
+  if (display) display.textContent = label;
+  updateWelcomeTerm();
+}
 
-/* ── Boot: populate terms dropdown + cache default prompt ── */
-async function loadTerms() {
-  const select = document.getElementById('termSelect');
+function applyTermPayload(payload) {
+  if (!payload) return;
+  const term = payload.effective_term || payload.automatic_term;
+  const source = payload.term_source || payload.source;
+  const status = payload.term_status || payload.status;
+  setTermContext(term, source, status);
+}
+
+function useAutomaticTermContext() {
+  if (automaticTermContext) applyTermPayload(automaticTermContext);
+}
+
+/* ── Boot: resolve the read-only automatic term + cache default prompt ── */
+async function loadTermState() {
   try {
-    const res = await fetch(`${API}/api/terms`);
+    const res = await fetch(`${API}/api/term-state`);
     if (!res.ok) throw new Error(`status ${res.status}`);
     const data = await res.json();
-    const terms = (data.terms || []).filter(t => t && typeof t === 'object' && t.name);
-    const def = data.default || (terms.length ? terms[0].name : '');
-    if (!terms.length) {
-      select.innerHTML = '<option value="" disabled selected>Terms unavailable</option>';
-      updateWelcomeTerm();
-      return;
-    }
-    select.innerHTML = terms.map(t => {
-      const status = t.coverage_status || 'unavailable';
-      const suffix = status === 'complete' ? '' : ` (${status})`;
-      return `<option value="${escAttr(t.name)}"${t.name === def ? ' selected' : ''}>${escHTML(t.name + suffix)}</option>`;
-    }
-    ).join('');
-    updateWelcomeTerm();  // dropdown now populated — refresh subtitle
+    automaticTermContext = data;
+    if (!currentSessionId) applyTermPayload(data);
   } catch (err) {
-    console.warn('Failed to load /api/terms', err);
-    select.innerHTML = '<option value="" disabled selected>Terms unavailable</option>';
-    updateWelcomeTerm();
+    console.warn('Failed to load /api/term-state', err);
+    const display = document.getElementById('termDisplay');
+    if (display) display.textContent = 'Term: Unavailable';
   }
 }
 

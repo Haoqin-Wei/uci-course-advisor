@@ -25,6 +25,72 @@ def test_terms_endpoint_uses_local_catalog(app_client):
     assert payload["manifest"]["schema_version"] == "uci-relational-v1"
 
 
+def test_term_state_endpoint_returns_backend_automatic_context(app_client):
+    response = app_client.get("/api/term-state")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["automatic_term"] == "2025 Spring"
+    assert payload["source"] == "anteater"
+    assert payload["status"] == "fresh"
+    assert payload["last_success_at"]
+    assert payload["next_cutoff"].startswith("2025-04-11T17:00:00")
+    assert payload["fallback"] is False
+
+
+def test_session_api_ignores_term_body_and_returns_resolved_context(app_client):
+    created = app_client.post(
+        "/api/sessions/demo_001",
+        json={"title": "Read-only term", "term_scope": "2099 Fall"},
+    )
+
+    assert created.status_code == 200
+    payload = created.json()
+    assert payload["term_scope"] is None
+    assert payload["effective_term"] == "2025 Spring"
+    assert payload["term_mode"] == "auto"
+    assert payload["term_source"] == "anteater"
+
+    restored = app_client.get(
+        f"/api/sessions/demo_001/{payload['session_id']}?include_turns=false"
+    )
+    assert restored.status_code == 200
+    assert restored.json()["effective_term"] == "2025 Spring"
+
+    listed = app_client.get("/api/sessions/demo_001")
+    assert listed.status_code == 200
+    listed_session = next(
+        item
+        for item in listed.json()["sessions"]
+        if item["session_id"] == payload["session_id"]
+    )
+    assert listed_session["effective_term"] == "2025 Spring"
+    assert listed_session["term_mode"] == "auto"
+
+
+def test_session_api_resolves_pinned_conversation_term(app_client):
+    from app.data import sessions
+
+    session_id = sessions.create_session("demo_001", title="Pinned term")
+    sessions.update_session_meta(
+        "demo_001",
+        session_id,
+        term_scope="2026 Fall",
+        term_mode="pinned",
+        term_source="explicit",
+    )
+
+    response = app_client.get(
+        f"/api/sessions/demo_001/{session_id}?include_turns=false"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["effective_term"] == "2026 Fall"
+    assert payload["term_mode"] == "pinned"
+    assert payload["term_source"] == "conversation_pinned"
+
+
 def test_non_streaming_chat_endpoint_is_removed(app_client):
     response = app_client.post(
         "/api/chat",

@@ -60,6 +60,9 @@ def test_health_ready_checks_catalog_and_memory(app_client):
     assert body["checks"]["catalog"]["ok"] is True
     assert body["checks"]["catalog"]["terms"] >= 1
     assert body["checks"]["memory"]["ok"] is True
+    assert body["checks"]["term_state"]["ok"] is True
+    assert body["checks"]["term_state"]["automatic_term"] == "2025 Spring"
+    assert body["checks"]["term_state"]["fallback"] is False
 
 
 def test_health_metrics_exposes_in_process_counters(app_client):
@@ -73,3 +76,5 @@ def test_health_metrics_exposes_in_process_counters(app_client):
     assert "http.requests{method=GET,route=/health/live,status=200}" in body[
         "metrics"
     ]["counters"]
+    assert body["term_state"]["automatic_term"] == "2025 Spring"
+    assert body["term_state"]["availability"]["section_count"] == 1

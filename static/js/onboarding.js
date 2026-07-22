@@ -884,7 +884,7 @@ async function wizardSave() {
   await bootCheckAuth();
   paintAuthChrome();
   await Promise.all([
-    loadTerms(),
+    loadTermState(),
     loadDefaultPromptFromAPI(),
     loadSidebar(),
     loadSessionList(),

@@ -7,7 +7,7 @@ Exceptions from the data layer are translated to HTTP status codes here.
     GET    /api/sessions/{user_id}                    list (optional ?limit=N)
     POST   /api/sessions/{user_id}                    create
     GET    /api/sessions/{user_id}/{session_id}       meta + turns
-    PATCH  /api/sessions/{user_id}/{session_id}       update title / term
+    PATCH  /api/sessions/{user_id}/{session_id}       update title
     DELETE /api/sessions/{user_id}/{session_id}       delete
 
 The path `{user_id}` is retained for URL compatibility with the existing
@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from app.auth.deps import current_user_optional
 from app.data import sessions as S
+from app.terms.service import get_term_resolution_service
 
 
 router = APIRouter()
@@ -32,13 +33,11 @@ router = APIRouter()
 # ── Request body models ─────────────────────────────────
 
 class CreateSessionBody(BaseModel):
-    title:      Optional[str] = Field(default=None, max_length=200)
-    term_scope: Optional[str] = Field(default=None, max_length=64)
+    title: Optional[str] = Field(default=None, max_length=200)
 
 
 class UpdateSessionBody(BaseModel):
-    title:      Optional[str] = Field(default=None, max_length=200)
-    term_scope: Optional[str] = Field(default=None, max_length=64)
+    title: Optional[str] = Field(default=None, max_length=200)
 
 
 # ── Exception translation helpers ───────────────────────
@@ -50,6 +49,12 @@ def _translate(exc: Exception) -> HTTPException:
     if isinstance(exc, S.SessionNotFound):
         return HTTPException(status_code=404, detail=f"Session not found: {exc}")
     return HTTPException(status_code=500, detail=f"Internal error: {exc}")
+
+
+def _with_resolved_term(meta: dict) -> dict:
+    out = dict(meta)
+    out.update(get_term_resolution_service().conversation_state(meta))
+    return out
 
 
 # ── Endpoints ───────────────────────────────────────────
@@ -71,7 +76,8 @@ def list_sessions(
     except Exception as e:
         raise _translate(e)
 
-    return {"user_id": real_user_id, "count": len(metas), "sessions": metas}
+    resolved = [_with_resolved_term(meta) for meta in metas]
+    return {"user_id": real_user_id, "count": len(resolved), "sessions": resolved}
 
 
 @router.post("/api/sessions/{user_id}")
@@ -85,13 +91,12 @@ def create_session(
         session_id = S.create_session(
             real_user_id,
             title=body.title,
-            term_scope=body.term_scope,
         )
         meta = S.get_session_meta(real_user_id, session_id)
     except Exception as e:
         raise _translate(e)
 
-    return meta
+    return _with_resolved_term(meta)
 
 
 @router.get("/api/sessions/{user_id}/{session_id}")
@@ -121,6 +126,7 @@ def get_session(
         raise _translate(e)
 
     out = dict(meta)
+    out.update(get_term_resolution_service().conversation_state(meta))
     if include_turns:
         out["turns"] = turns
     return out
@@ -131,7 +137,7 @@ def update_session(
     user_id: str, session_id: str, body: UpdateSessionBody,
     user: dict = Depends(current_user_optional),
 ):
-    """Partial update of session metadata (title / term_scope)."""
+    """Partial update of user-editable session metadata (title only)."""
     real_user_id = user["id"]
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     if not fields:
@@ -142,7 +148,7 @@ def update_session(
     except Exception as e:
         raise _translate(e)
 
-    return meta
+    return _with_resolved_term(meta)
 
 
 @router.delete("/api/sessions/{user_id}/{session_id}")

@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from app import observability
 from app.catalog.coverage import get_coverage_manifest
 from app.memory import get_memory_manager
+from app.terms.service import get_term_resolution_service
 
 router = APIRouter()
 
@@ -42,6 +43,18 @@ def ready():
     except Exception as exc:
         checks["memory"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
+    try:
+        term_state = get_term_resolution_service().automatic_state()
+        checks["term_state"] = {
+            "ok": bool(term_state.get("automatic_term")),
+            **term_state,
+        }
+    except Exception as exc:
+        checks["term_state"] = {
+            "ok": False,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
     ok = all(item.get("ok") for item in checks.values())
     payload = {
         "status": "ready" if ok else "not_ready",
@@ -56,4 +69,5 @@ def metrics() -> dict:
     return {
         "trace_id": observability.get_trace_id(),
         "metrics": observability.snapshot_metrics(),
+        "term_state": get_term_resolution_service().automatic_state(),
     }
