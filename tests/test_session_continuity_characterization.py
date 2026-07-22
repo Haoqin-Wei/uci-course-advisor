@@ -62,7 +62,7 @@ def test_new_empty_session_persists_turns_without_splitting_state_by_id(
     persistent_sid = first_meta["session_id"]
 
     assert persistent_sid.startswith("sess_")
-    assert first_meta["session_state"]["term"] == "Spring 2025"
+    assert first_meta["session_state"]["term"] == "2025 Spring"
     assert first_meta["session_state"]["major"] == "Computer Science"
     assert first_meta["session_state"]["selected_courses"] == ["ICS33"]
     assert first_meta["session_state"]["difficulty_preference"] == "easy"
@@ -87,7 +87,7 @@ def test_new_empty_session_persists_turns_without_splitting_state_by_id(
     second_meta = _meta_event(second_events)
 
     assert second_meta["session_id"] == persistent_sid
-    assert second_meta["session_state"]["term"] == "Spring 2025"
+    assert second_meta["session_state"]["term"] == "2025 Spring"
     assert second_meta["session_state"]["major"] == "Computer Science"
     assert second_meta["session_state"]["selected_courses"] == ["ICS33"]
     assert second_meta["session_state"]["difficulty_preference"] == "easy"

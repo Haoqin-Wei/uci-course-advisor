@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 from app.catalog.departments import DEPARTMENT_ALIASES
 from app.catalog.normalization import iter_course_mentions
-from app.catalog.term import Term
+from app.terms import parse_term_text
 
 
 @dataclass(frozen=True)
@@ -139,8 +139,9 @@ def build_primary_workflow_plan(route: dict[str, Any]) -> dict[str, Any]:
         return {"calls": [], "clarification": None}
 
     explicit_terms = route.get("explicit_terms") or []
-    if len(explicit_terms) != 1:
-        reason = "missing_term" if not explicit_terms else "ambiguous_term"
+    workflow_terms = explicit_terms or ([route.get("term")] if route.get("term") else [])
+    if len(workflow_terms) != 1:
+        reason = "missing_term" if not workflow_terms else "ambiguous_term"
         return {
             "calls": [],
             "clarification": {
@@ -188,13 +189,13 @@ def build_primary_workflow_plan(route: dict[str, Any]) -> dict[str, Any]:
                 "tool": "get_live_sections",
                 "args": {
                     "course_id": courses[0],
-                    "term": explicit_terms[0],
+                    "term": workflow_terms[0],
                 },
             }
         )
 
     restriction_args: dict[str, Any] = {
-        "term": explicit_terms[0],
+        "term": workflow_terms[0],
         "follow_links": True,
     }
     if departments:
@@ -266,17 +267,8 @@ def _extract_departments(text: str) -> list[str]:
 
 
 def _extract_terms(text: str) -> list[str]:
-    matches = re.findall(
-        r"(?:Fall|Winter|Spring|Summer)\s*\d{4}|\d{4}\s*(?:Fall|Winter|Spring|Summer)",
-        text or "",
-        flags=re.IGNORECASE,
-    )
-    terms: list[str] = []
-    for raw in matches:
-        parsed = Term.parse(re.sub(r"\s+", " ", raw).strip())
-        if parsed:
-            terms.append(parsed.display())
-    return list(dict.fromkeys(terms))
+    parsed = parse_term_text(text or "")
+    return [term.canonical_name for term in parsed.terms] if not parsed.error else []
 
 
 def _contains_token(text: str, token: str) -> bool:

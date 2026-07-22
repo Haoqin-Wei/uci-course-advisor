@@ -112,7 +112,7 @@ def test_stream_chat_passes_seeded_profile_in_memory_context_and_state(
     state = captured_stream_agent_context["state"]
 
     assert meta["session_id"] == seeded_user.session_id
-    assert meta["session_state"]["term"] == "Spring 2025"
+    assert meta["session_state"]["term"] == "2025 Spring"
 
     prompt_block = memory_context["system_prompt_block"]
     assert "PERSISTENT STUDENT PROFILE:" in prompt_block

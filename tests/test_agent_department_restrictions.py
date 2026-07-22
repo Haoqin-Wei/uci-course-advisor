@@ -84,7 +84,7 @@ def test_department_restrictions_dispatcher_fetches_websoc_and_linked_pages(
     assert result["restriction_type"] == "major_restriction"
     assert result["linked_pages"] == {"ok": True, "pages": []}
     assert calls == [
-        ("fetch", {"term": "Fall 2026", "department": "ART"}),
+        ("fetch", {"term": "2026 Fall", "department": "ART"}),
         ("deep_read", {"source_url": "https://www.reg.uci.edu/perl/WebSoc?Dept=ART"}),
     ]
 
@@ -127,7 +127,7 @@ def test_department_restrictions_dispatcher_resolves_department_from_course_id(
     assert result["department"] == "COMPSCI"
     assert result["course_id"] == "COMPSCI 161"
     assert result["department_resolved_from"] == "course_id"
-    assert calls == [{"term": "Fall 2026", "department": "COMPSCI"}]
+    assert calls == [{"term": "2026 Fall", "department": "COMPSCI"}]
 
 
 def test_department_restrictions_dispatcher_rejects_missing_department() -> None:
@@ -206,7 +206,7 @@ def test_agent_can_dispatch_department_restrictions_with_sse_chip(
 
     assert events[0]["type"] == "tool_call_start"
     assert events[0]["name"] == "get_department_restrictions"
-    assert events[0]["label"] == "读取 WebSoc 部门说明 · ART · Fall 2026"
+    assert events[0]["label"] == "读取 WebSoc 部门说明 · ART · 2026 Fall"
     assert events[0]["server_forced"] is True
     assert events[1]["ok"] is True
     assert events[1]["server_forced"] is True
@@ -225,16 +225,31 @@ def test_agent_can_dispatch_department_restrictions_with_sse_chip(
     client.assert_exhausted()
 
 
-def test_agent_asks_for_term_before_forced_restriction_workflow(monkeypatch) -> None:
+def test_agent_uses_effective_term_for_forced_restriction_workflow(monkeypatch) -> None:
+    calls: list[dict] = []
+
+    def fake_fetch(**kwargs):
+        calls.append(kwargs)
+        return {
+            "ok": True,
+            "term": kwargs["term"],
+            "department": kwargs["department"],
+            "fields": {},
+            "links": [],
+        }
+
     monkeypatch.setattr(
         agent_tools.websoc_workflow,
         "fetch_websoc_department_restrictions",
-        lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("workflow must not run without an explicit term")
-        ),
+        fake_fetch,
+    )
+    monkeypatch.setattr(
+        agent_tools.websoc_workflow,
+        "fetch_linked_official_pages",
+        lambda _result: {"ok": True, "pages": []},
     )
     messages = [{"role": "user", "content": "ART 专业限制什么时候解除？"}]
-    client = ScriptedLLMClient()
+    client = ScriptedLLMClient(text_response("No restriction date is published."))
 
     events = asyncio.run(
         _collect(
@@ -248,6 +263,8 @@ def test_agent_asks_for_term_before_forced_restriction_workflow(monkeypatch) -> 
         )
     )
 
-    assert events[-1]["clarification_required"] is True
-    assert "Fall 2026" in events[-1]["text"]
-    assert client.calls == []
+    assert events[0]["type"] == "tool_call_start"
+    assert events[0]["args"]["term"] == "2026 Spring"
+    assert calls == [{"term": "2026 Spring", "department": "ART"}]
+    assert events[-1]["type"] == "final"
+    client.assert_exhausted()

@@ -14,6 +14,7 @@ removed. This router now handles:
 import asyncio
 import logging
 import re
+from dataclasses import replace
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -48,6 +49,9 @@ from app.catalog.normalization import iter_course_mentions, parse_course_mention
 from app.validation import (
     ValidationContext, validate, decide_action, apply_report, write_log,
 )
+from app.terms import parse_term_key
+from app.terms.conversation import commit_conversation_resolution
+from app.terms.service import QueryTermResolution, get_term_resolution_service
 # ─────────────────────────────────────────────────────────
 
 logger = logging.getLogger(__name__)
@@ -469,6 +473,8 @@ def _validate_response(
     term_str: Optional[str],
     session_id: Optional[str],
     retrieval_performed: bool = False,
+    query_terms: Optional[list[str]] = None,
+    tool_terms: Optional[list[str]] = None,
 ) -> tuple[str, list[dict], Optional[dict]]:
     target_term = (
         Term.parse(term_str or "")
@@ -491,6 +497,9 @@ def _validate_response(
         cards=cards,
         user_message=user_message,
         retrieval_performed=retrieval_performed,
+        query_terms=query_terms or [],
+        tool_terms=tool_terms or [],
+        validation_term=term_str,
     )
     report = validate(ctx)
     action = decide_action(report)
@@ -498,6 +507,9 @@ def _validate_response(
     write_log(ctx, report, action, changed, session_id=session_id)
     validation_dict = report.to_dict()
     validation_dict["applied_action"] = action.value
+    validation_dict["query_terms"] = query_terms or []
+    validation_dict["tool_terms"] = tool_terms or []
+    validation_dict["validation_term"] = term_str
     logger.info(
         "[validation] target_term=%s overall=%s errors=%d warnings=%d action=%s",
         target_term.display(), report.overall,
@@ -516,12 +528,20 @@ def _validation_term_from_agent_meta(
     follow-up message. Validation must check the same term the tool queried.
     """
 
-    for call in reversed(agent_meta.get("successful_tool_calls") or []):
+    terms = _validation_terms_from_agent_meta(agent_meta)
+    return terms[-1] if terms else fallback_term
+
+
+def _validation_terms_from_agent_meta(agent_meta: dict) -> list[str]:
+    terms: list[str] = []
+    for call in agent_meta.get("successful_tool_calls") or []:
         args = call.get("args") if isinstance(call, dict) else None
-        parsed = Term.parse((args or {}).get("term") or "")
-        if parsed:
-            return parsed.display()
-    return fallback_term
+        parsed = parse_term_key(str((args or {}).get("term") or ""))
+        if parsed.kind == "single":
+            canonical = parsed.terms[0].canonical_name
+            if canonical not in terms:
+                terms.append(canonical)
+    return terms
 
 
 # ══════════════════════════════════════════════════════════
@@ -556,12 +576,11 @@ def _grounded_agent_fallback_reply(
     if course_reply:
         return course_reply
 
-    effective_term = term or state.get("term") or "the selected term"
     details = f" ({reason})" if reason else ""
     return (
         f"I can’t reach the agent right now{details}, so I won’t invent "
-        f"course recommendations or section details. Your current term is "
-        f"{effective_term}. Please try again, or ask about a specific course "
+        "course recommendations or section details. Please try again, or ask "
+        "about a specific course "
         f"and I’ll verify it against the local catalog when the agent is available."
     )
 
@@ -621,6 +640,7 @@ def _deterministic_single_course_fallback_reply(
     coverage = get_term_coverage(target_term)
     coverage_status = coverage.get("coverage_status") or "unknown"
     source_updated_at = coverage.get("updated_at") or "unknown"
+    term_label = target_term.display()
     if coverage_status in {"partial", "stale", "unavailable", "unknown"}:
         observability.increment("catalog.coverage_status", status=coverage_status)
         observability.log_event(
@@ -632,8 +652,6 @@ def _deterministic_single_course_fallback_reply(
             source="grounded_fallback",
             updated_at=source_updated_at,
         )
-    term_label = target_term.display()
-
     if not catalog:
         return (
             f"{prefix}\n\n"
@@ -791,10 +809,15 @@ async def _handle_agent(
                 ok = event.get("ok", True)
                 if ok and event.get("name"):
                     successful_tools.add(event["name"])
-                    successful_tool_calls.append({
+                    call_record = {
                         "name": event["name"],
                         "args": dict(event.get("args") or {}),
-                    })
+                    }
+                    if "term_data_available" in event:
+                        call_record["term_data_available"] = bool(
+                            event.get("term_data_available")
+                        )
+                    successful_tool_calls.append(call_record)
                 if not ok:
                     observability.increment("agent.tool_failures", tool=event.get("name"))
                 observability.log_event(
@@ -871,6 +894,8 @@ async def _handle_agent(
             elif t == "error":
                 # Mid-flight error — surface and stop. No fallback (we
                 # already showed partial output to the user).
+                if execution_meta is not None:
+                    execution_meta["error"] = True
                 await queue.put({
                     "type": "error",
                     "message": event.get("message", "agent error"),
@@ -879,6 +904,8 @@ async def _handle_agent(
         raise
     except Exception as e:
         logger.exception("[agent handler] failed: %s", e)
+        if execution_meta is not None:
+            execution_meta["error"] = True
         if not accumulated:
             fallback = _grounded_agent_fallback_reply(
                 user_message,
@@ -990,7 +1017,9 @@ async def _stream_chat(
             # demo_001 fallback for anonymous demo traffic).
 
             # ── Phase 3.3: resolve the request's session_id to a persistent one ──
-            persistent_sid = _resolve_session_id(req.session_id, user_id, req.term)
+            # ChatRequest.term is retained for wire compatibility only. Ordinary
+            # chat authority comes from conversation metadata + the resolver.
+            persistent_sid = _resolve_session_id(req.session_id, user_id, None)
             active_session_id = persistent_sid
 
             session = get_or_create_session(active_session_id, user_id=user_id)
@@ -1030,6 +1059,39 @@ async def _stream_chat(
                 decisions    = []
                 summary      = None
 
+            term_service = get_term_resolution_service()
+            query_resolution = term_service.resolve_message(req.message)
+            conversation_term = term_service.effective_for_conversation(session_meta)
+            query_terms = [term.canonical_name for term in query_resolution.terms]
+            query_term = conversation_term.canonical_name
+            term_resolution_reply: Optional[str] = None
+            if query_resolution.error is not None:
+                term_resolution_reply = (
+                    "I couldn't map that term unambiguously: "
+                    f"{query_resolution.error.message}. Please specify one canonical "
+                    "term such as 2026 Fall."
+                )
+            elif query_resolution.kind == "single":
+                requested_term = query_resolution.terms[0]
+                if requested_term.status == "unavailable":
+                    term_resolution_reply = (
+                        f"Data for {requested_term.canonical_name} has not been published "
+                        "with at least one course and section yet, so this conversation "
+                        "will stay on its current term."
+                    )
+                else:
+                    query_term = requested_term.canonical_name
+
+            if req.term:
+                observability.log_event(
+                    logger,
+                    logging.INFO,
+                    "frontend_term_ignored",
+                    request_term=req.term,
+                    resolved_term=query_term,
+                    session_id=persistent_sid,
+                )
+
             # Off-topic and clarification decisions are handled inside
             # the agent with recent_turns/session context. The old
             # pre-agent short-circuits were removed because they only
@@ -1037,10 +1099,12 @@ async def _stream_chat(
             # templates for valid continuations like "继续" / "yes".
 
             state = get_known_fields(active_session_id, user_id=user_id)
-            if req.term and req.term != state.get("term"):
-                update_session(active_session_id, {"term": req.term}, user_id=user_id)
-                state = get_known_fields(active_session_id, user_id=user_id)
-                logger.info("[stream term-sync] %r written", req.term)
+            state["term"] = query_term
+            state["effective_term"] = conversation_term.canonical_name
+            state["query_terms"] = query_terms
+            state["term_mode"] = session_meta.get("term_mode", "auto")
+            state["term_source"] = conversation_term.source
+            state["pending_schedule"] = session.get("pending_schedule", [])
 
             # ── Stream the LLM answer through on_token ──
             async def on_token(text: str):
@@ -1051,33 +1115,39 @@ async def _stream_chat(
             # return a deterministic grounded fallback from _handle_agent;
             # no legacy LLM recommendation path is started.
             agent_meta: dict = {}
-            agent_result = await _handle_agent(
-                req.message, state, memory_context,
-                user_id=user_id,
-                term=req.term or state.get("term"),
-                system_prompt=(
-                    req.system_prompt
-                    if config.allow_custom_system_prompt()
-                    else None
-                ),
-                queue=queue,
-                recent_turns=recent_turns,
-                decisions=decisions,
-                summary=summary,
-                execution_meta=agent_meta,
-            )
-            reply, cards, followups, validation_dict = agent_result
+            if term_resolution_reply is not None:
+                reply, cards, followups = term_resolution_reply, [], []
+                agent_meta["term_resolution_blocked"] = True
+                await queue.put({"type": "token", "text": reply})
+            else:
+                agent_result = await _handle_agent(
+                    req.message, state, memory_context,
+                    user_id=user_id,
+                    term=query_term,
+                    system_prompt=(
+                        req.system_prompt
+                        if config.allow_custom_system_prompt()
+                        else None
+                    ),
+                    queue=queue,
+                    recent_turns=recent_turns,
+                    decisions=decisions,
+                    summary=summary,
+                    execution_meta=agent_meta,
+                )
+                reply, cards, followups, validation_dict = agent_result
             retrieval_performed = bool(agent_meta.get("successful_tools"))
+            tool_terms = _validation_terms_from_agent_meta(agent_meta)
             validation_term = _validation_term_from_agent_meta(
                 agent_meta,
-                req.term or state.get("term"),
+                query_term,
             )
-            if validation_term and validation_term != (req.term or state.get("term")):
+            if validation_term and validation_term != query_term:
                 observability.log_event(
                     logger,
                     logging.INFO,
                     "validation_term_overridden",
-                    selected_term=req.term or state.get("term"),
+                    selected_term=query_term,
                     validation_term=validation_term,
                     reason="successful_tool_call",
                 )
@@ -1092,7 +1162,84 @@ async def _stream_chat(
                     term_str=validation_term,
                     session_id=active_session_id,
                     retrieval_performed=retrieval_performed,
+                    query_terms=query_terms,
+                    tool_terms=tool_terms,
                 )
+
+            validation_blocked = bool(
+                validation_dict
+                and validation_dict.get("applied_action") == "block"
+            )
+            committed_resolution = query_resolution
+            if query_resolution.kind == "single" and not query_resolution.all_available:
+                requested_name = query_resolution.terms[0].canonical_name
+                grounded_available = False
+                for call in agent_meta.get("successful_tool_calls") or []:
+                    parsed_call_term = parse_term_key(
+                        str((call.get("args") or {}).get("term") or "")
+                    )
+                    if (
+                        call.get("term_data_available")
+                        and parsed_call_term.kind == "single"
+                        and parsed_call_term.terms[0].canonical_name == requested_name
+                    ):
+                        grounded_available = True
+                        break
+                if grounded_available:
+                    grounded_term = replace(
+                        query_resolution.terms[0],
+                        data_available=True,
+                        status="available",
+                    )
+                    committed_resolution = QueryTermResolution(
+                        query_resolution.automatic,
+                        query_resolution.parsed,
+                        (grounded_term,),
+                    )
+            original_term_mode = session_meta.get("term_mode", "auto")
+            original_term_scope = session_meta.get("term_scope")
+            final_session_meta = commit_conversation_resolution(
+                user_id,
+                persistent_sid,
+                committed_resolution,
+                answer_succeeded=bool(reply) and not agent_meta.get("error", False),
+                validation_blocked=validation_blocked,
+            )
+            final_effective_term = term_service.effective_for_conversation(final_session_meta)
+            persisted_state = update_session(
+                active_session_id,
+                {"term": final_effective_term.canonical_name},
+                user_id=user_id,
+            )
+            state.update(persisted_state)
+            state["term"] = final_effective_term.canonical_name
+            state["effective_term"] = final_effective_term.canonical_name
+            state["query_terms"] = query_terms
+            state["term_mode"] = final_session_meta.get("term_mode", "auto")
+            state["term_source"] = final_effective_term.source
+            state["pending_schedule"] = session.get("pending_schedule", [])
+            term_update = {
+                "changed": (
+                    original_term_mode != final_session_meta.get("term_mode")
+                    or original_term_scope != final_session_meta.get("term_scope")
+                ),
+                "mode": final_session_meta.get("term_mode", "auto"),
+                "scope": final_session_meta.get("term_scope"),
+            }
+
+            observability.log_event(
+                logger,
+                logging.INFO,
+                "term_resolution",
+                session_id=persistent_sid,
+                resolved_term=final_effective_term.canonical_name,
+                mode=final_session_meta.get("term_mode", "auto"),
+                source=final_effective_term.source,
+                explicit_terms=query_terms,
+                tool_terms=tool_terms,
+                validation_term=validation_term,
+                persisted=term_update["changed"],
+            )
 
             mem.sync_turn(user_id, req.message, reply, active_session_id)
 
@@ -1120,6 +1267,12 @@ async def _stream_chat(
                 "final_answer": reply,
                 "session_state": state,
                 "pending_schedule": session.get("pending_schedule", []),
+                "effective_term": final_effective_term.canonical_name,
+                "query_terms": query_terms,
+                "term_mode": final_session_meta.get("term_mode", "auto"),
+                "term_source": final_effective_term.source,
+                "term_status": final_effective_term.status,
+                "term_update": term_update,
             })
         except asyncio.CancelledError:
             logger.info("[stream] producer cancelled (client disconnected)")

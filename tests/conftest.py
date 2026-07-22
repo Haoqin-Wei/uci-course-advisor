@@ -4,6 +4,7 @@ import csv
 import os
 import shutil
 import socket
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -45,6 +46,7 @@ class RuntimePaths:
     professor_summaries: Path
     logs: Path
     deep_search_history_db: Path
+    term_state: Path
 
 
 @dataclass(frozen=True)
@@ -80,6 +82,7 @@ def runtime_paths(tmp_path: Path) -> RuntimePaths:
         professor_summaries=root / "professor_summaries",
         logs=root / "logs",
         deep_search_history_db=root / "deep_search_history.db",
+        term_state=root / "term_state.json",
     )
 
 
@@ -170,6 +173,7 @@ def isolated_test_environment(
         "AUTH_SESSION_SECRET",
         "test-only-session-secret-not-for-production",
     )
+    monkeypatch.setenv("TERM_STATE_PATH", str(runtime_paths.term_state))
 
     if not live_test:
         monkeypatch.setattr(requests.sessions.Session, "request", _blocked_network)
@@ -179,6 +183,7 @@ def isolated_test_environment(
     from app import observability
     from app.auth import rate_limit, security, store
     from app.data import deep_search_history, grades, professor_summary, sessions
+    from app.terms.store import JsonFileTermStateStore, TermStateSnapshot
     from app.validation import log as validation_log
 
     monkeypatch.setattr(store, "DB_PATH", runtime_paths.auth_db)
@@ -203,6 +208,29 @@ def isolated_test_environment(
         deep_search_history,
         "DB_PATH",
         runtime_paths.deep_search_history_db,
+    )
+    JsonFileTermStateStore(runtime_paths.term_state).save(
+        TermStateSnapshot(
+            automatic_term="2025 Spring",
+            source="anteater",
+            status="fresh",
+            last_success_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            calendar_records=[
+                {
+                    "year": "2025",
+                    "quarter": "Spring",
+                    "instructionStart": "2025-03-31",
+                }
+            ],
+            websoc_terms=["2025 Spring"],
+            availability={
+                "2025 Spring": {
+                    "available": True,
+                    "course_count": 1,
+                    "section_count": 1,
+                }
+            },
+        )
     )
 
     from app.llm import adapter

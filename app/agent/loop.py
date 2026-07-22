@@ -205,6 +205,22 @@ def _summarize_tool_result(result: dict) -> dict:
     return {k: v for k, v in summary.items() if v is not None}
 
 
+def _result_has_term_data(result: dict) -> bool:
+    """Whether a term-scoped tool found at least one course with a section."""
+    if not isinstance(result, dict) or result.get("found") is False:
+        return False
+    sections = result.get("sections")
+    if isinstance(sections, list) and sections:
+        return True
+    courses = result.get("courses")
+    if isinstance(courses, list):
+        return any(
+            isinstance(course, dict) and bool(course.get("sections"))
+            for course in courses
+        )
+    return int(result.get("staged_count") or 0) > 0
+
+
 def _latest_user_content(messages: list[dict]) -> str:
     for message in reversed(messages):
         if message.get("role") == "user":
@@ -426,7 +442,11 @@ async def _run_loop(
     primary_result_records: list[dict] = []
     for primary_call in primary_plan.get("calls") or []:
         tool_name = primary_call["tool"]
-        args = primary_call["args"]
+        args, term_error = agent_tools.resolve_tool_arguments(
+            tool_name,
+            primary_call["args"],
+            context=tool_context,
+        )
         label = agent_tools.humanize_tool_call(tool_name, args)
         total_tool_calls += 1
         observability.log_event(
@@ -446,7 +466,11 @@ async def _run_loop(
             "label": label,
             "server_forced": True,
         }
-        result = agent_tools.dispatch(tool_name, args, context=tool_context)
+        result = (
+            {"error": f"invalid term for {tool_name}: {term_error}"}
+            if term_error
+            else agent_tools.dispatch(tool_name, args, context=tool_context)
+        )
         if asyncio.iscoroutine(result):
             result = await result
         tool_ok = "error" not in result and result.get("ok", True) is not False
@@ -475,6 +499,8 @@ async def _run_loop(
             "name": tool_name,
             "ok": tool_ok,
             "label": label,
+            "args": args,
+            "term_data_available": _result_has_term_data(result),
             "server_forced": True,
         }
 
@@ -656,6 +682,12 @@ async def _run_loop(
                                tc["name"], tc["arguments"], e)
                 args = {}
 
+            args, term_error = agent_tools.resolve_tool_arguments(
+                tc["name"],
+                args,
+                context=tool_context,
+            )
+
             label = agent_tools.humanize_tool_call(tc["name"], args)
             logger.info("[agent] iter=%d tool[%d/%d] %s args=%s",
                         iteration, total_tool_calls + 1, MAX_TOTAL_TOOLS,
@@ -675,7 +707,9 @@ async def _run_loop(
                    "name": tc["name"], "args": args, "label": label}
 
             forced_cache = tool_context.get("_forced_workflow_results") or {}
-            if tc["name"] in forced_cache:
+            if term_error:
+                result = {"error": f"invalid term for {tc['name']}: {term_error}"}
+            elif tc["name"] in forced_cache:
                 result = forced_cache[tc["name"]]
                 observability.log_event(
                     logger,
@@ -722,7 +756,8 @@ async def _run_loop(
                    "name": tc["name"],
                    "ok": tool_ok,
                    "label": label,
-                   "args": args}
+                   "args": args,
+                   "term_data_available": _result_has_term_data(result)}
 
             # Side-channel: propose_recommendation stages structured
             # cards on the tool_context dict (the LLM-visible return is

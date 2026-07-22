@@ -45,8 +45,8 @@ def test_router_classifies_department_restrictions_and_department_alias() -> Non
     assert route["intents"] == ["department_restriction"]
     assert route["recommended_tools"] == ["get_department_restrictions"]
     assert route["departments"] == ["I&C SCI"]
-    assert route["explicit_terms"] == ["Fall 2026"]
-    assert route["term"] == "Fall 2026"
+    assert route["explicit_terms"] == ["2026 Fall"]
+    assert route["term"] == "2026 Fall"
     assert route["selected_term"] == "Spring 2026"
 
     plan = build_primary_workflow_plan(route)
@@ -56,7 +56,7 @@ def test_router_classifies_department_restrictions_and_department_alias() -> Non
             "workflow_id": "websoc_department_restrictions",
             "tool": "get_department_restrictions",
             "args": {
-                "term": "Fall 2026",
+                "term": "2026 Fall",
                 "follow_links": True,
                 "department": "I&C SCI",
             },
@@ -64,12 +64,12 @@ def test_router_classifies_department_restrictions_and_department_alias() -> Non
     ]
 
 
-def test_department_restriction_plan_requires_explicit_term() -> None:
+def test_department_restriction_plan_uses_resolved_effective_term() -> None:
     route = route_solution("ART 专业限制什么时候解除？", term="Spring 2026")
     plan = build_primary_workflow_plan(route)
 
-    assert plan["calls"] == []
-    assert plan["clarification"]["reason"] == "missing_term"
+    assert plan["clarification"] is None
+    assert plan["calls"][0]["args"]["term"] == "Spring 2026"
 
 
 @pytest.mark.parametrize(

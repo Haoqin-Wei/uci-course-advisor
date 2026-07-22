@@ -30,6 +30,7 @@ from app.catalog.normalization import parse_course_mention
 from app.data import db
 from app.data import web_search as web_search_data
 from app.data import websoc_workflow
+from app.terms import parse_term_key
 from app.scheduling import (
     resolve_pending_schedule_sections,
     sections_overlap,
@@ -84,7 +85,7 @@ TOOL_SCHEMAS: list[dict] = [
                     "course_id": {"type": "string"},
                     "term": {
                         "type": "string",
-                        "description": "Required. Form: 'Spring 2026', 'Fall 2026', 'Spring 2025'.",
+                        "description": "Required canonical form: '2026 Spring', '2026 Fall', '2025 Spring'.",
                     },
                 },
                 "required": ["course_id", "term"],
@@ -115,7 +116,7 @@ TOOL_SCHEMAS: list[dict] = [
                     },
                     "term": {
                         "type": "string",
-                        "description": "Required. Form: 'Spring 2026', 'Fall 2026', 'Spring 2025'.",
+                        "description": "Required canonical form: '2026 Spring', '2026 Fall', '2025 Spring'.",
                     },
                     "section_codes": {
                         "type": "array",
@@ -1869,6 +1870,33 @@ DISPATCH: dict[str, Callable[..., dict]] = {
 #  Dispatch entry point
 # ══════════════════════════════════════════════════════════
 
+TERM_SCOPED_TOOLS = {
+    "get_sections",
+    "get_live_sections",
+    "search_courses",
+    "check_section_conflict",
+    "get_department_restrictions",
+    "propose_recommendation",
+}
+
+
+def resolve_tool_arguments(name: str, args: dict, *, context: dict) -> tuple[dict, str | None]:
+    """Inject and canonicalize the deterministic term before dispatch."""
+    resolved = dict(args or {})
+    if name not in TERM_SCOPED_TOOLS:
+        return resolved, None
+    raw_term = resolved.get("term") or context.get("term")
+    parsed = parse_term_key(str(raw_term or ""))
+    if parsed.kind != "single":
+        message = (
+            parsed.error.message
+            if parsed.error is not None
+            else "term is required for this tool"
+        )
+        return resolved, message
+    resolved["term"] = parsed.terms[0].canonical_name
+    return resolved, None
+
 def dispatch(name: str, args: dict, *, context: dict):
     """Run a tool by name.
 
@@ -1891,6 +1919,18 @@ def dispatch(name: str, args: dict, *, context: dict):
             reason="unknown_tool",
         )
         return {"error": f"unknown tool: {name}"}
+    args, term_error = resolve_tool_arguments(name, args, context=context)
+    if term_error:
+        observability.increment("agent.tool_failures", tool=name)
+        observability.log_event(
+            logger,
+            logging.WARNING,
+            "agent_tool_failure",
+            tool=name,
+            reason="invalid_term",
+            error=term_error,
+        )
+        return {"error": f"invalid term for {name}: {term_error}"}
     try:
         sig = inspect.signature(fn)
         if "context" in sig.parameters:

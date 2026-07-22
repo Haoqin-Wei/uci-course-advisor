@@ -68,7 +68,7 @@ def test_get_live_sections_dispatcher_uses_selected_term(monkeypatch) -> None:
     assert calls == [
         {
             "course_id": "CS161",
-            "term": "Fall 2026",
+            "term": "2026 Fall",
             "section_codes": ["34070"],
             "force_refresh": True,
         }
@@ -148,7 +148,7 @@ def test_agent_can_dispatch_live_sections_with_sse_chip(monkeypatch) -> None:
 
     assert events[0]["type"] == "tool_call_start"
     assert events[0]["name"] == "get_live_sections"
-    assert events[0]["label"] == "实时查询 WebSoc · CS161 · Fall 2026"
+    assert events[0]["label"] == "实时查询 WebSoc · CS161 · 2026 Fall"
     assert events[1]["ok"] is True
     tool_payload = json.loads(messages[2]["content"])
     assert tool_payload["source"] == "live_anteater_websoc"

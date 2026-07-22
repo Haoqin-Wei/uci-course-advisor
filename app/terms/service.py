@@ -14,6 +14,7 @@ from app.terms.models import ResolvedTerm, TermKey, TermParseError, TermParseRes
 from app.terms.parser import parse_term_key, parse_term_text
 from app.terms.store import TermStateSnapshot, TermStateStore
 from app.terms.sync import FALLBACK_AUTOMATIC_TERM, TermStateSynchronizer
+from app.terms.sync import get_term_synchronizer
 
 
 logger = logging.getLogger(__name__)
@@ -173,7 +174,11 @@ class TermResolutionService:
         parsed = parse_term_text(text, automatic_term=automatic.key)
         if parsed.error:
             return QueryTermResolution(automatic, parsed)
-        terms = tuple(self._resolved(key, self.store.load() or TermStateSnapshot()) for key in parsed.terms)
+        state = self.store.load() or TermStateSnapshot()
+        terms = tuple(
+            automatic if key == automatic.key else self._resolved(key, state)
+            for key in parsed.terms
+        )
         return QueryTermResolution(automatic, parsed, terms)
 
     def resolve_explicit(self, value: str) -> QueryTermResolution:
@@ -185,7 +190,10 @@ class TermResolutionService:
         return QueryTermResolution(
             automatic,
             parsed,
-            tuple(self._resolved(key, state) for key in parsed.terms),
+            tuple(
+                automatic if key == automatic.key else self._resolved(key, state)
+                for key in parsed.terms
+            ),
         )
 
     def effective_for_conversation(self, meta: dict) -> ResolvedTerm:
@@ -213,11 +221,16 @@ class TermResolutionService:
     ) -> ResolvedTerm:
         records, duplicates = self._calendar_records(state)
         record = None if key in duplicates else records.get(key)
-        availability = state.availability.get(key.canonical_name) or {}
+        availability_record = state.availability.get(key.canonical_name)
+        availability = availability_record or {}
         available = availability.get("available") is True
         if key == self._key_or_fallback(state.automatic_term):
             available = available or force_available
-        status = state.status if available else "unavailable"
+        status = (
+            state.status
+            if available
+            else "unavailable" if availability_record is not None else "unknown"
+        )
         return ResolvedTerm.from_key(
             key,
             instruction_start=_instruction_start(record),
@@ -249,3 +262,16 @@ class TermResolutionService:
         parsed = parse_term_key(str(value or ""))
         return parsed.terms[0] if parsed.kind == "single" else self.fallback_term
 
+
+_service: Optional[TermResolutionService] = None
+
+
+def get_term_resolution_service() -> TermResolutionService:
+    global _service
+    synchronizer = get_term_synchronizer()
+    if _service is None or _service.store is not synchronizer.store:
+        _service = TermResolutionService(
+            synchronizer.store,
+            synchronizer=synchronizer,
+        )
+    return _service

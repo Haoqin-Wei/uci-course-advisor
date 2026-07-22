@@ -23,7 +23,7 @@ def test_validation_term_prefers_successful_tool_term_over_ui_term():
     assert chat_router._validation_term_from_agent_meta(
         agent_meta,
         "Spring 2026",
-    ) == "Fall 2026"
+    ) == "2026 Fall"
 
 
 def test_validation_term_ignores_failed_or_missing_tool_metadata():

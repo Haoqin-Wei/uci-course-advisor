@@ -105,6 +105,9 @@ class ValidationContext:
     cards: list[dict] = field(default_factory=list)
     user_message: str = ""
     retrieval_performed: bool = False
+    query_terms: list[str] = field(default_factory=list)
+    tool_terms: list[str] = field(default_factory=list)
+    validation_term: Optional[str] = None
 
     @property
     def retrieved_primary_refs(self) -> set[CourseRef]:
