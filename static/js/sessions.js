@@ -93,6 +93,10 @@ function startNewChat() {
 
   currentSessionId = null;
   useAutomaticTermContext();
+  pendingScheduleEntries = [];
+  scheduleEvents = [];
+  _hydrateScheduleState();
+  renderScheduleGrid();
   resetChatToWelcome();
   // Highlight nothing in the sidebar
   document.querySelectorAll('.session-item.is-active')
@@ -175,6 +179,7 @@ async function loadSession(sessionId) {
         scrollEl.scrollTop = scrollEl.scrollHeight;
       });
     }
+    await loadScheduleForSession(sessionId);
     // Refresh sidebar list to update which item shows .is-active
     loadSessionList();
   } catch (err) {

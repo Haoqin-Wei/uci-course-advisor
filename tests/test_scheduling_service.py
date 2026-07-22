@@ -96,6 +96,19 @@ def test_scheduling_service_marks_tba_or_missing_times_as_unknown():
     assert sections_overlap(known, tba) is False
 
 
+def test_scheduling_service_treats_overlaps_in_different_terms_as_clear():
+    spring = {
+        "term": "2025 Spring",
+        "days": "MW",
+        "start_time": "09:00",
+        "end_time": "10:20",
+    }
+    fall = {**spring, "term": "2025 Fall"}
+
+    assert section_time_status(spring, fall) == "clear"
+    assert sections_overlap(spring, fall) is False
+
+
 def test_scheduling_service_finds_and_summarizes_known_conflicts():
     candidate_sections = [
         {

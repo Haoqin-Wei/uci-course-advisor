@@ -26,16 +26,22 @@ let currentSessionId = null;
 let automaticTermContext = null;
 let currentTermContext = null;
 let addedCourses = new Set();
-// Per-section add state for Phase E4's section picker. Keys are
-// "<course_id>:<section_num>" — e.g. "CS161:A" for the Lec, "CS161:A1"
-// for a Discussion. Distinct from addedCourses (course-level) which
-// the schedule rail's counter still uses. A course is in addedCourses
-// as long as ANY of its sections is in addedSectionKeys.
+// Schedule identity is term-scoped. This keeps the same course/section in
+// two quarters independently addable and removable.
 let addedSectionKeys = new Set();
+let pendingScheduleEntries = [];
 let scheduleEvents = [];
 let scheduleOpen = false;
 let colorIndex = 0;
 const courseColors = {};
+
+function scheduleEntryKey(term, courseId, section) {
+  return `${term || 'unknown'}|${courseId || ''}:${section || ''}`;
+}
+
+function scheduleCourseKey(term, courseId) {
+  return `${term || 'unknown'}|${courseId || ''}`;
+}
 
 /* ── Settings / generation state ───────────────────── */
 let currentAbortController = null;   // active fetch controller (null when idle)

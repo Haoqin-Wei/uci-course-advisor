@@ -124,6 +124,29 @@ def test_key_browser_regression_flows_are_wired() -> None:
     assert "toggleScheduleBtn')?.setAttribute('aria-expanded', String(scheduleOpen))" in schedule
 
 
+def test_cross_term_schedule_identity_and_notice_are_wired() -> None:
+    index = (STATIC / "index.html").read_text(encoding="utf-8")
+    api_client = (STATIC / "js" / "api-client.js").read_text(encoding="utf-8")
+    cards = (STATIC / "js" / "cards.js").read_text(encoding="utf-8")
+    schedule = (STATIC / "js" / "schedule.js").read_text(encoding="utf-8")
+
+    assert "function scheduleEntryKey(term, courseId, section)" in api_client
+    assert "let pendingScheduleEntries = []" in api_client
+    assert 'data-term="${escAttr(term)}"' in cards
+    assert "term:       term || null" in schedule
+    assert "/api/schedule?session_id=" in schedule
+    assert "function _renderScheduleEntryList()" in schedule
+    assert "evEl.dataset.term = ev.term || ''" in schedule
+    assert "ev.term || ''" in schedule
+    assert "requires_confirmation" not in schedule
+    assert "confirm_conflicts" not in schedule
+
+    assert 'id="scheduleToastRegion"' in index
+    assert "function showCrossTermToast(notice)" in schedule
+    assert "function dismissScheduleToast()" in schedule
+    assert "setTimeout(dismissScheduleToast, 5000)" in schedule
+
+
 def test_live_and_restored_messages_share_structured_renderers() -> None:
     chat = (STATIC / "js" / "chat.js").read_text(encoding="utf-8")
     sessions = (STATIC / "js" / "sessions.js").read_text(encoding="utf-8")

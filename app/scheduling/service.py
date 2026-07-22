@@ -108,6 +108,10 @@ def section_time_status(a: dict, b: dict) -> SectionTimeStatus:
         "clear"     both schedules are known and do not overlap
         "unknown"   at least one side has TBA/missing/unparseable time data
     """
+    term_a = str(a.get("term") or "").strip()
+    term_b = str(b.get("term") or "").strip()
+    if term_a and term_b and term_a != term_b:
+        return "clear"
     if _section_time_is_tba(a) or _section_time_is_tba(b):
         return "unknown"
 
@@ -147,9 +151,6 @@ def resolve_pending_schedule_sections(
     needs the actual section payload with days/times/status/finals, so callers
     provide the term-scoped ``section_lookup(course_id, term)`` function.
     """
-    if not term:
-        return []
-
     resolved: list[dict] = []
     for entry in pending_schedule or []:
         if not isinstance(entry, dict):
@@ -164,8 +165,12 @@ def resolve_pending_schedule_sections(
         if not course_id or not section_ref:
             continue
 
+        entry_term = str(entry.get("term") or term or "").strip()
+        if not entry_term or entry_term == "unknown":
+            continue
+
         try:
-            envelope = section_lookup(course_id, term)
+            envelope = section_lookup(course_id, entry_term)
         except Exception:
             continue
         sections = envelope.get("sections", []) if envelope.get("found") else []
@@ -179,7 +184,7 @@ def resolve_pending_schedule_sections(
             None,
         )
         if match:
-            resolved.append(_with_course_id(match, course_id))
+            resolved.append(_with_course_id(match, course_id, term=entry_term))
     return resolved
 
 
@@ -197,11 +202,8 @@ def build_pending_schedule_bundle_items(
     sections from the term catalog. That lets callers validate a whole
     pending schedule for incomplete Lec/Dis/Lab pairings.
     """
-    if not term:
-        return []
-
-    entries_by_course: dict[str, list[dict]] = {}
-    sections_by_course: dict[str, list[dict]] = {}
+    entries_by_course: dict[tuple[str, str], list[dict]] = {}
+    sections_by_course: dict[tuple[str, str], list[dict]] = {}
 
     for entry in pending_schedule or []:
         if not isinstance(entry, dict):
@@ -216,14 +218,19 @@ def build_pending_schedule_bundle_items(
         if not course_id or not section_ref:
             continue
 
-        if course_id not in sections_by_course:
+        entry_term = str(entry.get("term") or term or "").strip()
+        if not entry_term or entry_term == "unknown":
+            continue
+        course_key = (entry_term, course_id)
+
+        if course_key not in sections_by_course:
             try:
-                envelope = section_lookup(course_id, term)
+                envelope = section_lookup(course_id, entry_term)
             except Exception:
                 envelope = {}
             raw_sections = envelope.get("sections", []) if envelope.get("found") else []
-            sections_by_course[course_id] = [
-                _with_course_id(section, course_id)
+            sections_by_course[course_key] = [
+                _with_course_id(section, course_id, term=entry_term)
                 for section in raw_sections
                 if isinstance(section, dict)
             ]
@@ -231,18 +238,18 @@ def build_pending_schedule_bundle_items(
         match = next(
             (
                 section
-                for section in sections_by_course[course_id]
+                for section in sections_by_course[course_key]
                 if _section_num(section) == section_ref
                 or _section_code(section) == section_ref
             ),
             None,
         )
         if match:
-            entries_by_course.setdefault(course_id, []).append(match)
+            entries_by_course.setdefault(course_key, []).append(match)
 
     bundle_items: list[dict] = []
-    for course_id, selected_sections in entries_by_course.items():
-        catalog_sections = sections_by_course.get(course_id, [])
+    for (entry_term, course_id), selected_sections in entries_by_course.items():
+        catalog_sections = sections_by_course.get((entry_term, course_id), [])
         bookable_sections = [
             section
             for section in catalog_sections
@@ -259,6 +266,7 @@ def build_pending_schedule_bundle_items(
 
         item = {
             "course_id": course_id,
+            "term": entry_term,
             "selected_sections": selected_sections,
         }
         if primaries and secondaries:
@@ -329,10 +337,17 @@ def _section_has_unknown_time(section: dict) -> bool:
     return section_time_status(section, section) == "unknown"
 
 
-def _with_course_id(section: dict, course_id: str) -> dict:
+def _with_course_id(
+    section: dict,
+    course_id: str,
+    *,
+    term: Optional[str] = None,
+) -> dict:
     copied = dict(section)
     if course_id and not _course_id(copied):
         copied["course_id"] = course_id
+    if term and not copied.get("term"):
+        copied["term"] = term
     return copied
 
 
@@ -432,11 +447,12 @@ def _selected_sections_for_item(item: dict) -> list[dict]:
         return []
 
     course_id = str(item.get("course_id") or "")
+    term = str(item.get("term") or "").strip() or None
 
     selected = item.get("selected_sections")
     if isinstance(selected, list):
         return [
-            _with_course_id(section, course_id)
+            _with_course_id(section, course_id, term=term)
             for section in selected
             if isinstance(section, dict)
         ]
@@ -444,7 +460,7 @@ def _selected_sections_for_item(item: dict) -> list[dict]:
     sections = item.get("sections")
     if isinstance(sections, list):
         normalized = [
-            _with_course_id(section, course_id)
+            _with_course_id(section, course_id, term=term)
             for section in sections
             if isinstance(section, dict)
         ]
@@ -461,7 +477,7 @@ def _selected_sections_for_item(item: dict) -> list[dict]:
         return normalized[:1] if len(normalized) == 1 else normalized
 
     if any(item.get(field) for field in ("days", "start_time", "end_time")):
-        return [_with_course_id(item, course_id)]
+        return [_with_course_id(item, course_id, term=term)]
     return []
 
 
@@ -559,6 +575,10 @@ def _section_has_unknown_final_exam(section: dict) -> bool:
 
 
 def final_exam_status(a: dict, b: dict) -> FinalExamStatus:
+    term_a = str(a.get("term") or "").strip()
+    term_b = str(b.get("term") or "").strip()
+    if term_a and term_b and term_a != term_b:
+        return "clear"
     exam_a = _parse_final_exam(_final_exam(a))
     exam_b = _parse_final_exam(_final_exam(b))
 

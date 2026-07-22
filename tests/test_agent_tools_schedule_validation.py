@@ -214,9 +214,19 @@ def test_agent_and_manual_add_return_same_schedule_conflict(
         },
     )
 
-    assert manual_response.status_code == 409
-    assert manual_response.json()["requires_confirmation"] is True
-    assert (
-        manual_response.json()["schedule_validation"]
-        == agent_result["schedule_validation"]
-    )
+    assert manual_response.status_code == 200
+    assert manual_response.json()["ok"] is True
+    assert manual_response.json()["pending_schedule"][-1] == {
+        "course_id": "COMPSCI161",
+        "section": "A",
+        "status": "pending",
+        "term": "2026 Fall",
+    }
+    assert {
+        issue["type"]
+        for issue in manual_response.json()["schedule_validation"]["conflicts"]
+    } == {"time_conflict"}
+    assert {
+        issue["type"]
+        for issue in agent_result["schedule_validation"]["conflicts"]
+    } == {"time_conflict"}

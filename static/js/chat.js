@@ -115,6 +115,7 @@ async function sendMessage(text) {
     // newly-completed course). Re-fetch the sidebar so the UI stays in
     // sync with the durable profile state.
     loadSidebar();
+    loadScheduleForSession(currentSessionId);
 
     // Round 4 — _persist_turn ran during the stream and set the snippet
     // title; the LLM auto-title BackgroundTask only fires *after* the

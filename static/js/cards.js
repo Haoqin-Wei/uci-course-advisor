@@ -207,14 +207,15 @@ function _renderSectionGroups(card) {
   // or by cardClickHandler() when the user taps the card body.
   // No `hidden` attribute so CSS can animate the open/close transition.
   const cid = card?.course_id || '';
+  const term = card?.term || currentTermContext?.term || '';
   return `<div class="cc-sg-wrap">
     <div class="cc-sg-cards">
-      ${groups.map(g => _renderOneSectionGroup(g, cid)).join('')}
+      ${groups.map(g => _renderOneSectionGroup(g, cid, term)).join('')}
     </div>
   </div>`;
 }
 
-function _renderOneSectionGroup(g, courseId) {
+function _renderOneSectionGroup(g, courseId, term) {
   const p = g.primary;
   if (!p) {
     return `<div class="cc-sg-card cc-sg-orphan">
@@ -223,7 +224,7 @@ function _renderOneSectionGroup(g, courseId) {
         <em>Lec unavailable</em>
       </div>
       <div class="cc-sg-secs-block">
-        ${_renderSecondaryChips(g.secondaries)}
+        ${_renderSecondaryChips(g.secondaries, courseId, term)}
       </div>
     </div>`;
   }
@@ -237,7 +238,7 @@ function _renderOneSectionGroup(g, courseId) {
   const finalExam = _renderFinalExam(p.final_exam);
 
   const lecNum = p.num || g.letter || '?';
-  const addBtn = courseId ? _renderAddBtn(courseId, lecNum, {}) : '';
+  const addBtn = courseId ? _renderAddBtn(courseId, lecNum, {term}) : '';
 
   return `<div class="cc-sg-card">
     <div class="cc-sg-card-head">
@@ -263,7 +264,7 @@ function _renderOneSectionGroup(g, courseId) {
       ? ''
       : `<div class="cc-sg-secs-block">
            <div class="cc-sg-secs-label">${escHTML(g.secondaries[0]?.type || 'Dis')} sections</div>
-           ${_renderSecondaryChips(g.secondaries, courseId)}
+           ${_renderSecondaryChips(g.secondaries, courseId, term)}
          </div>`}
   </div>`;
 }
@@ -380,7 +381,8 @@ function _renderFinalExam(fx) {
    state. */
 function _renderAddBtn(courseId, sectionNum, opts) {
   opts = opts || {};
-  const key = `${courseId}:${sectionNum}`;
+  const term = opts.term || currentTermContext?.term || '';
+  const key = scheduleEntryKey(term, courseId, sectionNum);
   const isAdded = addedSectionKeys.has(key);
   const classes = ['cc-sg-add'];
   if (opts.hoverOnly) classes.push('cc-sg-add-hover');
@@ -389,6 +391,7 @@ function _renderAddBtn(courseId, sectionNum, opts) {
   return `<button type="button" class="${classes.join(' ')}"
                   data-cid="${escHTML(courseId)}"
                   data-sec="${escHTML(sectionNum)}"
+                  data-term="${escAttr(term)}"
                   onclick="event.stopPropagation(); toggleSectionAdd(this)"
                   aria-label="${aria}"
                   aria-pressed="${isAdded ? 'true' : 'false'}">
@@ -397,16 +400,16 @@ function _renderAddBtn(courseId, sectionNum, opts) {
   </button>`;
 }
 
-function _renderSecondaryChips(secondaries, courseId) {
+function _renderSecondaryChips(secondaries, courseId, term) {
   if (!secondaries || secondaries.length === 0) return '';
   return `<table class="cc-sg-sec-table">
     <tbody>
-      ${secondaries.map(s => _renderOneSecondaryRow(s, courseId)).join('')}
+      ${secondaries.map(s => _renderOneSecondaryRow(s, courseId, term)).join('')}
     </tbody>
   </table>`;
 }
 
-function _renderOneSecondaryRow(s, courseId) {
+function _renderOneSecondaryRow(s, courseId, term) {
   const num   = escHTML(s.num || s.type || '?');
   const code  = escHTML(s.code || '—');
   const time  = _fmtSectionDaysTime(s);          // already escaped
@@ -432,10 +435,11 @@ function _renderOneSecondaryRow(s, courseId) {
     instCell = `<span class="cc-sg-row-inst">${escHTML(real[0])}</span>${star}`;
   }
   const sNum = s.num || s.type || '?';
-  const addBtn = courseId ? _renderAddBtn(courseId, sNum, {hoverOnly: true}) : '';
+  const addBtn = courseId ? _renderAddBtn(courseId, sNum, {hoverOnly: true, term}) : '';
   return `<tr class="cc-sg-row"
               data-cid="${escHTML(courseId || '')}"
               data-sec="${escHTML(sNum)}"
+              data-term="${escAttr(term || '')}"
               ondblclick="event.stopPropagation(); _toggleSectionAddByRow(this)">
     <td><span class="cc-sg-rownum">${num}</span></td>
     <td class="cc-sg-row-code">${code}</td>
@@ -504,8 +508,9 @@ function cardClickHandler(e) {
 async function toggleSectionAdd(btn) {
   const cid = btn.dataset.cid;
   const sec = btn.dataset.sec;
+  const term = btn.dataset.term || currentTermContext?.term || '';
   if (!cid || !sec) return;
-  const key = `${cid}:${sec}`;
+  const key = scheduleEntryKey(term, cid, sec);
   const wasAdded = addedSectionKeys.has(key);
   // Optimistic flip — animation runs from CSS via the .added class.
   if (wasAdded) {
@@ -519,26 +524,26 @@ async function toggleSectionAdd(btn) {
     btn.setAttribute('aria-pressed', 'true');
     btn.setAttribute('aria-label', 'Remove section from schedule');
   }
-  _syncAddedCourse(cid);
+  _syncAddedCourse(cid, term);
   try {
     if (wasAdded) {
-      await removeCourse(cid, btn, sec);
+      await removeCourse(cid, btn, sec, term);
     } else {
-      await addCourse(cid, sec, btn);
+      await addCourse(cid, sec, btn, term);
     }
   } catch (err) {
     // Revert visual on failure
     console.error('section toggle failed:', err);
     if (wasAdded) addedSectionKeys.add(key); else addedSectionKeys.delete(key);
     btn.classList.toggle('added', wasAdded);
-    _syncAddedCourse(cid);
+    _syncAddedCourse(cid, term);
   }
   // Mirror state on every other button bound to the same key (e.g.
   // both a Lec head + and a Dis row + can target the same key in
   // edge cases; or after a remove via the schedule rail we want all
   // displayed cards to re-sync).
   document.querySelectorAll(
-    `.cc-sg-add[data-cid="${CSS.escape(cid)}"][data-sec="${CSS.escape(sec)}"]`
+    `.cc-sg-add[data-cid="${CSS.escape(cid)}"][data-sec="${CSS.escape(sec)}"][data-term="${CSS.escape(term)}"]`
   ).forEach(el => {
     if (el !== btn) {
       el.classList.toggle('added', addedSectionKeys.has(key));
@@ -557,31 +562,28 @@ function _toggleSectionAddByRow(rowEl) {
 /* Keep `addedCourses` (course-level) in sync with `addedSectionKeys`
    (section-level). A course counts as added iff ANY of its section
    keys is present. The schedule rail / count read from addedCourses. */
-function _syncAddedCourse(courseId) {
-  const prefix = courseId + ':';
+function _syncAddedCourse(courseId, term) {
+  const prefix = `${term || 'unknown'}|${courseId}:`;
   let hasAny = false;
   for (const k of addedSectionKeys) {
     if (k.startsWith(prefix)) { hasAny = true; break; }
   }
-  if (hasAny) addedCourses.add(courseId);
-  else        addedCourses.delete(courseId);
+  const courseKey = scheduleCourseKey(term, courseId);
+  if (hasAny) addedCourses.add(courseKey);
+  else        addedCourses.delete(courseKey);
   updateScheduleCount();
 }
 
-/* Source-of-truth rebuild from the backend's scheduleEvents.
-   Every /schedule/add or /schedule/remove response gives us the
-   full list of materialized events; rebuilding local state from
-   it prevents the count-vs-grid desync the user hit ("0 courses"
-   but Math still appears). Called after every successful add/
-   remove response. */
+/* Source-of-truth rebuild from pending_schedule, including TBA and
+   unknown-term legacy entries that have no calendar event. */
 function _hydrateScheduleState() {
   const keys = new Set();
   const courses = new Set();
-  for (const ev of scheduleEvents) {
-    const sec = ev.section_num || ev.section || '';
-    if (ev.course_id) {
-      courses.add(ev.course_id);
-      if (sec) keys.add(`${ev.course_id}:${sec}`);
+  for (const entry of pendingScheduleEntries) {
+    const sec = entry.section || '';
+    if (entry.course_id) {
+      courses.add(scheduleCourseKey(entry.term, entry.course_id));
+      if (sec) keys.add(scheduleEntryKey(entry.term, entry.course_id, sec));
     }
   }
   addedSectionKeys = keys;
@@ -592,8 +594,9 @@ function _hydrateScheduleState() {
   document.querySelectorAll('.cc-sg-add').forEach(el => {
     const cid = el.dataset.cid;
     const sec = el.dataset.sec;
+    const term = el.dataset.term || currentTermContext?.term || '';
     if (!cid || !sec) return;
-    const isAdded = keys.has(`${cid}:${sec}`);
+    const isAdded = keys.has(scheduleEntryKey(term, cid, sec));
     el.classList.toggle('added', isAdded);
     el.setAttribute('aria-pressed', isAdded ? 'true' : 'false');
     el.setAttribute('aria-label',
@@ -649,7 +652,8 @@ function _renderPrereqChips(card) {
 
 function renderCard(card) {
   const cid       = card.course_id || '';
-  const isAdded   = addedCourses.has(cid);
+  const term      = card.term || currentTermContext?.term || '';
+  const isAdded   = addedCourses.has(scheduleCourseKey(term, cid));
   const cat       = _catSlug(card);
   const classes   = [
     'course-card',
@@ -708,11 +712,12 @@ function renderCard(card) {
 
 /* One-button toggle (Stitch UX: the + button stays in place, just
    changes icon). Routes to existing add/remove endpoints. */
-function toggleCard(courseId, section, btnEl) {
-  if (addedCourses.has(courseId)) {
-    removeCourse(courseId, btnEl);
+function toggleCard(courseId, section, btnEl, term) {
+  const effectiveTerm = term || currentTermContext?.term || '';
+  if (addedCourses.has(scheduleCourseKey(effectiveTerm, courseId))) {
+    removeCourse(courseId, btnEl, null, effectiveTerm);
   } else {
-    addCourse(courseId, section, btnEl);
+    addCourse(courseId, section, btnEl, effectiveTerm);
   }
 }
 

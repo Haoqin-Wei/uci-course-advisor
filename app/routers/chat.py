@@ -31,7 +31,6 @@ from app.memory import get_memory_manager
 from app.scheduling import (
     build_pending_schedule_bundle_items,
     calendar_day_names,
-    resolve_pending_schedule_sections,
     validate_schedule_bundle,
 )
 
@@ -935,7 +934,7 @@ async def _handle_agent(
     return (accumulated, proposed_cards, [], None)
 
 
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 
 @router.post("/chat/stream")
@@ -1496,13 +1495,80 @@ class ScheduleRequest(BaseModel):
     # "A1" for Dis. Defaults to None (used by /remove to wipe all
     # entries of a course; for /add the frontend always sends one).
     section: Optional[str] = "A"
-    # Frontend passes the term selector value; backend uses it to fetch
-    # the right sections from db.get_sections (term-strict). None falls
-    # back to session-state term, then to the catalog registry default.
+    # Cards and calendar entries pass their own term. None resolves from
+    # the conversation's backend-owned effective term.
     term: Optional[str] = None
-    # Hard conflicts / unknown schedule data require an explicit second
-    # request so adding a section never silently creates a broken schedule.
+    # Retained for old callers. M13 overlap metadata is always non-blocking.
     confirm_conflicts: bool = False
+
+
+def _canonical_schedule_term(value: str) -> str:
+    resolution = get_term_resolution_service().resolve_explicit(value)
+    if resolution.error is not None or resolution.kind != "single":
+        detail = (
+            resolution.error.message
+            if resolution.error is not None
+            else "schedule term must resolve to one UCI term"
+        )
+        raise HTTPException(status_code=400, detail=detail)
+    return resolution.terms[0].canonical_name
+
+
+def _schedule_effective_term(
+    user_id: str,
+    session_id: str,
+    explicit_term: Optional[str],
+) -> str:
+    if explicit_term:
+        return _canonical_schedule_term(explicit_term)
+    meta = sessions_data.get_session_meta(user_id, session_id)
+    return get_term_resolution_service().effective_for_conversation(meta).canonical_name
+
+
+def _legacy_schedule_term(session: dict, meta: dict) -> Optional[str]:
+    candidates: set[str] = set()
+    for value in (session.get("term"), meta.get("term_scope")):
+        parsed = parse_term_key(str(value or ""))
+        if parsed.kind == "single":
+            candidates.add(parsed.terms[0].canonical_name)
+    return next(iter(candidates)) if len(candidates) == 1 else None
+
+
+def _migrate_schedule_entries(
+    user_id: str,
+    session_id: str,
+    session: dict,
+) -> tuple[dict, bool]:
+    """Canonicalize entry terms; mark ungrounded legacy rows unknown."""
+    meta = sessions_data.get_session_meta(user_id, session_id)
+    legacy_term = _legacy_schedule_term(session, meta)
+    migrated: list[dict] = []
+    changed = False
+    for raw_entry in session.get("pending_schedule", []):
+        if not isinstance(raw_entry, dict):
+            changed = True
+            continue
+        entry = dict(raw_entry)
+        raw_term = entry.get("term")
+        parsed = parse_term_key(str(raw_term or ""))
+        if parsed.kind == "single":
+            term = parsed.terms[0].canonical_name
+        elif raw_term:
+            term = "unknown"
+        else:
+            term = legacy_term or "unknown"
+        if entry.get("term") != term:
+            entry["term"] = term
+            changed = True
+        migrated.append(entry)
+
+    if changed:
+        session = update_session(
+            session_id,
+            {"pending_schedule": migrated},
+            user_id=user_id,
+        )
+    return session, changed
 
 
 def _resolve_section_num(course_id: str, sec: Optional[str],
@@ -1520,7 +1586,7 @@ def _resolve_section_num(course_id: str, sec: Optional[str],
     if not sec:
         return None
     sec_str = str(sec).strip()
-    if not term:
+    if not term or term == "unknown":
         return sec_str        # best effort; can't resolve without term
     from app.data.db import get_sections
     env = get_sections(course_id, term)
@@ -1532,12 +1598,18 @@ def _resolve_section_num(course_id: str, sec: Optional[str],
     return sec_str
 
 
-def _entries_match(entry: dict, course_id: str, req_section: Optional[str],
-                   term: Optional[str]) -> bool:
+def _entries_match(
+    entry: dict,
+    course_id: str,
+    req_section: Optional[str],
+    term: str,
+) -> bool:
     """True if `entry` refers to the same (course, section) as the
     request, surviving the section_num-vs-section_code mismatch
     described in _resolve_section_num."""
     if entry.get("course_id") != course_id:
+        return False
+    if entry.get("term") != term:
         return False
     entry_norm = _resolve_section_num(course_id, entry.get("section"), term)
     req_norm   = _resolve_section_num(course_id, req_section, term)
@@ -1553,29 +1625,37 @@ def _empty_schedule_validation() -> dict:
     }
 
 
-def _validate_pending_schedule(pending_schedule: list[dict], term: Optional[str]) -> dict:
+def _validate_pending_schedule(pending_schedule: list[dict]) -> dict:
     if not pending_schedule:
         return _empty_schedule_validation()
-    if not term:
-        return validate_schedule_bundle(
-            [
-                {
-                    "course_id": entry.get("course_id") or "",
-                    "selected_sections": [],
-                }
-                for entry in pending_schedule
-                if isinstance(entry, dict)
-            ]
-        )
 
     from app.data.db import get_sections
 
     bundle_items = build_pending_schedule_bundle_items(
         pending_schedule,
-        term=term,
+        term=None,
         section_lookup=get_sections,
     )
-    return validate_schedule_bundle(bundle_items)
+    validation = validate_schedule_bundle(bundle_items)
+    unknown_term_entries = [
+        entry
+        for entry in pending_schedule
+        if isinstance(entry, dict) and entry.get("term") == "unknown"
+    ]
+    for entry in unknown_term_entries:
+        validation["unknowns"].append(
+            {
+                "type": "unknown_term",
+                "scope": "pending_schedule",
+                "message": (
+                    f"{entry.get('course_id') or 'Schedule entry'} "
+                    "has no reliable legacy term"
+                ),
+                "sections": [],
+            }
+        )
+    validation["valid"] = not validation["conflicts"] and not validation["unknowns"]
+    return validation
 
 
 @router.post("/schedule/add")
@@ -1594,74 +1674,57 @@ async def add_to_schedule(
     time."""
     check_rate_limit(request, SCHEDULE_WRITE_LIMIT, user["id"])
     user_id = user["id"]
-    active_session_id = _resolve_session_id(req.session_id, user_id, req.term)
+    active_session_id = _resolve_session_id(req.session_id, user_id, None)
     session = get_or_create_session(active_session_id, user_id=user_id)
-    sec_norm = _resolve_section_num(req.course_id, req.section, req.term)
+    session, _ = _migrate_schedule_entries(user_id, active_session_id, session)
+    effective_term = _schedule_effective_term(
+        user_id,
+        active_session_id,
+        req.term,
+    )
+    sec_norm = _resolve_section_num(req.course_id, req.section, effective_term)
     sec_canon = sec_norm or req.section
-    entry = {"course_id": req.course_id, "section": sec_canon, "status": "pending"}
+    entry = {
+        "course_id": req.course_id,
+        "section": sec_canon,
+        "status": "pending",
+        "term": effective_term,
+    }
     # Dedup using section-equivalence (handles legacy entries that stored
     # the 5-digit registrar code where the new picker stores section_num).
     is_dup = any(
-        _entries_match(e, req.course_id, sec_canon, req.term)
+        _entries_match(e, req.course_id, sec_canon, effective_term)
         for e in session.get("pending_schedule", [])
     )
-    schedule_validation = _validate_pending_schedule(
-        session.get("pending_schedule", []),
-        req.term or session.get("term"),
+    existing_terms = sorted(
+        {
+            entry.get("term")
+            for entry in session.get("pending_schedule", [])
+            if entry.get("term") and entry.get("term") != "unknown"
+        }
     )
+    schedule_validation = _validate_pending_schedule(session.get("pending_schedule", []))
     if not is_dup:
-        from app.data.db import get_sections
-
-        effective_term = req.term or session.get("term")
-        candidate_sections = resolve_pending_schedule_sections(
-            [entry],
-            term=effective_term,
-            section_lookup=get_sections,
-        )
-        pending_sections = resolve_pending_schedule_sections(
-            session.get("pending_schedule", []),
-            term=effective_term,
-            section_lookup=get_sections,
-        )
-        candidate_item = (
-            {"course_id": req.course_id, "selected_sections": candidate_sections}
-            if candidate_sections
-            else {"course_id": req.course_id}
-        )
-        schedule_validation = validate_schedule_bundle(
-            [candidate_item],
-            pending_sections=pending_sections,
-        )
-        if not schedule_validation["valid"] and not req.confirm_conflicts:
-            events = _build_schedule_events(session, req.term)
-            return JSONResponse(
-                status_code=409,
-                content={
-                    "ok": False,
-                    "reason": "schedule_validation_failed",
-                    "requires_confirmation": True,
-                    "pending_schedule": session.get("pending_schedule", []),
-                    "events": events,
-                    "schedule_validation": schedule_validation,
-                },
-            )
-
         session.setdefault("pending_schedule", []).append(entry)
         session = update_session(
             active_session_id,
             {"pending_schedule": session["pending_schedule"]},
             user_id=user_id,
         )
-        schedule_validation = _validate_pending_schedule(
-            session.get("pending_schedule", []),
-            effective_term,
-        )
-    events = _build_schedule_events(session, req.term)
+        schedule_validation = _validate_pending_schedule(session.get("pending_schedule", []))
+    events = _build_schedule_events(session)
+    cross_term_notice = None
+    if not is_dup and existing_terms and effective_term not in existing_terms:
+        cross_term_notice = {
+            "added_term": effective_term,
+            "existing_terms": existing_terms,
+        }
     return {
         "ok": True,
         "pending_schedule": session["pending_schedule"],
         "events": events,
         "schedule_validation": schedule_validation,
+        "cross_term_notice": cross_term_notice,
     }
 
 
@@ -1677,31 +1740,39 @@ async def remove_from_schedule(
     If omitted, remove every entry for the course."""
     check_rate_limit(request, SCHEDULE_WRITE_LIMIT, user["id"])
     user_id = user["id"]
-    active_session_id = _resolve_session_id(req.session_id, user_id, req.term)
+    active_session_id = _resolve_session_id(req.session_id, user_id, None)
     session = get_or_create_session(active_session_id, user_id=user_id)
+    session, _ = _migrate_schedule_entries(user_id, active_session_id, session)
+    effective_term = (
+        "unknown"
+        if req.term == "unknown"
+        else _schedule_effective_term(user_id, active_session_id, req.term)
+    )
     if req.section:
         session["pending_schedule"] = [
             e for e in session.get("pending_schedule", [])
-            if not _entries_match(e, req.course_id, req.section, req.term)
+            if not _entries_match(e, req.course_id, req.section, effective_term)
         ]
     else:
         session["pending_schedule"] = [
-            e for e in session.get("pending_schedule", []) if e["course_id"] != req.course_id
+            e
+            for e in session.get("pending_schedule", [])
+            if not (
+                e.get("course_id") == req.course_id
+                and e.get("term") == effective_term
+            )
         ]
     session = update_session(
         active_session_id,
         {"pending_schedule": session["pending_schedule"]},
         user_id=user_id,
     )
-    events = _build_schedule_events(session, req.term)
+    events = _build_schedule_events(session)
     return {
         "ok": True,
         "pending_schedule": session["pending_schedule"],
         "events": events,
-        "schedule_validation": _validate_pending_schedule(
-            session["pending_schedule"],
-            req.term or session.get("term"),
-        ),
+        "schedule_validation": _validate_pending_schedule(session["pending_schedule"]),
     }
 
 
@@ -1721,13 +1792,37 @@ async def clear_schedule(
     that the section-equivalence fix can't auto-resolve)."""
     check_rate_limit(request, SCHEDULE_WRITE_LIMIT, user["id"])
     user_id = user["id"]
-    active_session_id = _resolve_session_id(req.session_id, user_id, req.term)
+    active_session_id = _resolve_session_id(req.session_id, user_id, None)
     update_session(active_session_id, {"pending_schedule": []}, user_id=user_id)
     return {
         "ok": True,
         "pending_schedule": [],
         "events": [],
         "schedule_validation": _empty_schedule_validation(),
+    }
+
+
+@router.get("/schedule")
+async def get_schedule(
+    session_id: str,
+    user: dict = Depends(current_user_optional),
+):
+    user_id = user["id"]
+    active_session_id = _resolve_session_id(session_id, user_id, None)
+    session = get_or_create_session(active_session_id, user_id=user_id)
+    session, migrated = _migrate_schedule_entries(
+        user_id,
+        active_session_id,
+        session,
+    )
+    return {
+        "ok": True,
+        "pending_schedule": session.get("pending_schedule", []),
+        "events": _build_schedule_events(session),
+        "schedule_validation": _validate_pending_schedule(
+            session.get("pending_schedule", [])
+        ),
+        "migrated": migrated,
     }
 
 
@@ -1745,33 +1840,24 @@ async def end_session(
     return {"ok": True, "messages_archived": 0}
 
 
-def _build_schedule_events(session, term: Optional[str] = None):
+def _build_schedule_events(session):
     """
     Materialize the session's pending_schedule into calendar events.
 
-    Resolves `term` in this order:
-      1. explicit arg (frontend's term selector)
-      2. session state ("term" key set by the chat pipeline)
-      3. catalog registry's default term (most recently loaded data)
-
-    Uses db.get_sections's new envelope shape ({found, sections: [...]})
+    Every entry must carry its own canonical term. Unknown legacy entries
+    remain visible in ``pending_schedule`` but cannot be materialized into
+    timed events. Uses db.get_sections's envelope shape ({found, sections: [...]})
     plus the extended SectionRecord fields (section_code / days /
     start_time / end_time / instructors[]).
     """
     from app.data.db import get_sections, get_course_info
-    from app.catalog import get_term_registry
-
-    resolved_term = term or session.get("term")
-    if not resolved_term:
-        default_term = get_term_registry().default()
-        if default_term:
-            resolved_term = default_term.display()
-    if not resolved_term:
-        return []  # nothing we can ground sections in
 
     events = []
     for entry in session.get("pending_schedule", []):
         cid, sid = entry["course_id"], entry.get("section") or "A"
+        entry_term = entry.get("term")
+        if not entry_term or entry_term == "unknown":
+            continue
 
         course_env = get_course_info(cid)
         title = (
@@ -1779,7 +1865,7 @@ def _build_schedule_events(session, term: Optional[str] = None):
             if course_env.get("found") else cid
         )
 
-        sec_env = get_sections(cid, resolved_term)
+        sec_env = get_sections(cid, entry_term)
         sections = sec_env.get("sections", []) if sec_env.get("found") else []
         if not sections:
             continue
@@ -1811,6 +1897,7 @@ def _build_schedule_events(session, term: Optional[str] = None):
         for day in calendar_day_names(days_str):
             events.append({
                 "course_id":   cid,
+                "term":        entry_term,
                 "title":       title,
                 "section_num": sec.get("section_num") or sid,    # "A" / "A1"
                 "section_code": sec.get("section_code", ""),    # "34190" — 5-digit registrar code

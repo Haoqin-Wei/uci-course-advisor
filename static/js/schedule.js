@@ -1,18 +1,4 @@
-function _scheduleValidationSummary(validation) {
-  const parts = [];
-  for (const issue of (validation?.conflicts || [])) {
-    if (issue?.message) parts.push('• ' + issue.message);
-  }
-  for (const issue of (validation?.unknowns || [])) {
-    if (issue?.message) parts.push('• ' + issue.message);
-  }
-  if (parts.length === 0) {
-    return 'This section may create a schedule issue.';
-  }
-  return parts.slice(0, 4).join('\n');
-}
-
-async function _postAddCourse(courseId, section, confirmConflicts=false) {
+async function _postAddCourse(courseId, section, term) {
   const res = await fetch(`${API}/api/schedule/add`, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
@@ -20,32 +6,26 @@ async function _postAddCourse(courseId, section, confirmConflicts=false) {
       session_id: currentSessionId || '',
       course_id:  courseId,
       section:    section,
-      confirm_conflicts: !!confirmConflicts,
+      term:       term || null,
     }),
   });
-  return await res.json();
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || data.reason || 'add failed');
+  return data;
 }
 
-async function addCourse(courseId, section, btnEl) {
-  let data = await _postAddCourse(courseId, section, false);
-  if (!data.ok && data.requires_confirmation) {
-    const summary = _scheduleValidationSummary(data.schedule_validation);
-    const ok = confirm(
-      'This section has schedule conflicts or unknown timing.\n\n'
-      + summary
-      + '\n\nAdd it anyway?'
-    );
-    if (!ok) throw new Error('add cancelled');
-    data = await _postAddCourse(courseId, section, true);
-  }
+async function addCourse(courseId, section, btnEl, term) {
+  const data = await _postAddCourse(courseId, section, term);
   if (!data.ok) throw new Error(data.reason || 'add failed');
+  pendingScheduleEntries = data.pending_schedule || [];
   scheduleEvents = data.events || [];
   _hydrateScheduleState();        // rebuild local sets from server-of-truth
   renderScheduleGrid();
+  showCrossTermToast(data.cross_term_notice);
   if (!scheduleOpen) openSchedule();
 }
 
-async function removeCourse(courseId, btnEl, section) {
+async function removeCourse(courseId, btnEl, section, term) {
   const res = await fetch(`${API}/api/schedule/remove`, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
@@ -53,10 +33,12 @@ async function removeCourse(courseId, btnEl, section) {
       session_id: currentSessionId || '',
       course_id:  courseId,
       section:    section || null,   // section-aware remove (Phase E4 picker)
+      term:       term || null,
     }),
   });
   const data = await res.json();
-  if (!data.ok) throw new Error(data.reason || 'remove failed');
+  if (!res.ok || !data.ok) throw new Error(data.detail || data.reason || 'remove failed');
+  pendingScheduleEntries = data.pending_schedule || [];
   scheduleEvents = data.events || [];
   _hydrateScheduleState();        // rebuild local sets from server-of-truth
   renderScheduleGrid();
@@ -76,11 +58,9 @@ function updateCardState(courseId, added, section) {
 }
 
 function updateScheduleCount() {
-  // Source of truth: distinct course_ids in the backend-resolved
-  // scheduleEvents. Reading from `addedCourses` was brittle — it
-  // could drift out of sync with the rail and show "0 courses"
-  // while events were still rendered.
-  const n = new Set(scheduleEvents.map(e => e.course_id)).size;
+  const n = new Set(pendingScheduleEntries.map(
+    entry => scheduleCourseKey(entry.term, entry.course_id)
+  )).size;
   document.getElementById('scheduleCount').textContent =
     n + ' course' + (n === 1 ? '' : 's');
 }
@@ -98,7 +78,7 @@ function openSchedule() {
    expects section_num). Confirms first so a stray click doesn't
    destroy work. */
 async function clearSchedule() {
-  if (scheduleEvents.length === 0) return;
+  if (pendingScheduleEntries.length === 0) return;
   if (!confirm('Clear ALL sections from this schedule?')) return;
   try {
     const res = await fetch(`${API}/api/schedule/clear`, {
@@ -108,12 +88,62 @@ async function clearSchedule() {
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.reason || 'clear failed');
+    pendingScheduleEntries = data.pending_schedule || [];
     scheduleEvents = data.events || [];
     _hydrateScheduleState();
     renderScheduleGrid();
   } catch (err) {
     console.error('clear schedule failed:', err);
   }
+}
+
+async function loadScheduleForSession(sessionId) {
+  if (!sessionId) {
+    pendingScheduleEntries = [];
+    scheduleEvents = [];
+    _hydrateScheduleState();
+    renderScheduleGrid();
+    return;
+  }
+  try {
+    const res = await fetch(
+      `${API}/api/schedule?session_id=${encodeURIComponent(sessionId)}`
+    );
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.detail || 'schedule load failed');
+    pendingScheduleEntries = data.pending_schedule || [];
+    scheduleEvents = data.events || [];
+    _hydrateScheduleState();
+    renderScheduleGrid();
+  } catch (err) {
+    console.warn('schedule load failed:', err);
+  }
+}
+
+let scheduleToastTimer = null;
+
+function dismissScheduleToast() {
+  const region = document.getElementById('scheduleToastRegion');
+  if (region) region.replaceChildren();
+  if (scheduleToastTimer) clearTimeout(scheduleToastTimer);
+  scheduleToastTimer = null;
+}
+
+function showCrossTermToast(notice) {
+  if (!notice) return;
+  const region = document.getElementById('scheduleToastRegion');
+  if (!region) return;
+  dismissScheduleToast();
+  const toast = document.createElement('div');
+  toast.className = 'schedule-toast';
+  const prior = (notice.existing_terms || []).join(', ');
+  toast.innerHTML = `<div><strong>${escHTML(notice.added_term)}</strong> section added.</div>
+    <div class="schedule-toast-sub">Your schedule also includes ${escHTML(prior)}.</div>
+    <button type="button" aria-label="Dismiss notification" onclick="dismissScheduleToast()">
+      <span class="material-symbols-outlined">close</span>
+    </button>`;
+  region.appendChild(toast);
+  scheduleToastTimer = setTimeout(dismissScheduleToast, 5000);
 }
 function toggleSchedule() {
   scheduleOpen = !scheduleOpen;
@@ -167,8 +197,9 @@ const HEADER_HEIGHT = 41;
 
 function renderScheduleGrid() {
   const body = document.getElementById('scheduleBody');
+  const entryList = _renderScheduleEntryList();
 
-  if (scheduleEvents.length === 0) {
+  if (pendingScheduleEntries.length === 0) {
     body.innerHTML = `<div class="schedule-empty">
       <span class="material-symbols-outlined schedule-empty-icon">calendar_month</span>
       <div class="schedule-empty-title">No sections yet</div>
@@ -177,7 +208,16 @@ function renderScheduleGrid() {
     return;
   }
 
-  let html = '<div class="schedule-grid">';
+  if (scheduleEvents.length === 0) {
+    body.innerHTML = entryList + `<div class="schedule-empty schedule-empty-compact">
+      <span class="material-symbols-outlined schedule-empty-icon">event_busy</span>
+      <div class="schedule-empty-title">No timed meetings</div>
+      <div class="schedule-empty-sub">TBA and unknown-term entries stay listed above.</div>
+    </div>`;
+    return;
+  }
+
+  let html = entryList + '<div class="schedule-grid">';
   html += '<div class="sg-corner"></div>';
   for (const d of DAYS) html += `<div class="sg-day-header">${d}</div>`;
 
@@ -206,6 +246,35 @@ function renderScheduleGrid() {
     const meta = layout.get(ev) || {col: 0, cols: 1};
     placeEvent(ev, meta.col, meta.cols);
   }
+}
+
+function _renderScheduleEntryList() {
+  if (pendingScheduleEntries.length === 0) return '';
+  const rows = pendingScheduleEntries.map(entry => {
+    const term = entry.term || 'unknown';
+    return `<div class="schedule-entry" data-term="${escAttr(term)}"
+                 data-cid="${escAttr(entry.course_id || '')}"
+                 data-sec="${escAttr(entry.section || '')}">
+      <span class="schedule-entry-course">${escHTML(entry.course_id || 'Course')}</span>
+      <span class="schedule-entry-section">${escHTML(entry.section || '—')}</span>
+      <span class="schedule-entry-term">${escHTML(term)}</span>
+      <button type="button" aria-label="Remove ${escAttr(entry.course_id || 'course')}"
+              onclick="removeScheduledEntry(this)">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>`;
+  }).join('');
+  return `<div class="schedule-entry-list" aria-label="Scheduled sections">${rows}</div>`;
+}
+
+function removeScheduledEntry(btn) {
+  const row = btn.closest('.schedule-entry');
+  if (!row) return;
+  btn.disabled = true;
+  removeCourse(row.dataset.cid, btn, row.dataset.sec, row.dataset.term).catch(err => {
+    console.error('remove failed:', err);
+    btn.disabled = false;
+  });
 }
 
 /* Cheap overlap layout: per day, sweep events sorted by start time.
@@ -266,6 +335,7 @@ function placeEvent(ev, col, cols) {
   evEl.className = 'sg-event';
   evEl.dataset.cid = ev.course_id;
   evEl.dataset.sec = ev.section_num || '';
+  evEl.dataset.term = ev.term || '';
   evEl.style.position = 'absolute';
   evEl.style.top = topOffset + 'px';
   evEl.style.height = Math.max(height - 4, 24) + 'px';
@@ -288,6 +358,7 @@ function placeEvent(ev, col, cols) {
   evEl.innerHTML = top2 + bottom2;
   evEl.title = [
     `${ev.course_id}${ev.section_num ? ' · ' + ev.section_num : ''}`,
+    ev.term || '',
     ev.title || '',
     `${ev.day} ${ev.start}-${ev.end}`,
     ev.location || '',
@@ -316,10 +387,10 @@ function _removeFromCalendar(ev) {
   // _hydrateScheduleState (called from removeCourse) will reconcile
   // any drift.
   const tileEl = document.querySelector(
-    `.sg-event[data-cid="${CSS.escape(cid)}"][data-sec="${CSS.escape(sec || '')}"]`
+    `.sg-event[data-cid="${CSS.escape(cid)}"][data-sec="${CSS.escape(sec || '')}"][data-term="${CSS.escape(ev.term || '')}"]`
   );
   if (tileEl) tileEl.style.opacity = '0.4';
-  removeCourse(cid, null, sec || null).catch(err => {
+  removeCourse(cid, null, sec || null, ev.term || null).catch(err => {
     console.error('remove failed:', err);
     if (tileEl) tileEl.style.opacity = '';   // unfade on failure
   });

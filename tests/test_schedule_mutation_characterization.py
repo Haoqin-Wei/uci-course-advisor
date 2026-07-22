@@ -64,9 +64,11 @@ def fake_schedule_catalog(monkeypatch):
         "IN4MATX43": "Introduction to Software Engineering",
         "STATS67": "Introduction to Probability and Statistics",
     }
+    section_calls: list[tuple[str, str]] = []
 
     def fake_get_sections(course_id: str, term: str) -> dict:
-        assert term == "Spring 2025"
+        assert term in {"2025 Spring", "2025 Fall"}
+        section_calls.append((course_id, term))
         sections = sections_by_course.get(course_id, [])
         return {"found": bool(sections), "source": "test", "sections": sections}
 
@@ -82,6 +84,7 @@ def fake_schedule_catalog(monkeypatch):
 
     monkeypatch.setattr(db, "get_sections", fake_get_sections)
     monkeypatch.setattr(db, "get_course_info", fake_get_course_info)
+    return section_calls
 
 
 def test_schedule_add_normalizes_section_codes_dedupes_and_builds_events(
@@ -127,15 +130,20 @@ def test_schedule_add_normalizes_section_codes_dedupes_and_builds_events(
     assert discussion.status_code == 200
 
     assert first.json()["pending_schedule"] == [
-        {"course_id": "COMPSCI161", "section": "A", "status": "pending"}
+        {
+            "course_id": "COMPSCI161",
+            "section": "A",
+            "status": "pending",
+            "term": "2025 Spring",
+        }
     ]
     assert duplicate.json()["pending_schedule"] == first.json()["pending_schedule"]
 
     payload = discussion.json()
     assert payload["ok"] is True
     assert payload["pending_schedule"] == [
-        {"course_id": "COMPSCI161", "section": "A", "status": "pending"},
-        {"course_id": "COMPSCI161", "section": "A1", "status": "pending"},
+        {"course_id": "COMPSCI161", "section": "A", "status": "pending", "term": "2025 Spring"},
+        {"course_id": "COMPSCI161", "section": "A1", "status": "pending", "term": "2025 Spring"},
     ]
 
     assert [
@@ -147,6 +155,7 @@ def test_schedule_add_normalizes_section_codes_dedupes_and_builds_events(
         ("COMPSCI161", "A1", "20001", "Fri"),
     ]
     assert payload["events"][0]["title"] == "Design and Analysis of Algorithms"
+    assert {event["term"] for event in payload["events"]} == {"2025 Spring"}
     assert payload["events"][0]["section"] == "20000"
     assert sessions_data.get_session_state("demo_001", session_id)["pending_schedule"] == payload[
         "pending_schedule"
@@ -182,7 +191,7 @@ def test_schedule_mutations_persist_pending_schedule_to_session_state_file(
     )
     assert added.status_code == 200
     assert json.loads(state_file.read_text(encoding="utf-8"))["pending_schedule"] == [
-        {"course_id": "COMPSCI161", "section": "A", "status": "pending"}
+        {"course_id": "COMPSCI161", "section": "A", "status": "pending", "term": "2025 Spring"}
     ]
 
     removed = app_client.post(
@@ -214,7 +223,7 @@ def test_schedule_mutations_persist_pending_schedule_to_session_state_file(
     assert json.loads(state_file.read_text(encoding="utf-8"))["pending_schedule"] == []
 
 
-def test_schedule_add_rejects_time_conflict_without_mutating_session(
+def test_schedule_add_keeps_same_term_conflict_as_non_blocking_metadata(
     app_client,
     fake_schedule_catalog,
 ):
@@ -244,91 +253,21 @@ def test_schedule_add_rejects_time_conflict_without_mutating_session(
     )
 
     assert first.status_code == 200
-    assert conflict.status_code == 409
+    assert conflict.status_code == 200
     payload = conflict.json()
-    assert payload["ok"] is False
-    assert payload["reason"] == "schedule_validation_failed"
-    assert payload["requires_confirmation"] is True
+    assert payload["ok"] is True
     assert payload["pending_schedule"] == [
-        {"course_id": "COMPSCI161", "section": "A", "status": "pending"}
+        {"course_id": "COMPSCI161", "section": "A", "status": "pending", "term": "2025 Spring"},
+        {"course_id": "STATS67", "section": "A", "status": "pending", "term": "2025 Spring"},
     ]
     assert payload["schedule_validation"]["valid"] is False
     assert payload["schedule_validation"]["unknowns"] == []
-    assert payload["schedule_validation"]["conflicts"] == [
-        {
-            "type": "time_conflict",
-            "scope": "pending_schedule",
-            "message": "STATS67 A conflicts with pending COMPSCI161 A",
-            "sections": [
-                {
-                    "course_id": "STATS67",
-                    "section_code": "40000",
-                    "section_num": "A",
-                    "window": "Tu 10:30–11:50",
-                },
-                {
-                    "course_id": "COMPSCI161",
-                    "section_code": "20000",
-                    "section_num": "A",
-                    "window": "TuTh 10:00–11:20",
-                },
-            ],
-        }
-    ]
+    assert "time_conflict" in {
+        issue["type"] for issue in payload["schedule_validation"]["conflicts"]
+    }
     assert sessions_data.get_session_state("demo_001", session_id)["pending_schedule"] == [
-        {"course_id": "COMPSCI161", "section": "A", "status": "pending"}
-    ]
-
-    confirmed = app_client.post(
-        "/api/schedule/add",
-        json={
-            "session_id": session_id,
-            "course_id": "STATS67",
-            "section": "A",
-            "term": "Spring 2025",
-            "confirm_conflicts": True,
-        },
-    )
-
-    assert confirmed.status_code == 200
-    assert confirmed.json()["pending_schedule"] == [
-        {"course_id": "COMPSCI161", "section": "A", "status": "pending"},
-        {"course_id": "STATS67", "section": "A", "status": "pending"},
-    ]
-    assert confirmed.json()["schedule_validation"]["valid"] is False
-    assert confirmed.json()["schedule_validation"]["conflicts"] == [
-        {
-            "type": "incomplete_pairing",
-            "scope": "bundle",
-            "message": "COMPSCI161 requires Lec plus Dis, but no Dis section is selected",
-            "sections": [
-                {
-                    "course_id": "COMPSCI161",
-                    "section_code": "20000",
-                    "section_num": "A",
-                    "window": "TuTh 10:00–11:20",
-                }
-            ],
-        },
-        {
-            "type": "time_conflict",
-            "scope": "bundle",
-            "message": "COMPSCI161 A conflicts with STATS67 A",
-            "sections": [
-                {
-                    "course_id": "COMPSCI161",
-                    "section_code": "20000",
-                    "section_num": "A",
-                    "window": "TuTh 10:00–11:20",
-                },
-                {
-                    "course_id": "STATS67",
-                    "section_code": "40000",
-                    "section_num": "A",
-                    "window": "Tu 10:30–11:50",
-                },
-            ],
-        }
+        {"course_id": "COMPSCI161", "section": "A", "status": "pending", "term": "2025 Spring"},
+        {"course_id": "STATS67", "section": "A", "status": "pending", "term": "2025 Spring"},
     ]
 
 
@@ -425,8 +364,8 @@ def test_schedule_remove_specific_section_then_whole_course_with_null_section(
 
     assert remove_lecture.status_code == 200
     assert remove_lecture.json()["pending_schedule"] == [
-        {"course_id": "COMPSCI161", "section": "A1", "status": "pending"},
-        {"course_id": "IN4MATX43", "section": "A", "status": "pending"},
+        {"course_id": "COMPSCI161", "section": "A1", "status": "pending", "term": "2025 Spring"},
+        {"course_id": "IN4MATX43", "section": "A", "status": "pending", "term": "2025 Spring"},
     ]
     assert all(
         not (
@@ -448,7 +387,7 @@ def test_schedule_remove_specific_section_then_whole_course_with_null_section(
 
     assert remove_course.status_code == 200
     assert remove_course.json()["pending_schedule"] == [
-        {"course_id": "IN4MATX43", "section": "A", "status": "pending"}
+        {"course_id": "IN4MATX43", "section": "A", "status": "pending", "term": "2025 Spring"}
     ]
     assert {
         (event["course_id"], event["section_num"], event["day"])
@@ -506,5 +445,133 @@ def test_schedule_clear_wipes_only_requested_session(
     }
     assert sessions_data.get_session_state("demo_001", first_session)["pending_schedule"] == []
     assert sessions_data.get_session_state("demo_001", second_session)["pending_schedule"] == [
-        {"course_id": "COMPSCI161", "section": "A", "status": "pending"}
+        {"course_id": "COMPSCI161", "section": "A", "status": "pending", "term": "2025 Spring"}
     ]
+
+
+def test_same_course_section_is_distinct_across_terms_and_removes_by_own_term(
+    app_client,
+    fake_schedule_catalog,
+):
+    session_id = sessions_data.create_session(
+        "demo_001",
+        title="Cross-term schedule fixture",
+        term_scope="Spring 2025",
+    )
+
+    spring = app_client.post(
+        "/api/schedule/add",
+        json={
+            "session_id": session_id,
+            "course_id": "COMPSCI161",
+            "section": "A",
+            "term": "Spring 2025",
+        },
+    )
+    fall = app_client.post(
+        "/api/schedule/add",
+        json={
+            "session_id": session_id,
+            "course_id": "COMPSCI161",
+            "section": "A",
+            "term": "Fall 2025",
+        },
+    )
+
+    assert spring.status_code == 200
+    assert fall.status_code == 200
+    payload = fall.json()
+    assert payload["pending_schedule"] == [
+        {"course_id": "COMPSCI161", "section": "A", "status": "pending", "term": "2025 Spring"},
+        {"course_id": "COMPSCI161", "section": "A", "status": "pending", "term": "2025 Fall"},
+    ]
+    assert payload["cross_term_notice"] == {
+        "added_term": "2025 Fall",
+        "existing_terms": ["2025 Spring"],
+    }
+    assert {event["term"] for event in payload["events"]} == {
+        "2025 Spring",
+        "2025 Fall",
+    }
+    assert {term for course, term in fake_schedule_catalog if course == "COMPSCI161"} == {
+        "2025 Spring",
+        "2025 Fall",
+    }
+    assert "time_conflict" not in {
+        issue["type"] for issue in payload["schedule_validation"]["conflicts"]
+    }
+
+    removed = app_client.post(
+        "/api/schedule/remove",
+        json={
+            "session_id": session_id,
+            "course_id": "COMPSCI161",
+            "section": "A",
+            "term": "Spring 2025",
+        },
+    )
+    assert removed.status_code == 200
+    assert removed.json()["pending_schedule"] == [
+        {"course_id": "COMPSCI161", "section": "A", "status": "pending", "term": "2025 Fall"}
+    ]
+    assert {event["term"] for event in removed.json()["events"]} == {"2025 Fall"}
+
+
+def test_schedule_get_migrates_reliable_legacy_term_and_marks_ambiguous_unknown(
+    app_client,
+    fake_schedule_catalog,
+):
+    reliable_id = sessions_data.create_session(
+        "demo_001",
+        title="Reliable legacy schedule",
+        term_scope="Spring 2025",
+    )
+    sessions_data.update_session_state(
+        "demo_001",
+        reliable_id,
+        {
+            "pending_schedule": [
+                {"course_id": "IN4MATX43", "section": "A", "status": "pending"}
+            ]
+        },
+    )
+
+    reliable = app_client.get(f"/api/schedule?session_id={reliable_id}")
+    assert reliable.status_code == 200
+    assert reliable.json()["migrated"] is True
+    assert reliable.json()["pending_schedule"][0]["term"] == "2025 Spring"
+    assert {event["term"] for event in reliable.json()["events"]} == {"2025 Spring"}
+
+    ambiguous_id = sessions_data.create_session(
+        "demo_001",
+        title="Ambiguous legacy schedule",
+        term_scope="Spring 2025",
+    )
+    sessions_data.update_session_state(
+        "demo_001",
+        ambiguous_id,
+        {
+            "term": "Fall 2025",
+            "pending_schedule": [
+                {"course_id": "IN4MATX43", "section": "A", "status": "pending"}
+            ],
+        },
+    )
+
+    ambiguous = app_client.get(f"/api/schedule?session_id={ambiguous_id}")
+    assert ambiguous.status_code == 200
+    assert ambiguous.json()["pending_schedule"][0]["term"] == "unknown"
+    assert ambiguous.json()["events"] == []
+    assert ambiguous.json()["schedule_validation"]["unknowns"][0]["type"] == "unknown_term"
+
+    removed = app_client.post(
+        "/api/schedule/remove",
+        json={
+            "session_id": ambiguous_id,
+            "course_id": "IN4MATX43",
+            "section": "A",
+            "term": "unknown",
+        },
+    )
+    assert removed.status_code == 200
+    assert removed.json()["pending_schedule"] == []
