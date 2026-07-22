@@ -358,6 +358,12 @@ input { font-family: inherit; }
   font-family: var(--font-mono);
   letter-spacing: 0.02em;
 }
+.left-footer a {
+  color: var(--text-tertiary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.left-footer a:hover { color: var(--accent); }
 
 /* ═══════════════════════════════════════════════════════
    CHAT PANEL
@@ -1755,6 +1761,21 @@ body.schedule-open .input-row {
   overflow: auto;
   background: var(--bg-app);
 }
+.schedule-attribution {
+  flex-shrink: 0;
+  padding: 6px var(--space-4);
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-shell);
+  color: var(--text-muted);
+  font-size: var(--text-micro);
+  text-align: right;
+}
+.schedule-attribution a {
+  color: var(--text-tertiary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.schedule-attribution a:hover { color: var(--accent); }
 .schedule-entry-list {
   display: flex;
   flex-direction: column;

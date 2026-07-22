@@ -9,11 +9,14 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _run_script_without_pythonpath(script: str) -> subprocess.CompletedProcess[str]:
+def _run_script_without_pythonpath(
+    script: str,
+    *args: str,
+) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     return subprocess.run(
-        [sys.executable, str(REPO_ROOT / script)],
+        [sys.executable, str(REPO_ROOT / script), *args],
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,
@@ -41,3 +44,11 @@ def test_limit_reached_smoke_script_runs_without_pythonpath():
     assert result.returncode == 0, result.stdout + result.stderr
     assert "ModuleNotFoundError" not in result.stderr
     assert "all assertions passed" in result.stdout
+
+
+def test_term_state_live_smoke_help_runs_without_pythonpath_or_network():
+    result = _run_script_without_pythonpath("scripts/smoke_term_state.py", "--help")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "M13 automatic-term sources" in result.stdout
+    assert "--term" in result.stdout

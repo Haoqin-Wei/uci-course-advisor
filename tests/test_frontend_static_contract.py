@@ -175,6 +175,7 @@ def test_frontend_accessibility_and_mobile_contracts() -> None:
     assert 'class="auth-guest-btn"' in index
     assert 'aria-label="Close settings"' in index
     assert 'aria-label="Close weekly schedule"' in index
+    assert index.count("Data from <a href=\"https://icssc.link/about-anteaterapi\"") == 2
 
     assert ":focus-visible" in css
     assert "@media (max-width: 700px)" in css

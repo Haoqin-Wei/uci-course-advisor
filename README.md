@@ -10,6 +10,8 @@ This project is not an official UCI advisor, degree audit, or enrollment system.
 - Tool-backed course, section, professor, grade, prerequisite, policy, and schedule-conflict lookups.
 - Controlled `web_search` agent tool with source classification, default-off safety, fake-provider tests, and markdown citations for web-sourced facts.
 - Structured recommendation cards with validation before they can be added to the weekly schedule.
+- Backend-owned automatic term resolution with conversation-level auto/pinned memory, a read-only term display, and canonical `YYYY Quarter` values.
+- Cross-term schedules: every entry keeps its own term, overlaps are non-blocking, and the same course/section can coexist across terms.
 - Authenticated sessions, isolated guest identities, onboarding, profile memory, preferences, and cross-session restoration.
 - Local catalog coverage manifest that distinguishes `complete`, `partial`, `stale`, and `unavailable` data.
 - Private-beta hardening: rate limits, production cookie/CSRF defaults, no shared writable demo user in production, and traceable logs.
@@ -26,6 +28,7 @@ flowchart LR
   Data["Data layer<br/>local CSV/SQLite + optional Anteater fallback"]
   Memory["Persistent state<br/>sessions, profile, facts, preferences, schedule"]
   Validation["Validation<br/>grounding, term/source checks, card blocking"]
+  Terms["Term resolution<br/>LA clock + UCI calendar + WebSoc publication gate"]
 
   Browser --> API
   API --> Agent
@@ -35,6 +38,9 @@ flowchart LR
   Agent --> Memory
   Agent --> Validation
   Validation --> API
+  API --> Terms
+  Terms --> Data
+  Terms --> Memory
 ```
 
 ## Directory structure
@@ -54,6 +60,7 @@ flowchart LR
 │   ├── memory/                     # Profile, facts, preferences, and session memory
 │   ├── routers/                    # API routers including health endpoints
 │   ├── scheduling/                 # Schedule conflict and bundle validation service
+│   ├── terms/                      # Canonical parsing, automatic state, sync, and conversation terms
 │   └── validation/                 # Grounding validators and validation log
 ├── data/
 │   ├── uci/                        # Versioned local catalog CSVs
@@ -92,6 +99,7 @@ For production/runtime-only installs, use `requirements.txt` instead of `require
 - `AUTH_SESSION_SECRET`: required in production; use a long random value generated outside the repo.
 - `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL`: enable live LLM mode.
 - `ANTEATER_API_KEY`: optional external UCI API fallback.
+- `TERM_STATE_PATH`: runtime-only automatic-term cache; defaults to `data/runtime/term_state.json`.
 - `WEB_SEARCH_ENABLED`, `WEB_SEARCH_PROVIDER`, `WEB_SEARCH_API_KEY`, `WEB_SEARCH_MAX_RESULTS`, `WEB_SEARCH_TIMEOUT_SECONDS`: controlled web-search mode. Development defaults to `WEB_SEARCH_ENABLED=true` and `WEB_SEARCH_PROVIDER=duckduckgo`; production defaults to disabled unless explicitly enabled. Tests force offline fake/disabled modes.
 - `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_SUBJECT`: optional email verification delivery.
 - `ALLOW_SHARED_DEMO`, `ALLOW_GUEST_USERS`, `COOKIE_SECURE`, `CSRF_PROTECTION`, `ALLOWED_ORIGINS`, `ALLOW_CUSTOM_SYSTEM_PROMPT`: private-beta safety switches.
@@ -124,6 +132,21 @@ python scripts/verify_db.py
 ```
 
 Network/data refresh scripts exist under `scripts/`, but default tests and offline development do not require live API access.
+
+### Automatic term state
+
+The backend is the sole term authority. It combines the Los Angeles clock, UCI instruction dates from Anteater `calendar/all`, the Week 2 Friday 17:00 cutoff, the published WebSoc term list, and a non-empty full-WebSoc probe. Automatic selection advances only through Fall, Winter, and Spring; Summer remains available for explicit queries.
+
+Successful state is refreshed after 30 days and remains usable as last-known-good data for 45 days. If an older cache cannot refresh, the API and UI explicitly report the versioned `code_fallback` term. The JSON store uses atomic replacement and a process-local lock. Multi-process production deployments must replace the store/lock boundary with shared storage and a distributed lock before relying on one global sync writer.
+
+Run the read-only live source check manually (it is excluded from default CI):
+
+```bash
+python scripts/smoke_term_state.py
+python scripts/smoke_term_state.py --term "2026 Fall"
+```
+
+The product uses data from [Anteater API](https://icssc.link/about-anteaterapi), maintained by the ICS Student Council. Its attribution policy requires credit in relevant query and data-display contexts; the app keeps that credit in the persistent sidebar and Schedule footers. Anteater data is derived from public UCI sources, but should still be verified against official UCI systems for enrollment decisions.
 
 ## Run
 
@@ -166,7 +189,7 @@ GitHub Actions runs install, syntax lint, dependency graph validation, and offli
 ## Runtime modes
 
 - Offline mode: no API keys. The app uses local data, deterministic fallbacks, and test doubles. This is the default development/test mode.
-- External API fallback: set `ANTEATER_API_KEY` if you want live UCI API fallback when local term data is unavailable. Partial/stale local data is surfaced as uncertain instead of silently overruled.
+- External API mode: Anteater term-state sync and live UCI fallback can run without a key under the shared quota; set `ANTEATER_API_KEY` for a dedicated rate limit. Partial/stale local data is surfaced as uncertain instead of silently overruled.
 - Controlled web search: development can use `WEB_SEARCH_PROVIDER=duckduckgo` without an API key. `WEB_SEARCH_PROVIDER=fake` is the deterministic provider for offline tests/dev fixtures; unimplemented paid providers fail closed with a structured `provider_unimplemented` response. Web search results are never written into the local DB and are labeled with URL, domain, retrieved date, source class, and trust level.
 - Live LLM mode: set `DEEPSEEK_API_KEY`. The adapter uses an OpenAI-compatible DeepSeek endpoint and streams through the agent loop.
 - Email delivery: set `RESEND_API_KEY` and sender variables. Without this, development can still exercise auth flows without logging verification codes.
