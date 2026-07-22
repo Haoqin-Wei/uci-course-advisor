@@ -1,14 +1,14 @@
 # UCI Course Advisor Roadmap
 
-> 更新日期：2026-07-05
+> 更新日期：2026-07-22
 >
-> 当前目标：在已完成私测版基础上，增加受控联网搜索能力，并把数据库信息、官方网页信息和外部网页信息明确区分。
+> 当前目标：移除前端全局学期选择器，建立由 UCI 日历、Anteater WebSoc 数据发布状态和 conversation memory 共同驱动的统一学期上下文。
 >
 > 执行规则：严格按阶段推进。每一阶段通过验收后，再进入下一阶段；README 在全部工程调整完成后最后更新。
 
 ## 1. 当前定位
 
-项目已经完成主要产品形态，但工程上仍处于“高级本地 Demo”阶段。
+项目已经完成 M0-M12 的主要产品、数据验证、联网搜索和 WebSoc workflow，当前进入统一学期上下文与跨学期 Schedule 阶段。
 
 ### 已实现
 
@@ -21,39 +21,38 @@
 - [x] Onboarding、Profile、跨会话记忆和会话历史
 - [x] 本地课程、section、教授评价和专业要求数据
 - [x] Catalog、Provenance 和基础 Validation 框架
+- [x] Controlled web search、agentic deep search 和 run 内 URL 去重
+- [x] Anteater live availability 与 WebSoc restriction 固定 workflow
+- [x] Developer-authored workflow registry 和公共 deep-search trace history
 
 ### 当前阻塞
 
-- 新旧两套聊天执行链同时存在
-- 内存 Session 与持久化 Session 同时保存状态
-- Memory schema、文件写入和内存缓存不一致
-- 推荐卡片和加课流程没有统一的课表组合校验
-- 先修判断把 OR 条件当作 AND，并把未知状态当作满足
-- 主 Agent 路径没有接入 Validation
-- Fall 2026 部分数据被当作完整学期
-- 本地已有 `courses.csv`，课程详情仍依赖外部 API
-- 没有 pytest、CI 和浏览器回归测试
-- 前端集中在一个超过 7,500 行的 HTML 文件中
-- 当前工作区约有 5,000 行以上未提交修改，需要先建立安全基线
+- 前端全局 term selector 仍会把 UI term 写入每轮请求，并覆盖 conversation/tool 实际查询 term。
+- conversation 只有 `term_scope`，没有 `auto/pinned` 语义，历史对话切换时可能恢复错误学期。
+- Anteater client 尚未接入 `/calendar/all` 和 `/websoc/terms`，没有统一 automatic term source。
+- chat、workflow、agentic tools、catalog 和 validation 仍可能各自选择不同 term。
+- 当前没有 30 天同步、45 天 stale、last-known-good 和 code fallback 的统一 term cache。
+- pending schedule entry 没有可靠保存自己的 term，跨学期 lookup、去重和展示可能使用错误数据。
+- Schedule 现有冲突校验会阻止 overlap，与已确认的非阻断跨学期规划行为不一致。
 
 ## 2. 本轮目标与非目标
 
 ### 本轮目标
 
-完成以下结果后，项目进入“Private Beta Candidate”：
+完成以下结果后，系统不再依赖用户手工维护全局学期：
 
-1. Agent loop 成为唯一聊天主链路。
-2. Session、Memory 和 Schedule 各自只有一个真相源。
-3. 课程、先修、冲突和学期覆盖状态可以被确定性验证。
-4. 核心流程有离线自动化测试和 CI。
-5. 前端完成模块拆分，但不进行框架重写。
-6. 新环境可以按最终 README 一次启动。
+1. 后端根据 UCI calendar、Week 2 Friday 和 Anteater WebSoc 发布状态确定 automatic term。
+2. conversation 使用独立、可持久化的 `auto/pinned` term memory。
+3. chat、workflow、agentic、catalog、validation 和 schedule 使用同一个 effective term。
+4. 前端删除全局 selector，只显示 conversation 对应的只读 canonical term。
+5. Schedule entry 保存自己的 term，并允许所有时间 overlap 非阻断加入。
+6. 同步、缓存、stale 和 fallback 行为有离线自动化测试及可观测性。
 
 ### 暂不开发
 
 - 协同过滤
 - 教授联网搜索
-- 多学期 AI 规划
+- 自动生成完整多学期 Degree Plan
 - 全部 87 个专业的 Degree Audit
 - Waitlist 实时提醒
 - React/Vue/Svelte 全量重写
@@ -76,6 +75,10 @@
 | M7 | 私测安全与工程化 | 3–5 天 | M1–M6 |
 | M8 | Roadmap 收尾与 README | 1 天 | M7 |
 | M9 | 联网搜索与证据链 | 4–7 天 | M4、M5、M7 |
+| M10 | Live WebSoc 与专业限制 Workflow | 已完成 | M9 |
+| M11 | Agentic Deep Search 与 Workflow Registry | 已完成 | M9、M10 |
+| M12 | WebSoc Restriction Workflow 可靠性 | 已完成 | M10、M11 |
+| M13 | 自动学期上下文与跨学期 Schedule | 6–10 天 | M2–M7、M10–M12 |
 
 工作量按 1 名开发者估算，不是发布日期承诺。
 
@@ -1142,7 +1145,237 @@ Sources:
 4. `099845a`：提取 linked-page restriction evidence。
 5. 文档、完整回归和 live smoke check：本阶段收尾提交。
 
-## 17. 跨阶段 Definition of Done
+## 17. M13 — 自动学期上下文与跨学期 Schedule
+
+目标：删除可操作的全局 term selector，把 term 变成后端统一管理的底层上下文。系统根据美西时间、UCI 学期日历、Week 2 Friday 截止点和 Anteater WebSoc 实际发布状态选择默认学期；每个 conversation 独立保存 auto/pinned 状态，所有工具、校验和 Schedule 使用同一套 term 解析结果。
+
+状态：需求已审核通过，尚未实现。必须严格按以下阶段推进，每个阶段测试通过后建立独立 Git commit。
+
+### M13.1 范围与不变量
+
+- [ ] 自动默认学期只在 `Fall`、`Winter`、`Spring` 三个常规学期之间切换。
+- [ ] 常规顺序固定为 `2026 Fall -> 2027 Winter -> 2027 Spring -> 2027 Fall`。
+- [ ] Summer 不参与自动切换；用户明确指定时仍允许查询 `Summer1`、`Summer10wk`、`Summer2`。
+- [ ] term canonical format 统一为 `YYYY Quarter`，例如 `2026 Fall`。
+- [ ] 所有时间计算使用 IANA timezone `America/Los_Angeles`，不能使用服务器本地时区或固定 UTC offset。
+- [ ] LLM 不负责计算当前学期、截止时间或数据可用性；后端确定性服务是唯一权威。
+- [ ] 后端已有显式 `term` 参数继续保留，供内部工具、测试、多学期比较和显式查询使用。
+- [ ] 用户明确查询的数据 term 优先于系统默认 term，但只有成功查询后才能改变 conversation term。
+- [ ] 不在助手回答末尾重复显示 term；顶部只读 term 是用户可见的当前上下文。
+
+### M13.2 `TermResolutionService` 与统一数据模型
+
+- [ ] 新增单一 `TermResolutionService`，禁止 chat、schedule、workflow、validation 各自实现 term fallback。
+- [ ] 定义 canonical `TermKey` / `ResolvedTerm`：
+  - `year`
+  - `quarter`
+  - `canonical_name`
+  - `instruction_start`
+  - `week2_friday_cutoff`
+  - `data_available`
+  - `source`
+  - `status`
+  - `checked_at`
+- [ ] 支持解析标准名称、无空格写法、中文表达和相对表达，最终统一为 canonical format。
+- [ ] “当前学期 / 下学期 / 上学期”等相对表达始终以系统自动默认学期为基准，不以 pinned conversation term 为基准。
+- [ ] 一个问题只指定一个可用 term 时返回 single-term resolution。
+- [ ] 一个问题指定多个 term 时返回 multi-term resolution，但不得改变 conversation term。
+- [ ] 不合法、歧义或无法映射的 term 返回结构化错误，不允许静默使用默认学期。
+- [ ] 所有时间依赖可注入 clock，测试不能依赖真实当前时间。
+
+### M13.3 Anteater Calendar 与 WebSoc 发布状态
+
+- [ ] 扩展 `app/data/anteater.py`，增加：
+  - `GET /v2/rest/calendar/all`
+  - `GET /v2/rest/websoc/terms`
+  - `GET /v2/rest/websoc?year=...&quarter=...`
+- [ ] `/calendar/all` 负责提供 `instructionStart` 等学期日历字段。
+- [ ] `/websoc/terms` 只作为“term 已出现在 WebSoc”的第一层条件，不能单独判定可用。
+- [ ] 对候选下一学期请求完整 WebSoc 数据，至少找到一门 course 和一个 section 才标记 `data_available=true`。
+- [ ] 空 term shell、只有 school/department 但没有 course/section 的响应不能触发自动切换。
+- [ ] WebSoc 有数据但 calendar 缺少该 term 的 `instructionStart` 时，不自动切换。
+- [ ] API non-200、timeout、invalid JSON、`ok=false`、schema 缺失分别返回结构化状态并记录日志。
+- [ ] 只在同步到期时抓取完整候选 term，普通聊天请求不得重复下载整个 WebSoc。
+
+### M13.4 Week 2 Friday 截止点
+
+- [ ] 如果权威数据源提供明确的统一 add/drop deadline，优先使用官方字段。
+- [ ] 没有明确 deadline 时，根据 `instructionStart` 计算：
+  1. 找到 instruction start 当天或之后的第一个 Monday，作为 Week 1 Monday。
+  2. 加 11 天得到 Week 2 Friday。
+  3. 截止时刻设为美西时间 `17:00:00`。
+- [ ] 截止点比较必须精确到 instant：17:00 前不能切换，17:00 到达后才满足 cutoff 条件。
+- [ ] DST 由 `America/Los_Angeles` 自动处理，禁止写死 `PST` 或 `UTC-8`。
+- [ ] calendar 中存在异常日期、重复 term 或 instruction start 缺失时，拒绝推断并保留当前默认学期。
+
+### M13.5 `TermStateStore`、同步与 Fallback
+
+- [ ] 定义可替换的 `TermStateStore` 接口，隔离缓存、锁和业务判定。
+- [ ] 本地开发第一版使用文件缓存和进程锁，不引入尚未确定的数据库或 Redis。
+- [ ] 上线确定共享存储后，只替换 store 实现，不修改 `TermResolutionService` 规则。
+- [ ] 缓存至少保存：
+  - calendar records
+  - WebSoc term list
+  - 已验证的 term data availability
+  - current automatic term
+  - source URLs
+  - last_success_at
+  - last_attempt_at
+  - last_error
+- [ ] 运行期间每 30 天同步一次。
+- [ ] 应用启动时只有缓存年龄超过 30 天才同步，不能每次重启都下载完整 WebSoc。
+- [ ] 缓存 45 天内仍可用于解析和自动 term；同步失败时保留最近一次成功状态。
+- [ ] 缓存超过 45 天且同步失败时，使用代码内置、随版本更新的 fallback term。
+- [ ] fallback 状态必须返回 `source=code_fallback` 和 `status=fallback`，禁止伪装成实时 Anteater 判定。
+- [ ] 未取得跨进程共享锁时不得并发执行第二次完整同步；第一版记录此限制，生产多实例存储确定后补分布式锁。
+
+### M13.6 自动默认学期算法
+
+- [ ] 自动切换必须同时满足：
+  - 当前默认学期已超过统一 Week 2 Friday 17:00 截止点。
+  - 下一常规学期存在完整 calendar 数据。
+  - 下一常规学期出现在 `/websoc/terms`。
+  - 下一常规学期完整 WebSoc 至少包含一门 course 和一个 section。
+- [ ] 任一条件不满足时，继续使用当前默认学期。
+- [ ] Summer 数据即使已经发布，也不能成为自动默认学期。
+- [ ] 系统恢复时如果已经跨过多个截止点，并且多个后续常规 term 都满足条件，一次前进到满足规则的最新 term。
+- [ ] 不能仅按 calendar 当前日期决定 term，也不能仅选择 WebSoc term list 中名称最大的 term。
+- [ ] 默认 term 变化记录 previous/current term、cutoff、availability evidence、source 和 changed_at。
+
+### M13.7 Conversation `auto` / `pinned` Memory
+
+- [ ] conversation metadata 新增：
+  - `term_scope`
+  - `term_mode: auto | pinned`
+  - `term_source`
+  - `term_updated_at`
+- [ ] 新 conversation 一律创建为 `auto`，不得继承上一个 conversation 的 pinned term。
+- [ ] `auto` conversation 每次打开时解析系统默认 term；系统默认 term 更新后自动跟随。
+- [ ] 用户明确指定一个可用 term，并且该轮查询与回答成功后，conversation 才切换为 `pinned`。
+- [ ] 查询失败、tool 失败、validation block 或 term 尚无 course/section 数据时，不改变原 conversation term。
+- [ ] 用户指定另一个可用 term 后，成功回答时更新 pinned term。
+- [ ] 用户说“回到当前学期”时恢复 `auto`，之后继续跟随系统默认 term。
+- [ ] 用户指定过去学期时，只影响当前 conversation；新 conversation 仍使用 automatic term。
+- [ ] 用户指定尚无数据的 term 时拒绝切换，并明确说明该学期数据尚未发布。
+- [ ] 用户比较多个 term 时可以执行多学期工具调用，但 conversation term 保持不变。
+- [ ] 相对单 term 查询成功后，将解析结果保存为 pinned term；“当前学期”语义恢复 auto。
+- [ ] 打开历史 conversation 必须先读取自己的 `term_mode/term_scope`，不能被前端全局默认值覆盖。
+- [ ] 迁移所有旧 conversation 为 `auto`；旧 `term_scope` 不视为用户主动 pinned。
+- [ ] 迁移可重复执行，失败时不破坏原 meta/turn 文件，并记录迁移版本。
+
+### M13.8 Chat、Workflow、Agentic 与 Validation 接入
+
+- [ ] chat turn 开始时由后端解析 effective term，再构建 session state、agent context 和 memory context。
+- [ ] 前端请求中的 term 不再作为普通聊天的权威默认值。
+- [ ] developer workflow、agentic tools、WebSoc、Anteater live availability、catalog 和 validation 使用同一个 effective term。
+- [ ] LLM 可以识别用户意图并提出 term 工具参数，但后端必须 canonicalize、验证可用性并拒绝非法切换。
+- [ ] tool 实际查询 term 与 UI/session term 不一致时，validation 必须使用 tool/query resolution，而不是旧 term。
+- [ ] 多工具调用涉及多个 term 时，validation 按每项数据的 term/provenance 检查，不能压成单一全局 term。
+- [ ] SSE `meta` 返回最终 effective term、term mode、term source 和 conversation 更新结果。
+- [ ] 只有最终回答成功且未被 validation block，才提交 pinned term metadata。
+- [ ] 保留显式后端 `term` 参数兼容，删除“前端下拉框每轮覆盖 session term”的链路。
+- [ ] terminal 日志显示 resolved term、mode、source、用户显式 term、tool term、validation term 和是否持久化。
+
+### M13.9 前端只读 Term
+
+- [ ] 删除顶部可操作的全局 term selector 及其 option loading/change handler。
+- [ ] 在原位置显示稳定尺寸的只读文本：`Term: 2026 Fall`。
+- [ ] 使用代码 fallback 时显示：`Term: 2026 Fall · fallback`。
+- [ ] 不显示 `Auto` / `Pinned` 文案。
+- [ ] 创建新 conversation 后立即显示 automatic term。
+- [ ] 打开历史 conversation 后显示该 conversation 解析后的 effective term。
+- [ ] 用户指定 term 的回答成功后，根据 SSE meta 更新只读 term；失败时保持原显示。
+- [ ] 切换 conversation 时禁止先闪回系统默认 term，再加载 pinned term。
+- [ ] term 文本必须在桌面和移动端完整显示，不因长名称挤压导航或按钮。
+- [ ] 删除所有由 selector 向 chat、schedule、cards 隐式注入 term 的前端路径。
+
+### M13.10 跨学期 Schedule
+
+- [ ] 每个 pending schedule entry 永久保存自己的 canonical `term`，不能依赖当前 conversation term 推断。
+- [ ] 旧 schedule entry 缺少 term 时执行兼容迁移；无法可靠确定时标记 unknown，不静默套用当前 term。
+- [ ] section lookup、calendar event materialization、删除和去重都使用 entry 自己的 term。
+- [ ] Schedule 页面同时展示所有已加入 term 的课程，不按当前 conversation term 隐藏其他课程。
+- [ ] 不同 term 的课程时间重合时允许加入和显示 overlap。
+- [ ] 同 term 的时间重合也不弹冲突确认框、不返回 409 阻止加入；冲突检测可保留为非阻断 metadata。
+- [ ] Calendar block 保持现有内容密度，不额外塞入 term 文本；entry 的 term 在列表、详情或数据属性中可查询。
+- [ ] 不同课程继续使用不同颜色；颜色不需要与 term 建立固定映射。
+- [ ] 当新 entry 的 term 与 Schedule 中已有 entry term 不同时：
+  - 先成功加入。
+  - 再显示纯提示 toast。
+  - toast 有关闭按钮。
+  - toast 数秒后自动消失。
+  - toast 不要求确认，也不撤销已加入课程。
+- [ ] 同一 course/section 在不同 term 中视为不同 entry，不能跨 term 错误去重。
+
+### M13.11 API、可观测性与运维
+
+- [ ] 新增只读 term-state API，至少返回 automatic term、source、status、last success/attempt 和 next cutoff。
+- [ ] session API 返回 resolved effective term 和 `term_mode`，前端不自行推断。
+- [ ] health/metrics 增加 calendar sync、WebSoc availability probe、cache age、fallback 和 term transition 状态。
+- [ ] 日志事件至少包括：
+  - `term_sync_started/completed/failed`
+  - `term_availability_checked`
+  - `automatic_term_changed`
+  - `conversation_term_pinned`
+  - `conversation_term_reset_auto`
+  - `term_fallback_activated`
+- [ ] 完整 WebSoc 响应不写入日志，只记录计数、候选 term、URL、status、content length 和提取结果。
+- [ ] 记录 Anteater API attribution 要求，并在使用其数据的相关产品位置保留归属说明。
+- [ ] 本地文件 store 路径进入 runtime data 目录并加入 `.gitignore`，不得提交实时缓存。
+
+### M13.12 测试计划
+
+- [ ] canonical term parsing：标准、无空格、中文、relative、invalid、ambiguous、multi-term。
+- [ ] 常规序列跨年：Fall -> Winter -> Spring -> Fall。
+- [ ] Summer 不参与 automatic sequence，但 explicit Summer 可查询。
+- [ ] Fall Thursday instruction start 正确计算第二个教学周 Friday 17:00。
+- [ ] Winter/Spring Monday instruction start 正确计算 Week 2 Friday。
+- [ ] 截止前一秒不切换，截止 instant 到达后允许切换。
+- [ ] `America/Los_Angeles` DST 边界测试。
+- [ ] calendar 完整 + term list 出现 + course/section 非空时才 data available。
+- [ ] 空 shell、无 course、无 section、calendar 缺失均不能切换。
+- [ ] 多个后续 term 已满足条件时选择最新合格常规 term。
+- [ ] 30 天同步、启动 freshness gate、45 天 stale 和 code fallback 使用 fake clock 测试。
+- [ ] API timeout/non-200/schema error 保留 last-known-good cache。
+- [ ] 新 conversation auto、自动跟随、single-term pin、reset auto、failed query 不 pin。
+- [ ] 旧 conversation 全部迁移为 auto，迁移幂等。
+- [ ] sidebar 切换后 pinned/auto term 显示与持久化一致。
+- [ ] multi-term query 不改变 conversation term。
+- [ ] tool/validation 使用 resolved query term，不再复现 Spring UI 校验 Fall WebSoc 回答的问题。
+- [ ] schedule entry 保存 term；跨 term 不错误去重；lookup 使用 entry term。
+- [ ] same-term 和 cross-term overlap 均允许加入，不触发冲突确认。
+- [ ] cross-term toast 在加入成功后出现、可关闭、自动消失。
+- [ ] 前端不再发送或依赖全局 selector term。
+- [ ] 默认测试全部使用 fake Anteater response、fixture calendar/WebSoc 和 fake clock，不联网。
+
+### M13.13 分阶段提交计划
+
+1. `M13-A`：Term model、canonical parser、timezone clock、Week 2 cutoff 计算与单元测试。
+2. `M13-B`：Anteater calendar/terms/full-WebSoc client 与 availability fixture 测试。
+3. `M13-C`：TermStateStore、30 天同步、45 天 stale、fallback 和 observability。
+4. `M13-D`：automatic term state machine、auto/pinned conversation metadata 和旧 session 迁移。
+5. `M13-E`：chat/workflow/agentic/validation 统一 effective term，删除前端 term authority。
+6. `M13-F`：只读 term UI、SSE/session restore 与 sidebar 回归。
+7. `M13-G`：schedule entry term、跨 term toast、非阻断 overlap 和 schedule 回归。
+8. `M13-H`：完整离线回归、真实 Anteater smoke check、README/ROADMAP 收尾。
+
+每组提交只包含对应阶段文件。`.idea/`、实时 term cache、用户 session/memory 和 SQLite runtime 文件不得进入提交。
+
+### M13 验收
+
+- 全局 term selector 已删除，顶部只显示 conversation 对应的只读 canonical term。
+- 所有后端业务使用唯一 `TermResolutionService`，不存在 UI term、session term、tool term、validation term 互相覆盖。
+- automatic term 只有在 cutoff 和下一学期真实数据同时满足时才切换。
+- auto conversation 跟随默认学期；pinned conversation 跨 sidebar 切换和重启后保持指定 term。
+- 无数据的 explicit term 不会改变 conversation。
+- multi-term 查询可以执行但不会隐式 pin。
+- Schedule 可以保存并同时显示不同 term 的课程，所有 overlap 都是非阻断的。
+- 跨 term 加课后显示可关闭、自动消失的提示，不要求二次确认。
+- API 不可用时按 30/45 天 cache 规则降级，并明确显示 fallback。
+- 完整默认测试离线通过，真实 smoke check 不进入默认 CI。
+- M13-A 到 M13-H 每阶段都有独立 Git commit，可以单独回退。
+
+## 18. 跨阶段 Definition of Done
 
 每个任务只有同时满足以下条件才算完成：
 
@@ -1156,7 +1389,7 @@ Sources:
 - 对实时数据链路，必须明确 freshness、cache TTL、source 和 fallback 语义。
 - 对固定 workflow，必须有 fixture 测试证明不会绕到 agentic search。
 
-## 18. 实际提交分组
+## 19. 实际提交分组
 
 工作已按可审查、可回滚的阶段提交。每组提交都对应 ROADMAP 中的阶段性验收：
 
@@ -1173,8 +1406,9 @@ Sources:
 11. M10：Live WebSoc 可用性、专业限制 workflow、WebSoc comments 链接深读。
 12. M11：Agentic deep search tool、run 内 visited memory、SQLite trace history、workflow registry 重构。（已完成。）
 13. M12：WebSoc POST 表单、结果验证、服务端强制 restriction workflow、linked-page evidence。（已完成。）
+14. M13：自动学期上下文、conversation auto/pinned term、只读 term UI 和跨学期 Schedule。（规划已批准，待实现。）
 
-## 19. 进度记录
+## 20. 进度记录
 
 | 日期 | 阶段 | 变更 | Commit/PR | 验收结果 |
 |---|---|---|---|---|
@@ -1190,3 +1424,4 @@ Sources:
 | 2026-07-05 | M9 | 完成 controlled `web_search`、source classifier、Search Skill prompt、前端 chip/source badge 和离线 fake-provider 测试 | `feat: add controlled web search evidence chain` | `compileall`、`pip check`、`139 passed, 2 deselected` 通过；默认测试不联网，搜索关闭时结构化 unavailable。 |
 | 2026-07-21 | M11 | 完成 developer workflow registry、`fetch_page`、run 去重与 depth/page 预算、SQLite 公共 trace、本地相似匹配、历史强建议与 fresh-source 门禁 | `fcebe7d`–`1439583` | `compileall` 与完整离线回归通过：`202 passed`；`.idea/` 未纳入提交。 |
 | 2026-07-21 | M12 | 修复 WebSoc 同 URL 表单抓取，增加 live option/response validation、server-forced restriction workflow 和 linked-page structured evidence | `af3e8ea`–本阶段收尾提交 | `compileall`、完整离线回归 `219 passed, 2 deselected`；真实 ART POST 验证得到 major restriction `2026-08-24 noon`、NORS `2026-08-21 noon`。 |
+| 2026-07-22 | M13 | 自动学期上下文、Anteater calendar/WebSoc 发布门禁、conversation auto/pinned、只读 term 与跨学期 Schedule 规划 | 待实现 | 需求审核通过；已拆分为 M13-A 至 M13-H，尚未修改功能代码。 |
