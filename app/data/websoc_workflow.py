@@ -36,6 +36,8 @@ WEBSOC_URL = "https://www.reg.uci.edu/perl/WebSoc"
 REQUEST_TIMEOUT_S = 12
 LINK_TEXT_MAX_CHARS = 1500
 LINK_MAX_BYTES = 500_000
+SECOND_HOP_MAX_PAGES = 1
+SECOND_HOP_ALLOWED_HOSTS = frozenset({"docs.google.com"})
 LOG_TEXT_MAX_CHARS = 1000
 AGENT_TOOL = "get_department_restrictions"
 WORKFLOW_ID = "websoc_department_restrictions"
@@ -623,19 +625,23 @@ def fetch_linked_official_pages(
             "pages": [],
         }
 
-    selected: list[dict[str, Any]] = []
-    seen_selected: set[tuple[str, str, str]] = set()
     page_limit = max(0, max_pages)
-    for link in workflow_result.get("links", []):
-        if len(selected) >= page_limit:
-            break
-        if not _should_deep_read_link(link, workflow_result):
-            continue
-        identity = _url_identity(link.get("url") or "")
-        if identity is None or identity in seen_selected:
-            continue
-        seen_selected.add(identity)
-        selected.append(link)
+    query = _restriction_query_from_workflow(workflow_result)
+    selected = _select_first_hop_links(
+        workflow_result,
+        query=query,
+        max_pages=page_limit,
+    )
+    observability.log_event(
+        logger,
+        logging.INFO,
+        "restriction_page_selected",
+        workflow_id=workflow_result.get("workflow_id"),
+        source_url=workflow_result.get("source_url"),
+        restriction_type=query.restriction_type.value,
+        selected_count=len(selected),
+        result_urls=[link.get("url") for link in selected],
+    )
     observability.log_event(
         logger,
         logging.INFO,
@@ -648,169 +654,80 @@ def fetch_linked_official_pages(
     http = session or requests.Session()
     pages: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
+    attempted_urls: list[str] = []
+    seen_requested: set[tuple[str, str, str]] = set()
     for link in selected:
-        retrieved_at = _utc_now()
-        linked_url = link["url"]
-        request_started = observability.now()
-        observability.log_agent_web_fetch_started(
-            logger,
-            url=linked_url,
-            method="GET",
-            tool=AGENT_TOOL,
-            workflow_id=workflow_result.get("workflow_id") or WORKFLOW_ID,
-            link_role=link.get("link_role"),
-        )
-        try:
-            response = http.get(linked_url, timeout=REQUEST_TIMEOUT_S)
-            response.raise_for_status()
-            observability.log_agent_web_fetch_completed(
-                logger,
-                url=linked_url,
-                final_url=getattr(response, "url", None) or linked_url,
-                method="GET",
-                tool=AGENT_TOOL,
-                workflow_id=workflow_result.get("workflow_id") or WORKFLOW_ID,
-                status_code=getattr(response, "status_code", None),
-                content_type=(getattr(response, "headers", {}) or {}).get("content-type"),
-                content_length=len((getattr(response, "text", "") or "").encode("utf-8")),
-                duration_ms=observability.elapsed_ms(request_started),
-                link_role=link.get("link_role"),
-            )
-        except requests.RequestException as e:
-            observability.log_agent_web_fetch_failed(
-                logger,
-                url=linked_url,
-                method="GET",
-                tool=AGENT_TOOL,
-                workflow_id=workflow_result.get("workflow_id") or WORKFLOW_ID,
-                duration_ms=observability.elapsed_ms(request_started),
-                error=f"{type(e).__name__}: {e}",
-                link_role=link.get("link_role"),
-            )
-            errors.append(
-                {
-                    "url": linked_url,
-                    "error_code": "linked_page_request_failed",
-                    "message": f"official linked page request failed: {type(e).__name__}",
-                }
-            )
+        identity = _url_identity(link.get("url") or "")
+        if identity is None or identity in seen_requested:
             continue
-
-        final_url = getattr(response, "url", linked_url) or linked_url
-        if not _is_uci_domain(final_url):
-            errors.append(
-                {
-                    "url": link["url"],
-                    "final_url": final_url,
-                    "error_code": "linked_page_left_allowed_domain",
-                    "message": "linked page redirected outside uci.edu",
-                }
-            )
-            continue
-
-        content_type = (getattr(response, "headers", {}) or {}).get("content-type", "")
-        if content_type and not _is_textual_content_type(content_type):
-            errors.append(
-                {
-                    "url": link["url"],
-                    "final_url": final_url,
-                    "error_code": "linked_page_unsupported_content_type",
-                    "message": f"linked page content type is not text/html: {content_type}",
-                }
-            )
-            continue
-
-        content_length = _safe_int((getattr(response, "headers", {}) or {}).get("content-length"))
-        if content_length is not None and content_length > LINK_MAX_BYTES:
-            errors.append(
-                {
-                    "url": link["url"],
-                    "final_url": final_url,
-                    "error_code": "linked_page_too_large",
-                    "message": "linked page is larger than the workflow limit",
-                }
-            )
-            continue
-
-        if len((response.text or "").encode("utf-8")) > LINK_MAX_BYTES:
-            errors.append(
-                {
-                    "url": link["url"],
-                    "final_url": final_url,
-                    "error_code": "linked_page_too_large",
-                    "message": "linked page body is larger than the workflow limit",
-                }
-            )
-            continue
-
-        parsed = _parse_html(response.text)
-        content_blocks = extract_main_content_blocks(response.text)
-        raw_restriction_type = (
-            workflow_result.get("restriction_type") or "ambiguous"
+        seen_requested.add(identity)
+        attempted_urls.append(link["url"])
+        page, error = _fetch_and_parse_linked_page(
+            http,
+            link,
+            workflow_result=workflow_result,
+            query=query,
+            allowed_url=_is_uci_domain,
+            depth=1,
         )
-        try:
-            requested_restriction_type = RestrictionType(raw_restriction_type)
-        except ValueError:
-            requested_restriction_type = RestrictionType.AMBIGUOUS
-        query = RestrictionQuery(
-            term=str(workflow_result.get("term") or ""),
-            department=str(workflow_result.get("department") or ""),
-            course_id=workflow_result.get("course_id"),
-            restriction_type=requested_restriction_type,
+        if error:
+            errors.append(error)
+            continue
+        if page is not None:
+            pages.append(page)
+            if _page_satisfies_query(page, query):
+                break
+
+    first_hop_pages = list(pages)
+    if (
+        query.restriction_type == RestrictionType.COURSE_SPECIFIC
+        and not any(_page_satisfies_query(page, query) for page in pages)
+        and len(pages) < page_limit
+    ):
+        second_hop_budget = min(
+            SECOND_HOP_MAX_PAGES,
+            page_limit - len(pages),
         )
-        focused_blocks = select_query_focused_blocks(content_blocks, query)
-        timeline_events = parse_restriction_timeline(
-            content_blocks,
-            term=query.term,
-            department=query.department,
-            source_url=final_url,
-            source_role=link.get("link_role") or "official_link",
-            retrieved_at=retrieved_at,
-        )
-        restriction_fields = _extract_restriction_fields(parsed.text)
-        _fill_fields_from_timeline(restriction_fields, timeline_events)
-        relevant_passages = [
-            block["text"] for block in focused_blocks[:12]
-        ] or _extract_restriction_passages(parsed.text)
-        excerpt_blocks = focused_blocks or content_blocks
-        page_links = _normalize_page_links(parsed.links, source_url=final_url)
-        page = {
-            "url": final_url,
-            "domain": _domain_from_url(final_url),
-            "retrieved_at": retrieved_at,
-            "source_link_text": link.get("text"),
-            "source_block": link.get("source_block"),
-            "link_role": link.get("link_role"),
-            "text_excerpt": _truncate(
-                "\n".join(block["text"] for block in excerpt_blocks),
-                LINK_TEXT_MAX_CHARS,
-            ),
-            "content_block_count": len(content_blocks),
-            "selected_block_count": len(focused_blocks),
-            "restriction_fields": restriction_fields,
-            "relevant_passages": relevant_passages,
-            "timeline_events": [event.to_dict() for event in timeline_events],
-            "links": page_links,
-        }
-        pages.append(page)
-        observability.log_event(
-            logger,
-            logging.INFO,
-            "agent_web_extraction_completed",
-            workflow_id=workflow_result.get("workflow_id"),
-            tool=AGENT_TOOL,
-            url=final_url,
-            link_role=link.get("link_role"),
-            passage_count=len(relevant_passages),
-            link_count=len(page_links),
-            timeline_event_count=len(timeline_events),
-        )
+        for parent_page in first_hop_pages:
+            for link in _select_second_hop_links(
+                parent_page,
+                max_pages=second_hop_budget,
+            ):
+                identity = _url_identity(link.get("url") or "")
+                if identity is None or identity in seen_requested:
+                    continue
+                seen_requested.add(identity)
+                attempted_urls.append(link["url"])
+                page, error = _fetch_and_parse_linked_page(
+                    http,
+                    link,
+                    workflow_result=workflow_result,
+                    query=query,
+                    allowed_url=_is_allowed_second_hop_url,
+                    depth=2,
+                    parent_url=parent_page["url"],
+                )
+                if error:
+                    errors.append(error)
+                    continue
+                if page is not None:
+                    pages.append(page)
+                    second_hop_budget -= 1
+                if second_hop_budget <= 0 or (
+                    page is not None and _page_satisfies_query(page, query)
+                ):
+                    break
+            if second_hop_budget <= 0 or any(
+                _page_satisfies_query(page, query) for page in pages
+            ):
+                break
 
     result = {
         "ok": True,
         "workflow_id": workflow_result.get("workflow_id"),
         "source_url": workflow_result.get("source_url"),
-        "selected_count": len(selected),
+        "selected_count": len(attempted_urls),
+        "fetched_urls": attempted_urls,
         "pages": pages,
         "restriction_evidence": [
             {
@@ -829,12 +746,242 @@ def fetch_linked_official_pages(
         "websoc_linked_search_completed",
         workflow_id=workflow_result.get("workflow_id"),
         source_url=workflow_result.get("source_url"),
-        selected_count=len(selected),
+        selected_count=len(attempted_urls),
         page_count=len(pages),
         error_count=len(errors),
         result_urls=[page.get("url") for page in pages],
     )
     return result
+
+
+def _fetch_and_parse_linked_page(
+    http: requests.Session,
+    link: dict[str, Any],
+    *,
+    workflow_result: dict[str, Any],
+    query: RestrictionQuery,
+    allowed_url,
+    depth: int,
+    parent_url: Optional[str] = None,
+) -> tuple[Optional[dict[str, Any]], Optional[dict[str, Any]]]:
+    retrieved_at = _utc_now()
+    linked_url = link["url"]
+    request_started = observability.now()
+    observability.log_agent_web_fetch_started(
+        logger,
+        url=linked_url,
+        method="GET",
+        tool=AGENT_TOOL,
+        workflow_id=workflow_result.get("workflow_id") or WORKFLOW_ID,
+        link_role=link.get("link_role"),
+        depth=depth,
+    )
+    try:
+        response = http.get(linked_url, timeout=REQUEST_TIMEOUT_S)
+        response.raise_for_status()
+        observability.log_agent_web_fetch_completed(
+            logger,
+            url=linked_url,
+            final_url=getattr(response, "url", None) or linked_url,
+            method="GET",
+            tool=AGENT_TOOL,
+            workflow_id=workflow_result.get("workflow_id") or WORKFLOW_ID,
+            status_code=getattr(response, "status_code", None),
+            content_type=(getattr(response, "headers", {}) or {}).get("content-type"),
+            content_length=len((getattr(response, "text", "") or "").encode("utf-8")),
+            duration_ms=observability.elapsed_ms(request_started),
+            link_role=link.get("link_role"),
+            depth=depth,
+        )
+    except requests.RequestException as e:
+        observability.log_agent_web_fetch_failed(
+            logger,
+            url=linked_url,
+            method="GET",
+            tool=AGENT_TOOL,
+            workflow_id=workflow_result.get("workflow_id") or WORKFLOW_ID,
+            duration_ms=observability.elapsed_ms(request_started),
+            error=f"{type(e).__name__}: {e}",
+            link_role=link.get("link_role"),
+            depth=depth,
+        )
+        return None, {
+            "url": linked_url,
+            "depth": depth,
+            "error_code": "linked_page_request_failed",
+            "message": f"official linked page request failed: {type(e).__name__}",
+        }
+
+    final_url = getattr(response, "url", linked_url) or linked_url
+    if not allowed_url(final_url):
+        return None, {
+            "url": linked_url,
+            "final_url": final_url,
+            "depth": depth,
+            "error_code": "linked_page_left_allowed_domain",
+            "message": "linked page redirected outside its allowed domain",
+        }
+
+    content_type = (getattr(response, "headers", {}) or {}).get("content-type", "")
+    if content_type and not _is_textual_content_type(content_type):
+        return None, {
+            "url": linked_url,
+            "final_url": final_url,
+            "depth": depth,
+            "error_code": "linked_page_unsupported_content_type",
+            "message": f"linked page content type is not text/html: {content_type}",
+        }
+
+    content_length = _safe_int(
+        (getattr(response, "headers", {}) or {}).get("content-length")
+    )
+    response_text = getattr(response, "text", "") or ""
+    if (
+        content_length is not None
+        and content_length > LINK_MAX_BYTES
+        or len(response_text.encode("utf-8")) > LINK_MAX_BYTES
+    ):
+        return None, {
+            "url": linked_url,
+            "final_url": final_url,
+            "depth": depth,
+            "error_code": "linked_page_too_large",
+            "message": "linked page body is larger than the workflow limit",
+        }
+
+    parsed = _parse_html(response_text)
+    content_blocks = extract_main_content_blocks(response_text)
+    focused_blocks = select_query_focused_blocks(content_blocks, query)
+    timeline_events = parse_restriction_timeline(
+        content_blocks,
+        term=query.term,
+        department=query.department,
+        source_url=final_url,
+        source_role=link.get("link_role") or "official_link",
+        retrieved_at=retrieved_at,
+    )
+    restriction_fields = _extract_restriction_fields(parsed.text)
+    _fill_fields_from_timeline(restriction_fields, timeline_events)
+    relevant_passages = [
+        block["text"] for block in focused_blocks[:12]
+    ] or _extract_restriction_passages(parsed.text)
+    excerpt_blocks = focused_blocks or content_blocks
+    page_links = _normalize_page_links(parsed.links, source_url=final_url)
+    page = {
+        "url": final_url,
+        "domain": _domain_from_url(final_url),
+        "retrieved_at": retrieved_at,
+        "source_link_text": link.get("text"),
+        "source_block": link.get("source_block"),
+        "source_blocks": link.get("source_blocks") or [],
+        "link_role": link.get("link_role"),
+        "depth": depth,
+        "parent_url": parent_url,
+        "text_excerpt": _truncate(
+            "\n".join(block["text"] for block in excerpt_blocks),
+            LINK_TEXT_MAX_CHARS,
+        ),
+        "content_block_count": len(content_blocks),
+        "selected_block_count": len(focused_blocks),
+        "restriction_fields": restriction_fields,
+        "relevant_passages": relevant_passages,
+        "timeline_events": [event.to_dict() for event in timeline_events],
+        "links": page_links,
+    }
+    observability.log_event(
+        logger,
+        logging.INFO,
+        "restriction_timeline_extracted",
+        workflow_id=workflow_result.get("workflow_id"),
+        tool=AGENT_TOOL,
+        url=final_url,
+        link_role=link.get("link_role"),
+        passage_count=len(relevant_passages),
+        link_count=len(page_links),
+        timeline_event_count=len(timeline_events),
+        depth=depth,
+    )
+    observability.log_event(
+        logger,
+        logging.INFO,
+        "agent_web_extraction_completed",
+        workflow_id=workflow_result.get("workflow_id"),
+        tool=AGENT_TOOL,
+        url=final_url,
+        link_role=link.get("link_role"),
+        passage_count=len(relevant_passages),
+        link_count=len(page_links),
+        timeline_event_count=len(timeline_events),
+        depth=depth,
+    )
+    return page, None
+
+
+def _restriction_query_from_workflow(
+    workflow_result: dict[str, Any],
+) -> RestrictionQuery:
+    raw_restriction_type = workflow_result.get("restriction_type") or "ambiguous"
+    try:
+        restriction_type = RestrictionType(raw_restriction_type)
+    except ValueError:
+        restriction_type = RestrictionType.AMBIGUOUS
+    return RestrictionQuery(
+        term=str(workflow_result.get("term") or ""),
+        department=str(workflow_result.get("department") or ""),
+        course_id=workflow_result.get("course_id"),
+        restriction_type=restriction_type,
+        student_major=workflow_result.get("student_major"),
+        student_school=workflow_result.get("student_school"),
+        academic_level=str(
+            workflow_result.get("academic_level") or "undergraduate"
+        ),
+    )
+
+
+def _select_first_hop_links(
+    workflow_result: dict[str, Any],
+    *,
+    query: RestrictionQuery,
+    max_pages: int,
+) -> list[dict[str, Any]]:
+    selected: list[dict[str, Any]] = []
+    selected_by_identity: dict[tuple[str, str, str], dict[str, Any]] = {}
+    preferred_roles = _preferred_first_hop_roles(query)
+    for link in workflow_result.get("links", []):
+        role = link.get("link_role")
+        if role and role.startswith("ics_") and role not in preferred_roles:
+            continue
+        if not _should_deep_read_link(link, workflow_result):
+            continue
+        identity = _url_identity(link.get("url") or "")
+        if identity is None:
+            continue
+        source_block = link.get("source_block")
+        existing = selected_by_identity.get(identity)
+        if existing is not None:
+            if (
+                source_block
+                and source_block not in existing["source_blocks"]
+            ):
+                existing["source_blocks"].append(source_block)
+            continue
+        if len(selected) >= max_pages:
+            continue
+        item = {
+            **link,
+            "source_blocks": [source_block] if source_block else [],
+        }
+        selected_by_identity[identity] = item
+        selected.append(item)
+    return selected
+
+
+def _preferred_first_hop_roles(query: RestrictionQuery) -> set[str]:
+    if query.academic_level.lower().startswith("grad"):
+        return {"ics_graduate_course_updates"}
+    if query.restriction_type == RestrictionType.ADD_DROP_CHANGE:
+        return {"ics_undergraduate_student_policies"}
+    return {"ics_undergraduate_restrictions"}
 
 
 def _should_deep_read_link(link: dict[str, Any], workflow_result: dict[str, Any]) -> bool:
@@ -850,6 +997,71 @@ def _should_deep_read_link(link: dict[str, Any], workflow_result: dict[str, Any]
         needle in text
         for needle in ("restriction", "timeline", "policy", "policies", "enroll")
     )
+
+
+def _select_second_hop_links(
+    parent_page: dict[str, Any],
+    *,
+    max_pages: int,
+) -> list[dict[str, Any]]:
+    selected: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for link in parent_page.get("links", []):
+        if len(selected) >= max_pages:
+            break
+        if not link.get("allowed_for_second_hop"):
+            continue
+        identity = _url_identity(link.get("url") or "")
+        if identity is None or identity in seen:
+            continue
+        seen.add(identity)
+        selected.append(link)
+    return selected
+
+
+def _page_satisfies_query(
+    page: dict[str, Any],
+    query: RestrictionQuery,
+) -> bool:
+    events = page.get("timeline_events") or []
+    if query.restriction_type == RestrictionType.AMBIGUOUS:
+        return bool(events or page.get("relevant_passages"))
+    if query.restriction_type == RestrictionType.COURSE_SPECIFIC:
+        target = _normalize_course_id(query.course_id)
+        if not target:
+            return False
+        for event in events:
+            values = [
+                *(event.get("course_scope") or []),
+                event.get("statement") or "",
+            ]
+            for exception in event.get("exceptions") or []:
+                values.extend(
+                    [
+                        exception.get("course_id") or "",
+                        *(exception.get("course_ids") or []),
+                        exception.get("text") or "",
+                    ]
+                )
+            if any(target in _normalize_course_id(value) for value in values):
+                return True
+        return False
+    return any(
+        event.get("restriction_type") == query.restriction_type.value
+        and event.get("effective_at")
+        for event in events
+    )
+
+
+def _normalize_course_id(value: Optional[str]) -> str:
+    upper = (value or "").upper()
+    upper = re.sub(r"I\s*&\s*C\s*SCI", "ICS", upper)
+    return re.sub(r"[^A-Z0-9]", "", upper)
+
+
+def _is_allowed_second_hop_url(url: str) -> bool:
+    host = (urlsplit(url).hostname or "").lower()
+    return host in SECOND_HOP_ALLOWED_HOSTS
 
 
 def _fill_fields_from_timeline(
@@ -1023,16 +1235,34 @@ def _normalize_page_links(
         if absolute_url in seen or not _domain_from_url(absolute_url):
             continue
         seen.add(absolute_url)
+        text = link.get("text") or absolute_url
+        second_hop_role = _classify_second_hop_role(absolute_url, text)
         normalized.append(
             {
-                "text": link.get("text") or absolute_url,
+                "text": text,
                 "url": absolute_url,
                 "domain": _domain_from_url(absolute_url),
                 "source_url": source_url,
                 "is_uci_official": _is_uci_domain(absolute_url),
+                "link_role": second_hop_role,
+                "allowed_for_second_hop": bool(
+                    second_hop_role and _is_allowed_second_hop_url(absolute_url)
+                ),
             }
         )
     return normalized
+
+
+def _classify_second_hop_role(url: str, text: str) -> Optional[str]:
+    value = f"{text} {url}".lower()
+    if re.search(
+        r"restriction.{0,24}(?:spreadsheet|sheet|timeline|table)"
+        r"|(?:spreadsheet|sheet|timeline|table).{0,24}restriction"
+        r"|docs\.google\.com/spreadsheets",
+        value,
+    ):
+        return "restriction_spreadsheet"
+    return None
 
 
 def _extract_result_term(text: str) -> Optional[str]:

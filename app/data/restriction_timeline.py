@@ -381,6 +381,10 @@ def parse_restriction_timeline(
         action_info = _action_type(text)
         if action_info is not None:
             restriction_type, action = action_info
+            course_scope = [
+                ref.display()
+                for ref, _start, _end in iter_course_mentions(text)
+            ]
             inline_date, inline_time = _inline_datetime(text)
             event_date = inline_date or current_date
             event_time = inline_time or current_time
@@ -393,7 +397,7 @@ def parse_restriction_timeline(
                 "effective_at": effective_at,
                 "term": term,
                 "department": current_department,
-                "course_scope": [],
+                "course_scope": course_scope,
                 "audience": list(audience),
                 "exceptions": [],
                 "source_url": source_url,
@@ -448,6 +452,8 @@ def _action_type(text: str) -> Optional[tuple[RestrictionType, str]]:
         return RestrictionType.CLASS_LEVEL, action
     if re.search(r"repeat restrictions?", text, re.I):
         return RestrictionType.REPEAT, action
+    if any(iter_course_mentions(text)):
+        return RestrictionType.COURSE_SPECIFIC, action
     return None
 
 

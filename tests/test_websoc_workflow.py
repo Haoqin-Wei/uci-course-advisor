@@ -288,10 +288,9 @@ def test_deep_read_fetches_only_selected_official_websoc_links(caplog) -> None:
     )
 
     assert result["ok"] is True
-    assert result["selected_count"] == 2
+    assert result["selected_count"] == 1
     assert calls == [
         "http://ics.uci.edu/course-enrollment-restrictions/",
-        "http://ics.uci.edu/academics/graduate-academic-advising/course-updates/",
     ]
     assert result["pages"][0]["domain"] == "ics.uci.edu"
     assert result["pages"][0]["link_role"] == "ics_undergraduate_restrictions"
@@ -316,6 +315,211 @@ def test_deep_read_fetches_only_selected_official_websoc_links(caplog) -> None:
     assert "event=agent_web_extraction_completed" in caplog.text
     assert "Monday, August 24th, 2026 at noon" not in caplog.text
     assert "event=websoc_linked_search_completed" in caplog.text
+
+
+def test_query_aware_selection_keeps_duplicate_source_blocks() -> None:
+    workflow_result = websoc_workflow.parse_websoc_department_html(
+        _fixture("ics_department.html"),
+        term="Fall 2026",
+        department="I&C SCI",
+        source_url=websoc_workflow.WEBSOC_URL,
+    )
+    workflow_result["restriction_type"] = "school_major"
+    calls: list[str] = []
+
+    class FakeResponse:
+        status_code = 200
+        url = "http://ics.uci.edu/course-enrollment-restrictions/"
+        headers = {"content-type": "text/html"}
+        text = """
+        <main><p>9/18/2026</p><p>12:00pm</p>
+        <p>School/Major restrictions are removed.</p></main>
+        """
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        def get(self, url, **_kwargs):
+            calls.append(url)
+            return FakeResponse()
+
+    result = websoc_workflow.fetch_linked_official_pages(
+        workflow_result,
+        session=FakeSession(),
+    )
+
+    assert calls == ["http://ics.uci.edu/course-enrollment-restrictions/"]
+    assert result["pages"][0]["source_blocks"] == [
+        "Donald Bren School of Information and Computer Sciences comments:",
+        "Information and Computer Science department comments:",
+    ]
+
+
+def test_query_aware_selection_uses_graduate_or_policy_role() -> None:
+    base = websoc_workflow.parse_websoc_department_html(
+        _fixture("ics_department.html"),
+        term="Fall 2026",
+        department="I&C SCI",
+        source_url=websoc_workflow.WEBSOC_URL,
+    )
+
+    class FakeResponse:
+        status_code = 200
+        headers = {"content-type": "text/html"}
+        text = "<main><p>Official policy page.</p></main>"
+
+        def __init__(self, url):
+            self.url = url
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        def __init__(self):
+            self.calls = []
+
+        def get(self, url, **_kwargs):
+            self.calls.append(url)
+            return FakeResponse(url)
+
+    graduate_session = FakeSession()
+    graduate_result = {
+        **base,
+        "academic_level": "graduate",
+        "restriction_type": "school_major",
+    }
+    websoc_workflow.fetch_linked_official_pages(
+        graduate_result,
+        session=graduate_session,
+    )
+    assert graduate_session.calls == [
+        "http://ics.uci.edu/academics/graduate-academic-advising/course-updates/"
+    ]
+
+    policy_session = FakeSession()
+    policy_result = {**base, "restriction_type": "add_drop_change"}
+    websoc_workflow.fetch_linked_official_pages(
+        policy_result,
+        session=policy_session,
+    )
+    assert policy_session.calls == [
+        "http://ics.uci.edu/academics/undergraduate-programs/majors-minors/"
+        "undergraduate-student-policies/"
+    ]
+
+
+def test_course_specific_query_uses_one_allowlisted_second_hop() -> None:
+    workflow_result = {
+        "ok": True,
+        "workflow_id": "websoc_department_restrictions",
+        "term": "Fall 2026",
+        "department": "I&C SCI",
+        "course_id": "I&C SCI 139W",
+        "restriction_type": "course_specific",
+        "source_url": websoc_workflow.WEBSOC_URL,
+        "fields": {},
+        "links": [
+            {
+                "text": "Undergraduate restrictions",
+                "url": "https://ics.uci.edu/course-enrollment-restrictions/",
+                "allowed_for_deep_read": True,
+                "link_role": "ics_undergraduate_restrictions",
+                "source_block": "ICS comments:",
+            }
+        ],
+    }
+    calls: list[str] = []
+
+    class FakeResponse:
+        status_code = 200
+        headers = {"content-type": "text/html"}
+
+        def __init__(self, url):
+            self.url = url
+            if "docs.google.com" in url:
+                self.text = """
+                <main><table><tr><td>I&amp;C SCI 139W</td>
+                <td>9/20/2026 12:00pm</td>
+                <td>course restriction is removed</td></tr></table></main>
+                """
+            else:
+                self.text = """
+                <main><p>See the
+                <a href="https://docs.google.com/spreadsheets/d/official">
+                restriction spreadsheet</a> for course details.</p></main>
+                """
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        def get(self, url, **_kwargs):
+            calls.append(url)
+            return FakeResponse(url)
+
+    result = websoc_workflow.fetch_linked_official_pages(
+        workflow_result,
+        session=FakeSession(),
+    )
+
+    assert calls == [
+        "https://ics.uci.edu/course-enrollment-restrictions/",
+        "https://docs.google.com/spreadsheets/d/official",
+    ]
+    assert result["pages"][1]["depth"] == 2
+    assert result["pages"][1]["parent_url"] == calls[0]
+    assert result["pages"][1]["timeline_events"][0]["course_scope"] == [
+        "I&C SCI 139W"
+    ]
+
+
+def test_course_specific_query_rejects_non_allowlisted_second_hop() -> None:
+    workflow_result = {
+        "ok": True,
+        "workflow_id": "websoc_department_restrictions",
+        "term": "Fall 2026",
+        "department": "I&C SCI",
+        "course_id": "I&C SCI 139W",
+        "restriction_type": "course_specific",
+        "source_url": websoc_workflow.WEBSOC_URL,
+        "fields": {},
+        "links": [
+            {
+                "text": "Undergraduate restrictions",
+                "url": "https://ics.uci.edu/course-enrollment-restrictions/",
+                "allowed_for_deep_read": True,
+                "link_role": "ics_undergraduate_restrictions",
+                "source_block": "ICS comments:",
+            }
+        ],
+    }
+    calls: list[str] = []
+
+    class FakeResponse:
+        status_code = 200
+        url = "https://ics.uci.edu/course-enrollment-restrictions/"
+        headers = {"content-type": "text/html"}
+        text = """
+        <main><a href="https://example.com/restriction-spreadsheet">
+        restriction spreadsheet</a></main>
+        """
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        def get(self, url, **_kwargs):
+            calls.append(url)
+            return FakeResponse()
+
+    result = websoc_workflow.fetch_linked_official_pages(
+        workflow_result,
+        session=FakeSession(),
+    )
+
+    assert calls == ["https://ics.uci.edu/course-enrollment-restrictions/"]
+    assert result["pages"][0]["links"][0]["allowed_for_second_hop"] is False
 
 
 def test_deep_read_skips_links_when_websoc_comments_already_have_date() -> None:
