@@ -13,6 +13,7 @@ from typing import Any, Optional
 
 from app.catalog.departments import DEPARTMENT_ALIASES
 from app.catalog.normalization import iter_course_mentions
+from app.data.restriction_timeline import classify_restriction_type
 from app.terms import parse_term_text
 
 
@@ -113,6 +114,11 @@ def route_solution(user_text: str, *, term: Optional[str] = None) -> dict[str, A
     courses = [ref.display() for ref, _start, _end in iter_course_mentions(text)]
     tools = [tool for rule in matches for tool in rule.tools]
     explicit_terms = _extract_terms(text)
+    restriction_type = (
+        classify_restriction_type(text, has_course=bool(courses)).value
+        if any(rule.intent == "department_restriction" for rule in matches)
+        else None
+    )
     return {
         "route_type": "workflow",
         "mode": "developer_workflow",
@@ -125,6 +131,7 @@ def route_solution(user_text: str, *, term: Optional[str] = None) -> dict[str, A
         "explicit_terms": explicit_terms,
         "course_ids": list(dict.fromkeys(courses)),
         "departments": _extract_departments(text),
+        "restriction_type": restriction_type,
         "search_tools_are_supplemental": True,
         "source_conflict_policy": "present_both",
     }
@@ -197,6 +204,7 @@ def build_primary_workflow_plan(route: dict[str, Any]) -> dict[str, Any]:
     restriction_args: dict[str, Any] = {
         "term": workflow_terms[0],
         "follow_links": True,
+        "restriction_type": route.get("restriction_type") or "ambiguous",
     }
     if departments:
         restriction_args["department"] = departments[0]

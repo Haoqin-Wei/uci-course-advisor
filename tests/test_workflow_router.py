@@ -48,6 +48,7 @@ def test_router_classifies_department_restrictions_and_department_alias() -> Non
     assert route["explicit_terms"] == ["2026 Fall"]
     assert route["term"] == "2026 Fall"
     assert route["selected_term"] == "Spring 2026"
+    assert route["restriction_type"] == "school_major"
 
     plan = build_primary_workflow_plan(route)
     assert plan["clarification"] is None
@@ -58,6 +59,7 @@ def test_router_classifies_department_restrictions_and_department_alias() -> Non
             "args": {
                 "term": "2026 Fall",
                 "follow_links": True,
+                "restriction_type": "school_major",
                 "department": "I&C SCI",
             },
         }
