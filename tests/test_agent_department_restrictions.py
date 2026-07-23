@@ -81,8 +81,13 @@ def test_department_restrictions_dispatcher_fetches_websoc_and_linked_pages(
     )
 
     assert result["ok"] is True
-    assert result["restriction_type"] == "major_restriction"
-    assert result["linked_pages"] == {"ok": True, "pages": []}
+    assert result["restriction_type"] == "school_major"
+    assert result["linked_pages"]["ok"] is True
+    assert result["linked_pages"]["pages"] == []
+    assert result["evidence_bundle"]["evidence_status"] == "verified"
+    assert result["verified_facts"]["primary"]["restriction_type"] == "school_major"
+    assert "school_comments" not in result
+    assert "comment_blocks" not in result
     assert calls == [
         ("fetch", {"term": "2026 Fall", "department": "ART"}),
         ("deep_read", {"source_url": "https://www.reg.uci.edu/perl/WebSoc?Dept=ART"}),
@@ -251,7 +256,7 @@ def test_agent_uses_effective_term_for_forced_restriction_workflow(monkeypatch) 
         lambda _result: {"ok": True, "pages": []},
     )
     messages = [{"role": "user", "content": "ART 专业限制什么时候解除？"}]
-    client = ScriptedLLMClient(text_response("No restriction date is published."))
+    client = ScriptedLLMClient()
 
     events = asyncio.run(
         _collect(
@@ -269,4 +274,7 @@ def test_agent_uses_effective_term_for_forced_restriction_workflow(monkeypatch) 
     assert events[0]["args"]["term"] == "2026 Spring"
     assert calls == [{"term": "2026 Spring", "department": "ART"}]
     assert events[-1]["type"] == "final"
+    assert events[-1]["deterministic_restriction_answer"] is True
+    assert "未能从已抓取的官方来源验证" in events[-1]["text"]
+    assert client.calls == []
     client.assert_exhausted()

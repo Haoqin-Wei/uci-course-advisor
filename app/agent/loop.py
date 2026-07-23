@@ -544,6 +544,42 @@ async def _run_loop(
             "server_forced": True,
         }
 
+    restriction_result = next(
+        (
+            record["result"]
+            for record in primary_result_records
+            if record.get("tool") == "get_department_restrictions"
+            and isinstance(record.get("result"), dict)
+        ),
+        None,
+    )
+    restriction_bundle = (
+        restriction_result.get("evidence_bundle")
+        if restriction_result
+        else None
+    )
+    restriction_status = (
+        restriction_bundle.get("evidence_status")
+        if isinstance(restriction_bundle, dict)
+        else None
+    )
+    if restriction_status in {"partial", "unavailable"}:
+        verified_facts = restriction_result.get("verified_facts") or {}
+        deterministic_text = verified_facts.get("summary_markdown") or (
+            "已抓取官方来源，但没有足够证据验证该限制的具体时间。"
+        )
+        yield {"type": "token", "text": deterministic_text}
+        yield {
+            "type": "final",
+            "text": deterministic_text,
+            "iterations": 0,
+            "tool_calls": total_tool_calls,
+            "restriction_evidence": restriction_bundle,
+            "verified_facts": verified_facts,
+            "deterministic_restriction_answer": True,
+        }
+        return
+
     tool_context["_forced_workflow_results"] = forced_results
     route_hint_message = build_route_hint_message(workflow_route)
     workflow_result_message = _workflow_result_message(

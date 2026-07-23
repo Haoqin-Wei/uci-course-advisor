@@ -30,6 +30,13 @@ from app.catalog.normalization import parse_course_mention
 from app.data import db
 from app.data import web_search as web_search_data
 from app.data import websoc_workflow
+from app.data.restriction_timeline import (
+    RestrictionQuery,
+    RestrictionType,
+    build_restriction_evidence_bundle,
+    build_verified_restriction_facts,
+    compact_linked_restriction_result,
+)
 from app.terms import parse_term_key
 from app.scheduling import (
     resolve_pending_schedule_sections,
@@ -985,6 +992,8 @@ def _tool_get_policy(topic: Optional[str] = None) -> dict:
 
 def _tool_get_department_restrictions(
     term: str,
+    *,
+    context: dict,
     department: Optional[str] = None,
     course_id: Optional[str] = None,
     restriction_type: Optional[str] = None,
@@ -1010,16 +1019,92 @@ def _tool_get_department_restrictions(
             "restriction_type": restriction_type,
         }
 
+    normalized_course_id = None
+    if course_id:
+        ref = parse_course_mention(course_id)
+        normalized_course_id = ref.display() if ref else course_id
+
+    raw_restriction_type = restriction_type or "ambiguous"
+    if raw_restriction_type == "major_restriction":
+        raw_restriction_type = RestrictionType.SCHOOL_MAJOR.value
+    try:
+        resolved_restriction_type = RestrictionType(raw_restriction_type)
+    except ValueError:
+        resolved_restriction_type = RestrictionType.AMBIGUOUS
+
+    student_major = None
+    student_school = None
+    user_id = context.get("user_id")
+    if user_id:
+        profile_result = db.get_student_profile(user_id)
+        if profile_result.get("found"):
+            profile = profile_result.get("profile") or {}
+            student_major = profile.get("major")
+            student_school = profile.get("school")
+
+    query = RestrictionQuery(
+        term=term,
+        department=resolved_department,
+        course_id=normalized_course_id,
+        restriction_type=resolved_restriction_type,
+        student_major=student_major,
+        student_school=student_school,
+        academic_level=str(context.get("academic_level") or "undergraduate"),
+    )
+    observability.log_event(
+        logger,
+        logging.INFO,
+        "restriction_query_classified",
+        workflow_id="websoc_department_restrictions",
+        restriction_type=resolved_restriction_type.value,
+        term=term,
+        department=resolved_department,
+        has_course=bool(normalized_course_id),
+    )
+
     result = websoc_workflow.fetch_websoc_department_restrictions(
         term=term,
         department=resolved_department,
     )
+    if normalized_course_id:
+        result["course_id"] = normalized_course_id
     if resolved_from_course:
-        result["course_id"] = resolved_from_course
         result["department_resolved_from"] = "course_id"
-    result["restriction_type"] = restriction_type
+    result["restriction_type"] = resolved_restriction_type.value
+    result["restriction_query"] = query.to_dict()
+    linked_result: dict = {}
     if result.get("ok") and follow_links:
-        result["linked_pages"] = websoc_workflow.fetch_linked_official_pages(result)
+        linked_result = websoc_workflow.fetch_linked_official_pages(result)
+        result["linked_pages"] = compact_linked_restriction_result(linked_result)
+    elif result.get("ok"):
+        result["linked_pages"] = {}
+    if result.get("ok"):
+        bundle = build_restriction_evidence_bundle(
+            query,
+            websoc_result=result,
+            linked_result=linked_result,
+        )
+        result["evidence_bundle"] = bundle.to_dict()
+        result["verified_facts"] = build_verified_restriction_facts(bundle)
+        observability.log_event(
+            logger,
+            logging.INFO,
+            "restriction_evidence_gate",
+            workflow_id="websoc_department_restrictions",
+            restriction_type=resolved_restriction_type.value,
+            evidence_status=bundle.evidence_status.value,
+            missing_fields=bundle.missing_required_fields,
+            event_count=len(bundle.events),
+            conflict_count=len(bundle.conflicts),
+        )
+
+        for key in (
+            "school_comments",
+            "department_comments",
+            "comment_blocks",
+            "links",
+        ):
+            result.pop(key, None)
     return result
 
 

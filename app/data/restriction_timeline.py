@@ -178,6 +178,547 @@ def classify_restriction_type(
     return RestrictionType.AMBIGUOUS
 
 
+def build_restriction_evidence_bundle(
+    query: RestrictionQuery,
+    *,
+    websoc_result: dict[str, Any],
+    linked_result: Optional[dict[str, Any]] = None,
+) -> RestrictionEvidenceBundle:
+    """Merge fetched facts and run the required-field evidence gate."""
+
+    linked = linked_result or {}
+    events = _events_from_linked_pages(linked.get("pages") or [])
+    events.extend(_events_from_legacy_fields(websoc_result, query))
+    events = _deduplicate_events(events)
+
+    target_events = _target_events(events, query)
+    primary = _select_primary_event(target_events, query)
+    related = [
+        event
+        for event in events
+        if (primary is None or event.event_id != primary.event_id)
+        and _departments_match(event.department, query.department)
+    ]
+    missing = _missing_required_fields(query, primary)
+    conflicts = _find_conflicts(target_events)
+    if conflicts:
+        status = EvidenceStatus.CONFLICTING
+    elif primary is not None and not missing:
+        status = EvidenceStatus.VERIFIED
+    elif primary is not None:
+        status = EvidenceStatus.PARTIAL
+    else:
+        status = EvidenceStatus.UNAVAILABLE
+
+    sources = _build_sources(websoc_result, linked, events)
+    eligibility = _evaluate_eligibility(query, primary)
+    return RestrictionEvidenceBundle(
+        query=query,
+        events=events,
+        primary_event_id=primary.event_id if primary else None,
+        related_event_ids=[event.event_id for event in related],
+        eligibility=eligibility,
+        sources=sources,
+        evidence_status=status,
+        missing_required_fields=missing,
+        conflicts=conflicts,
+    )
+
+
+def build_verified_restriction_facts(
+    bundle: RestrictionEvidenceBundle,
+) -> dict[str, Any]:
+    """Render immutable core facts before any LLM explanation."""
+
+    primary = bundle.primary_event
+    related = [
+        event
+        for event in bundle.events
+        if event.event_id in bundle.related_event_ids
+    ]
+    source_urls = [
+        source["url"]
+        for source in bundle.sources
+        if source.get("url")
+    ]
+    if primary is None:
+        summary = (
+            f"未能从已抓取的官方来源验证 "
+            f"{_restriction_label(bundle.query.restriction_type)}的具体时间。"
+        )
+        if bundle.missing_required_fields:
+            summary += (
+                " 缺少："
+                + "、".join(bundle.missing_required_fields)
+                + "。"
+            )
+    else:
+        summary = (
+            f"**直接答案：**{primary.department or bundle.query.department} "
+            f"{_restriction_label(primary.restriction_type)}"
+            f"{_action_label(primary.action)}"
+            f"{_format_effective_at(primary.effective_at)}。"
+        )
+
+    lines = [summary]
+    related_facts = []
+    for event in related:
+        if not event.effective_at:
+            continue
+        if primary and event.restriction_type == primary.restriction_type:
+            continue
+        fact = {
+            "restriction_type": event.restriction_type.value,
+            "effective_at": event.effective_at,
+            "department": event.department,
+            "source_url": event.source_url,
+        }
+        related_facts.append(fact)
+        lines.append(
+            f"**相关但不同的限制：**"
+            f"{_restriction_label(event.restriction_type)}"
+            f"{_action_label(event.action)}"
+            f"{_format_effective_at(event.effective_at)}。"
+        )
+
+    eligibility_payload = (
+        bundle.eligibility.to_dict() if bundle.eligibility else None
+    )
+    if bundle.eligibility and bundle.eligibility.reason:
+        lines.append(f"**你的适用性：**{bundle.eligibility.reason}")
+
+    exceptions = list(primary.exceptions) if primary else []
+    if exceptions:
+        rendered = "；".join(
+            (
+                f"{item.get('course_id')}: {item.get('text')}"
+                if item.get("course_id") and item.get("text")
+                else item.get("text")
+                or item.get("course_id")
+                or "未命名例外"
+            )
+            for item in exceptions
+        )
+        lines.append(f"**例外：**{rendered}。")
+    elif primary is not None:
+        lines.append("**例外：**已检查该事件后的例外列表，未发现列出的例外。")
+
+    if source_urls:
+        rendered_sources = "、".join(
+            f"[{_source_host(url)}]({url})" for url in source_urls
+        )
+        retrieved = next(
+            (
+                source.get("retrieved_at")
+                for source in reversed(bundle.sources)
+                if source.get("retrieved_at")
+            ),
+            None,
+        )
+        suffix = f"；抓取时间 {retrieved}" if retrieved else ""
+        lines.append(f"**来源：**{rendered_sources}{suffix}。")
+
+    return {
+        "evidence_status": bundle.evidence_status.value,
+        "primary": primary.to_dict() if primary else None,
+        "related": related_facts,
+        "eligibility": eligibility_payload,
+        "exceptions": exceptions,
+        "source_urls": source_urls,
+        "summary_markdown": "\n\n".join(lines),
+    }
+
+
+def compact_linked_restriction_result(
+    linked_result: dict[str, Any],
+) -> dict[str, Any]:
+    """Remove fetched prose while retaining replayable structured evidence."""
+
+    compact_pages = []
+    for page in linked_result.get("pages") or []:
+        compact_pages.append(
+            {
+                key: page.get(key)
+                for key in (
+                    "url",
+                    "domain",
+                    "retrieved_at",
+                    "source_link_text",
+                    "source_blocks",
+                    "link_role",
+                    "depth",
+                    "parent_url",
+                    "content_block_count",
+                    "selected_block_count",
+                    "restriction_fields",
+                    "timeline_events",
+                )
+            }
+        )
+    return {
+        key: linked_result.get(key)
+        for key in (
+            "ok",
+            "workflow_id",
+            "source_url",
+            "selected_count",
+            "fetched_urls",
+            "errors",
+        )
+    } | {"pages": compact_pages}
+
+
+def _events_from_linked_pages(
+    pages: list[dict[str, Any]],
+) -> list[RestrictionEvent]:
+    events: list[RestrictionEvent] = []
+    for page_index, page in enumerate(pages):
+        for event_index, payload in enumerate(page.get("timeline_events") or []):
+            try:
+                restriction_type = RestrictionType(payload["restriction_type"])
+            except (KeyError, ValueError):
+                continue
+            events.append(
+                RestrictionEvent(
+                    event_id=(
+                        f"p{page_index + 1}-"
+                        f"{payload.get('event_id') or event_index + 1}"
+                    ),
+                    restriction_type=restriction_type,
+                    action=str(payload.get("action") or "unknown"),
+                    effective_at=payload.get("effective_at"),
+                    term=str(payload.get("term") or ""),
+                    department=str(payload.get("department") or ""),
+                    course_scope=tuple(payload.get("course_scope") or []),
+                    audience=tuple(payload.get("audience") or []),
+                    exceptions=tuple(payload.get("exceptions") or []),
+                    source_url=str(payload.get("source_url") or page.get("url") or ""),
+                    source_role=str(
+                        payload.get("source_role")
+                        or page.get("link_role")
+                        or "official_link"
+                    ),
+                    retrieved_at=payload.get("retrieved_at") or page.get("retrieved_at"),
+                    source_position=payload.get("source_position"),
+                    statement=str(payload.get("statement") or ""),
+                )
+            )
+    return events
+
+
+def _events_from_legacy_fields(
+    websoc_result: dict[str, Any],
+    query: RestrictionQuery,
+) -> list[RestrictionEvent]:
+    fields = websoc_result.get("fields") or {}
+    mapping = (
+        (
+            RestrictionType.SCHOOL_MAJOR,
+            "major_restriction_removed_at",
+        ),
+        (RestrictionType.NEW_ONLY, "nors_removed_at"),
+    )
+    events = []
+    for restriction_type, field_name in mapping:
+        effective_at = fields.get(field_name)
+        if not effective_at:
+            continue
+        events.append(
+            RestrictionEvent(
+                event_id=f"websoc-{restriction_type.value}",
+                restriction_type=restriction_type,
+                action="removed",
+                effective_at=str(effective_at),
+                term=query.term,
+                department=query.department,
+                audience=(query.department,),
+                source_url=str(websoc_result.get("source_url") or ""),
+                source_role="registrar_websoc_comments",
+                retrieved_at=websoc_result.get("retrieved_at"),
+                source_position={"field": field_name},
+                statement=str(effective_at),
+            )
+        )
+    return events
+
+
+def _deduplicate_events(
+    events: list[RestrictionEvent],
+) -> list[RestrictionEvent]:
+    deduplicated: list[RestrictionEvent] = []
+    seen: set[tuple[Any, ...]] = set()
+    for event in events:
+        key = (
+            event.restriction_type,
+            event.action,
+            event.effective_at,
+            event.department,
+            event.course_scope,
+            event.source_url,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduplicated.append(event)
+    return deduplicated
+
+
+def _target_events(
+    events: list[RestrictionEvent],
+    query: RestrictionQuery,
+) -> list[RestrictionEvent]:
+    if query.restriction_type == RestrictionType.AMBIGUOUS:
+        requested_types = {
+            RestrictionType.SCHOOL_MAJOR,
+            RestrictionType.NEW_ONLY,
+        }
+    else:
+        requested_types = {query.restriction_type}
+    target_course = _course_key(query.course_id)
+    return [
+        event
+        for event in events
+        if event.restriction_type in requested_types
+        and _departments_match(event.department, query.department)
+        and (
+            not target_course
+            or query.restriction_type != RestrictionType.COURSE_SPECIFIC
+            or target_course
+            in {
+                _course_key(course_id)
+                for course_id in event.course_scope
+            }
+        )
+    ]
+
+
+def _select_primary_event(
+    target_events: list[RestrictionEvent],
+    query: RestrictionQuery,
+) -> Optional[RestrictionEvent]:
+    if not target_events:
+        return None
+    if query.restriction_type == RestrictionType.AMBIGUOUS:
+        return next(
+            (
+                event
+                for event in target_events
+                if event.restriction_type == RestrictionType.SCHOOL_MAJOR
+            ),
+            target_events[0],
+        )
+    return target_events[0]
+
+
+def _missing_required_fields(
+    query: RestrictionQuery,
+    event: Optional[RestrictionEvent],
+) -> list[str]:
+    if event is None:
+        required = ["effective_at", "source_url"]
+        if query.restriction_type == RestrictionType.COURSE_SPECIFIC:
+            required = ["course_id", "current_stage", "next_change_or_unavailable"]
+        return required
+    missing = []
+    if not event.effective_at:
+        missing.append("effective_at")
+    if not event.source_url:
+        missing.append("source_url")
+    if query.restriction_type in {
+        RestrictionType.SCHOOL_MAJOR,
+        RestrictionType.NEW_ONLY,
+    }:
+        if not event.department:
+            missing.append("department")
+        if not (event.course_scope or event.audience or event.statement):
+            missing.append("scope")
+    if query.restriction_type == RestrictionType.COURSE_SPECIFIC:
+        if not query.course_id:
+            missing.append("course_id")
+        if not event.course_scope:
+            missing.append("current_stage")
+    return missing
+
+
+def _find_conflicts(
+    events: list[RestrictionEvent],
+) -> list[dict[str, Any]]:
+    dates = {
+        event.effective_at
+        for event in events
+        if event.effective_at
+    }
+    if len(dates) <= 1:
+        return []
+    return [
+        {
+            "field": "effective_at",
+            "values": sorted(dates),
+            "event_ids": [event.event_id for event in events],
+        }
+    ]
+
+
+def _build_sources(
+    websoc_result: dict[str, Any],
+    linked_result: dict[str, Any],
+    events: list[RestrictionEvent],
+) -> list[dict[str, Any]]:
+    event_urls = {event.source_url for event in events if event.source_url}
+    sources = []
+    websoc_url = websoc_result.get("source_url")
+    if websoc_url:
+        sources.append(
+            {
+                "url": websoc_url,
+                "source_role": "registrar_websoc",
+                "retrieved_at": websoc_result.get("retrieved_at"),
+                "provides_evidence": websoc_url in event_urls,
+            }
+        )
+    seen = {websoc_url}
+    for page in linked_result.get("pages") or []:
+        url = page.get("url")
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        sources.append(
+            {
+                "url": url,
+                "source_role": page.get("link_role"),
+                "retrieved_at": page.get("retrieved_at"),
+                "depth": page.get("depth", 1),
+                "provides_evidence": url in event_urls,
+            }
+        )
+    return sources
+
+
+def _evaluate_eligibility(
+    query: RestrictionQuery,
+    event: Optional[RestrictionEvent],
+) -> RestrictionEligibility:
+    if event is None:
+        return RestrictionEligibility(
+            eligible=None,
+            student_major=query.student_major,
+            student_school=query.student_school,
+            reason="官方证据不足，无法判断当前资格。",
+        )
+    course_key = _course_key(query.course_id)
+    matching_exceptions = [
+        item
+        for item in event.exceptions
+        if course_key
+        and course_key
+        in {
+            _course_key(item.get("course_id")),
+            *(_course_key(value) for value in item.get("course_ids") or []),
+        }
+    ]
+    if matching_exceptions:
+        return RestrictionEligibility(
+            eligible=None,
+            student_major=query.student_major,
+            student_school=query.student_school,
+            reason=(
+                f"{query.course_id} 被列为一般规则的例外；"
+                "必须按该课程的专门规则判断。"
+            ),
+            evidence_event_id=event.event_id,
+        )
+    if not query.student_major and not query.student_school:
+        return RestrictionEligibility(
+            eligible=None,
+            student_major=None,
+            student_school=None,
+            allowed_groups=event.audience,
+            reason="未提供专业或学院，只能说明公开规则，不能替你推断身份。",
+            evidence_event_id=event.event_id,
+        )
+
+    allowed_text = " ".join((*event.audience, event.statement))
+    major = query.student_major or ""
+    if major and re.search(rf"\b{re.escape(major)}\b", allowed_text, re.I):
+        return RestrictionEligibility(
+            eligible=True,
+            student_major=query.student_major,
+            student_school=query.student_school,
+            allowed_groups=event.audience,
+            reason=f"官方事件明确把 {major} 列入该阶段允许的群体。",
+            evidence_event_id=event.event_id,
+        )
+    if re.search(r"all campus majors", allowed_text, re.I):
+        return RestrictionEligibility(
+            eligible=True,
+            student_major=query.student_major,
+            student_school=query.student_school,
+            allowed_groups=event.audience,
+            reason="官方事件说明该阶段面向全校专业开放。",
+            evidence_event_id=event.event_id,
+        )
+    return RestrictionEligibility(
+        eligible=None,
+        student_major=query.student_major,
+        student_school=query.student_school,
+        allowed_groups=event.audience,
+        reason="官方事件没有明确列出该身份，不能据此断言可选或不可选。",
+        evidence_event_id=event.event_id,
+    )
+
+
+def _departments_match(left: str, right: str) -> bool:
+    return _department_key(left) == _department_key(right)
+
+
+def _department_key(value: Optional[str]) -> str:
+    upper = (value or "").upper()
+    upper = re.sub(r"I\s*&\s*C\s*SCI", "ICS", upper)
+    return re.sub(r"[^A-Z0-9]", "", upper)
+
+
+def _course_key(value: Optional[str]) -> str:
+    upper = (value or "").upper()
+    upper = re.sub(r"I\s*&\s*C\s*SCI", "ICS", upper)
+    return re.sub(r"[^A-Z0-9]", "", upper)
+
+
+def _restriction_label(restriction_type: RestrictionType) -> str:
+    return {
+        RestrictionType.SCHOOL_MAJOR: "School/Major 专业限制",
+        RestrictionType.NEW_ONLY: "New Only（NOR）限制",
+        RestrictionType.CLASS_LEVEL: "年级限制",
+        RestrictionType.REPEAT: "重修限制",
+        RestrictionType.AUTHORIZATION_CODE: "授权码限制",
+        RestrictionType.COURSE_SPECIFIC: "课程专属限制",
+        RestrictionType.ADD_DROP_CHANGE: "加退课/评分选项规则",
+        RestrictionType.AMBIGUOUS: "限制",
+    }[restriction_type]
+
+
+def _action_label(action: str) -> str:
+    return {
+        "removed": "解除时间为 ",
+        "active": "仍然生效，记录时间为 ",
+        "extended": "延长/恢复，记录时间为 ",
+    }.get(action, "记录时间为 ")
+
+
+def _format_effective_at(value: Optional[str]) -> str:
+    if not value:
+        return "未公布"
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    return parsed.strftime("%Y-%m-%d %H:%M %Z").strip()
+
+
+def _source_host(url: str) -> str:
+    match = re.match(r"https?://([^/]+)", url)
+    return match.group(1) if match else url
+
+
 _IGNORED_TAGS = {
     "script",
     "style",
