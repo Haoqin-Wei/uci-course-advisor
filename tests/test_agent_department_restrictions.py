@@ -258,6 +258,9 @@ def test_agent_can_dispatch_department_restrictions_with_sse_chip(
     assert "server already executed" in prompt
     assert "Primary workflow results" in prompt
     assert "Monday, August 24th, 2026 at noon" in prompt
+    assert "Add at most two short sentences" in prompt
+    assert '"linked_pages"' not in prompt
+    assert '"timeline_events"' not in prompt
     assert "event=workflow_primary_tool_done" in caplog.text
     assert "workflow_id" in caplog.text
     assert "source_url" in caplog.text

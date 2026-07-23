@@ -1,14 +1,14 @@
 # UCI Course Advisor Roadmap
 
-> 更新日期：2026-07-22
+> 更新日期：2026-07-23
 >
-> 当前目标：M13 已完成；进入私测观察与后续阶段需求评估。
+> 当前目标：M14「Restriction Evidence Pipeline 可靠性改造」已完成。
 >
 > 执行规则：严格按阶段推进。每一阶段通过验收后，再进入下一阶段；README 在全部工程调整完成后最后更新。
 
 ## 1. 当前定位
 
-项目已经完成 M0-M13 的主要产品、数据验证、联网搜索、WebSoc workflow、统一学期上下文与跨学期 Schedule。
+项目已经完成 M0-M14 的主要产品、数据验证、联网搜索、WebSoc workflow、统一学期上下文、跨学期 Schedule 与 restriction evidence pipeline。
 
 ### 已实现
 
@@ -25,7 +25,7 @@
 - [x] Anteater live availability 与 WebSoc restriction 固定 workflow
 - [x] Developer-authored workflow registry 和公共 deep-search trace history
 
-### 本轮完成
+### M13 已完成
 
 - 后端 `TermResolutionService` 统一 automatic、conversation、query 与 tool term。
 - Anteater calendar/WebSoc 发布门禁、30/45 天缓存和显式 fallback 已落地。
@@ -34,9 +34,15 @@
 - Schedule entry 自带 canonical term，支持跨 term 展示、去重、删除和非阻断 overlap。
 - M13 默认离线回归与手工真实 Anteater smoke 均有可重复验收路径。
 
-## 2. 本轮目标与非目标
+### M14 已完成
 
-### 本轮目标
+- restriction linked page 的跨行日期、时间、类型、范围和例外现已形成结构化证据。
+- M14 保留 M10–M12 的固定 WebSoc 入口，并补齐查询分类、正文分块、时间线解析、证据门禁、事实校验和抓取 URL 可见性。
+- 程序负责抓取和确定限制类型、日期、适用对象、例外与来源；LLM 只负责简短解释，未验证事实会被阻断并由确定性答案替换。
+
+## 2. M13 已完成目标与非目标
+
+### 已完成目标
 
 完成以下结果后，系统不再依赖用户手工维护全局学期：
 
@@ -78,6 +84,7 @@
 | M11 | Agentic Deep Search 与 Workflow Registry | 已完成 | M9、M10 |
 | M12 | WebSoc Restriction Workflow 可靠性 | 已完成 | M10、M11 |
 | M13 | 自动学期上下文与跨学期 Schedule | 已完成 | M2–M7、M10–M12 |
+| M14 | Restriction Evidence Pipeline 可靠性改造 | 已完成 | M10–M13 |
 
 工作量按 1 名开发者估算，不是发布日期承诺。
 
@@ -1376,7 +1383,317 @@ Sources:
 - 完整默认测试离线通过，真实 smoke check 不进入默认 CI。
 - M13-A 到 M13-H 每阶段都有独立 Git commit，可以单独回退。
 
-## 18. 跨阶段 Definition of Done
+## 18. M14 — Restriction Evidence Pipeline 可靠性改造
+
+目标：修复“WebSoc comments 中的官方链接已经被抓取，但真实网页的跨行日期、时间、限制类型和例外没有形成可靠证据，导致 LLM 混淆 NOR 与 School/Major restriction”的问题。
+
+M14 在现有 `websoc_department_restrictions` 固定 workflow 上补强，不重新引入 DuckDuckGo-first 或让模型自行决定是否执行主来源。核心事实由后端解析、选择和校验；LLM 只负责面向用户解释。
+
+状态：已完成（2026-07-23）。
+
+完成结果：
+
+- Registrar WebSoc 保持固定入口，linked-page 抓取按 query 类型选择，并受 UCI allowlist、深度、页面数、大小和 timeout 预算约束。
+- 完整 HTML 经正文清洗和语义分块后进入顺序感知 timeline parser；核心日期、类型、范围、eligibility、例外和 URL 由后端 evidence bundle 决定。
+- LLM 上下文只接收 compact evidence；服务端先输出 `verified_facts`，LLM 只允许补充简短解释，restriction validator 会阻断并重写不受证据支持的事实。
+- 前端可展开查看每个实际 GET/POST 请求；session restore 使用持久化的 compact fetch summary，不重新联网。
+- 冻结 fixture 覆盖 Fall 2026 ICS 真实 accordion/table 布局；`scripts/smoke_restriction_evidence.py` 提供独立只读真实验收。
+
+### M14.1 失败基线与不变量
+
+- [x] 将当前真实失败场景固化为 regression fixture：
+  - query：`ICS什么时候解除专业限制？`
+  - term：`2026 Fall`
+  - department：`I&C SCI`
+  - 官方页面结构为日期、时间、动作跨行出现。
+- [x] 固化正确预期：
+  - NOR：`2026-09-01 12:00`
+  - School/Major restriction：大多数 I&C SCI 课程 `2026-09-18 12:00` 解除
+  - `I&C SCI 139W` 等例外必须保留
+  - NOR 与 School/Major restriction 不得互相替代。
+- [x] 固化 M14 不变量：
+  - Registrar WebSoc 仍是固定入口。
+  - comments 中明确指向的官方页面是可验证补充来源。
+  - 没有目标字段时必须继续查或明确 unavailable，不能让 LLM猜。
+  - 核心日期、适用范围和例外由程序确定。
+  - 默认测试不联网，不保存真实页面正文到日志。
+
+### M14.2 `RestrictionQuery` 查询分类
+
+- [x] 新增结构化查询模型，至少包含：
+  - `term`
+  - `department`
+  - `course_id`
+  - `restriction_type`
+  - `student_major`
+  - `student_school`
+  - `undergraduate_or_graduate`
+- [x] `restriction_type` 使用固定枚举：
+  - `school_major`
+  - `new_only`
+  - `class_level`
+  - `repeat`
+  - `authorization_code`
+  - `course_specific`
+  - `add_drop_change`
+  - `ambiguous`
+- [x] 更新 `app/agent/workflow_router.py`：
+  - “专业限制 / major restriction”映射到 `school_major`
+  - “New Only / NOR / NORS”映射到 `new_only`
+  - 指定课程的“什么时候开放”映射到 `course_specific`
+  - 只说“限制什么时候解除”且无法确定类型时，返回 major 与 NOR 两类结果，或要求澄清，不默认选 NOR。
+- [x] 保留当前 term/department 解析；`ICS` 继续规范化为 `I&C SCI`。
+- [x] 把解析后的 `RestrictionQuery` 写入 forced workflow result，而不是只把自然语言 `restriction_type` hint 交给模型。
+
+### M14.3 `RestrictionEvidenceBundle` 证据契约
+
+- [x] 新增统一证据模型，建议放在 `app/data/restriction_timeline.py`，包含：
+  - `query`
+  - `events`
+  - `primary_event`
+  - `related_events`
+  - `exceptions`
+  - `eligibility`
+  - `sources`
+  - `evidence_status`
+  - `missing_required_fields`
+- [x] 每个 `RestrictionEvent` 至少包含：
+  - `restriction_type`
+  - `action`
+  - `effective_at`
+  - `term`
+  - `department`
+  - `course_scope`
+  - `audience`
+  - `exceptions`
+  - `source_url`
+  - `source_role`
+  - `retrieved_at`
+  - `source_position` 或可重放的结构定位。
+- [x] 明确 `evidence_status`：
+  - `verified`
+  - `partial`
+  - `conflicting`
+  - `unavailable`
+- [x] WebSoc comments 和 linked page 的事实不得覆盖彼此；相同事实可合并，冲突事实必须并列保留并标注来源。
+- [x] Agent context 只接收 compact evidence bundle，不接收完整网页正文或无界 tool result。
+
+### M14.4 完整抓取、正文清洗与结构化分块
+
+- [x] 保留当前 timeout、redirect、content type、UCI 域名和 500 KB 页面上限。
+- [x] 下载上限内的完整 HTML；不再使用整页开头固定 1,500 字符作为主要证据。
+- [x] 在 `app/data/websoc_workflow.py` 或新模块中实现正文抽取：
+  - 优先 `<main>`、`<article>` 和已知正文容器
+  - 删除 navigation、header、footer、script、style、cookie/banner 等 boilerplate
+  - 保留 heading、paragraph、list、table、link 的顺序与层级。
+- [x] 按 DOM/语义结构分块，而不是只按关键词抽单行：
+  - page/term heading
+  - restriction category
+  - department section
+  - date/time group
+  - paragraph/list/table rows。
+- [x] query-focused selection 必须包含：
+  - 命中块
+  - 父级 heading
+  - 前一个日期/时间块
+  - 后续动作说明
+  - 紧随其后的例外列表。
+- [x] 短正文低于安全阈值时允许整体进入解析器；长正文按结构分块后只把相关块及邻接上下文送给 LLM。
+- [x] 保留清洗后正文的内部解析能力，但日志仍只记录 URL、状态、字节数、耗时和计数。
+
+### M14.5 跨行 Restriction Timeline Parser
+
+- [x] 实现顺序感知的 timeline parser：
+  1. 遇到 term/department/category heading，更新当前 scope。
+  2. 遇到日期，保存 current date。
+  3. 遇到时间，保存 current time。
+  4. 遇到 removed/lifted/open/restricted/reinstated 等动作，绑定当前日期、时间和 scope。
+  5. 将动作后的列表绑定为 course scope 或 exceptions。
+  6. 遇到下一个日期或 heading 后结束当前事件。
+- [x] 同时支持：
+  - `Major restrictions ... removed on <date>` 同行格式
+  - `9/18/2026` + `12:00pm` + 下一行 action 的跨行格式
+  - table row 中日期/时间/动作分列格式。
+- [x] 识别并区分常见动作：
+  - `School/Major restrictions are removed/lifted`
+  - `New Only Restrictions will be removed`
+  - `Upper-Division Standing removed`
+  - `Repeat restriction removed`
+  - `restriction remains/extended/reinstated`
+- [x] parser 只把日期绑定给同一 section/context 中的后续动作，不得把 COMPSCI、GDIM、graduate 区段日期错误用于 I&C SCI。
+- [x] 输出 deterministic ISO datetime，并保留原始时区语义；UCI 时间统一按 `America/Los_Angeles`。
+
+### M14.6 按问题选择 linked page 与必要的第二跳
+
+- [x] 修改 `fetch_linked_official_pages()` 的选择策略，不再简单读取最先出现的三个 ICS role：
+  - undergraduate restriction → `ics_undergraduate_restrictions`
+  - graduate restriction → `ics_graduate_course_updates`
+  - add/drop policy → `ics_undergraduate_student_policies`
+  - concurrent enrollment → `ics_concurrent_enrollment`
+- [x] 相同 URL 在 school/department comments 重复出现时只请求一次，但保留两个来源 block。
+- [x] 第一层官方页面已经满足目标字段时停止继续抓取。
+- [x] `course_specific` 查询在第一层缺少课程级时间线时，允许跟进该官方页面明确链接的 restriction spreadsheet。
+- [x] 第二跳必须满足：
+  - 父页面来自 WebSoc comments 允许的 UCI 官方页面
+  - link role/文本明确指向 restriction timeline 或 spreadsheet
+  - 域名在单独 allowlist 中
+  - 继承 run 内 URL 去重、深度、页面数、大小和 timeout 预算。
+- [x] 第二跳失败时保留第一层证据，并返回 structured failure；不得降级成未受控全网搜索。
+
+### M14.7 目标字段完整性门禁
+
+- [x] 为每种 `restriction_type` 定义 required fields。
+- [x] `school_major` 至少要求：
+  - `effective_at`
+  - `department`
+  - `scope`
+  - `source_url`
+  - `exceptions`（允许空数组，但必须表示已检查）。
+- [x] `new_only` 至少要求 `effective_at`、适用课程范围和 source。
+- [x] `course_specific` 至少要求 course_id、当前阶段、下一次可验证变化或明确 unavailable。
+- [x] forced workflow 在第一次 LLM 调用前执行 completeness gate：
+  - `verified` → 允许组织答案
+  - `partial` 且有合法下一跳 → 继续抓取
+  - `conflicting` → 要求模型并列说明来源，不选择性隐藏
+  - `unavailable` → 返回确定性“无法验证”答复。
+- [x] 目标字段为 `null` 时，不允许仅凭 `extraction_status=partial` 生成具体日期或“应该/通常”推断。
+
+### M14.8 核心事实确定性输出与 LLM 边界
+
+- [x] 后端从 evidence bundle 生成 `verified_facts`，顺序固定为：
+  1. 直接回答用户所问 restriction type
+  2. 相关但不同的限制类型
+  3. 用户适用性
+  4. 例外课程
+  5. 来源与抓取时间。
+- [x] LLM 可以改变表达和解释影响，但不得：
+  - 改写日期/时间
+  - 把 NOR 当作 School/Major restriction
+  - 删除关键 exceptions
+  - 把没有证据的 eligibility 写成确定事实。
+- [x] 对高风险核心事实，优先由服务端 deterministic renderer 生成首段；LLM只生成后续解释。
+- [x] 更新 `app/llm/adapter.py` prompt，明确 evidence bundle 是唯一 restriction fact authority。
+- [x] 当 evidence bundle 已有明确日期时，禁止回答“具体日期需要查课表”。
+- [x] 回答必须包含 Registrar WebSoc URL；使用 linked page 时同时包含实际提供日期的 linked URL。
+
+### M14.9 Student Eligibility 规则
+
+- [x] 不再把 `CSE` 直接描述为“School of ICS 学生”。
+- [x] 新增结构化 eligibility 结果：
+  - `eligible`
+  - `student_major`
+  - `student_school`
+  - `allowed_groups`
+  - `reason`
+  - `evidence_event_id`
+- [x] 如果官方事件明确列出 `School of ICS, CSE, and Computer Engineering`，CSE 的结论应为“该阶段明确允许 CSE”，而不是推断其 school affiliation。
+- [x] 未知 major/school 时只解释公开规则，不替用户推断身份。
+- [x] course exception 优先于 general eligibility。
+
+### M14.10 `RestrictionClaimValidator`
+
+- [x] 在现有 validation 框架中增加 restriction claim validator，输入为最终回答和 evidence bundle。
+- [x] 至少检查：
+  - 回答中的日期是否存在于同类型事件
+  - NOR 与 School/Major restriction 是否混淆
+  - 核心 exception 是否遗漏
+  - eligibility 是否有对应 evidence
+  - 回答引用的 URL 是否属于实际 fetched sources。
+- [x] 核心日期或类型不一致时 `BLOCK` 或使用 deterministic facts 重写，不只追加 Data check。
+- [x] INFO/WARN/ERROR 文案明确区分“来源没有字段”和“LLM与来源矛盾”。
+- [x] restriction validator 不使用不完整本地 catalog 推断官方政策日期。
+
+### M14.11 抓取可见性与日志
+
+- [x] 保留现有 `agent_web_fetch_started/completed/failed` 和 `agent_web_research_summary`。
+- [x] 新增 compact pipeline 事件：
+  - `restriction_query_classified`
+  - `restriction_page_selected`
+  - `restriction_timeline_extracted`
+  - `restriction_evidence_gate`
+  - `restriction_claim_validated`
+- [x] 日志只记录 query type、URL、status、bytes、duration、event counts、missing fields 和 evidence status；不记录网页正文、passages 或完整 LLM回答。
+- [x] 前端 `读取 WebSoc 部门说明` tool chip 支持展开实际抓取列表：
+  - URL/host
+  - source role
+  - status
+  - 是否提供最终证据。
+- [x] session restore 后仍可显示当时保存的 compact fetch summary，不重新联网。
+- [x] 页面来源列表只显示真正发出 GET/POST 的 URL，不把未访问的候选链接算作 fetched。
+
+### M14.12 测试矩阵
+
+- [x] Query 分类：
+  - 专业限制 → `school_major`
+  - NOR/NORS → `new_only`
+  - 指定课程 → `course_specific`
+  - 模糊限制 → 多类型回答或 clarification。
+- [x] Timeline parser：
+  - 同行日期
+  - 日期/时间/action 跨行
+  - table row
+  - 多 department
+  - 多 restriction type
+  - exception/remaining restriction
+  - extended/reinstated。
+- [x] 正文抽取：
+  - 导航和页脚不进入主要 evidence
+  - 页面后半部时间线不因字符截断丢失
+  - heading、列表和表格顺序保留。
+- [x] Linked selection：
+  - undergraduate 不抓 graduate/policy 噪音页
+  - 已满足字段时不发第二跳
+  - course-specific 缺字段时抓官方 spreadsheet
+  - 非 allowlist 二级链接拒绝。
+- [x] Completeness gate：
+  - verified 放行
+  - partial 自动继续
+  - unavailable 不猜
+  - conflict 并列来源。
+- [x] Answer/validator：
+  - `9/1 NOR` 不得回答成 major restriction
+  - `9/18 major` 必须成为专业限制问题的主答案
+  - `I&C SCI 139W` 例外保留
+  - CSE eligibility 使用 explicit group，不伪造 school affiliation
+  - 错误日期被重写或阻断。
+- [x] 可观测性：
+  - 每个实际请求有 URL/status/bytes/duration
+  - summary 只列 fetched URLs
+  - 日志不包含正文和 passage
+  - 前端展开列表与后端 summary 一致。
+- [x] 端到端固定回归：
+  - 输入 `ICS什么时候解除专业限制？`
+  - 输出主事实为 `2026-09-18 12:00`
+  - 单独说明 NOR `2026-09-01 12:00`
+  - 显示例外与 WebSoc/ICS 双来源。
+- [x] 默认 CI 全部使用冻结 fixture/fake HTTP；真实 UCI smoke 独立、只读、手工运行。
+
+### M14.13 分阶段提交计划
+
+1. `M14-A`：失败 fixture、`RestrictionQuery`、`RestrictionEvent`、`RestrictionEvidenceBundle` 与 schema 测试。
+2. `M14-B`：正文清洗、DOM/语义分块和跨行 timeline parser。
+3. `M14-C`：query-aware linked-page 选择、第二跳 allowlist 与预算。
+4. `M14-D`：required-field completeness gate、deterministic verified facts 和 eligibility。
+5. `M14-E`：LLM evidence contract、`RestrictionClaimValidator` 和错误回答阻断。
+6. `M14-F`：前端 fetched URL 展开、session restore 与 compact observability。
+7. `M14-G`：端到端 fixture 回归、真实只读 smoke、README/ROADMAP 收尾。
+
+每个提交必须独立通过对应 focused tests；M14-G 前运行完整离线回归。`.idea/`、用户 session/memory、validation log、真实网页正文、SQLite runtime 和抓取 cache 不得进入提交。
+
+### M14 验收
+
+- 用户问 School/Major restriction 时，主答案不会返回 NOR 日期。
+- Fall 2026 I&C SCI 真实跨行时间线可解析为 `2026-09-18 12:00`，并保留 `I&C SCI 139W` 等例外。
+- 用户问 NOR 时，系统明确回答 `2026-09-01 12:00`，并说明它与 School/Major restriction 不同。
+- 系统先抓取上限内完整 HTML、清洗正文、按结构分块，再进行 query-focused selection；不依赖网页开头固定字符截断。
+- required fields 不完整时会继续合法下一跳或返回 unavailable，不把 partial evidence 交给 LLM猜日期。
+- undergraduate/graduate/policy linked page 按 query 选择，不默认抓最先出现的三个页面。
+- CSE 等用户资格依据官方 allowed groups 判断，不伪造 school affiliation。
+- 最终回答的 restriction type、日期、适用范围、例外和 URL 与 evidence bundle 一致。
+- 前端与日志能证明实际抓了哪些 URL，同时不保存网页正文。
+- focused、完整离线回归和真实只读 smoke 均通过后，M14 才可标记完成。
+
+## 19. 跨阶段 Definition of Done
 
 每个任务只有同时满足以下条件才算完成：
 
@@ -1390,7 +1707,7 @@ Sources:
 - 对实时数据链路，必须明确 freshness、cache TTL、source 和 fallback 语义。
 - 对固定 workflow，必须有 fixture 测试证明不会绕到 agentic search。
 
-## 19. 实际提交分组
+## 20. 实际提交分组
 
 工作已按可审查、可回滚的阶段提交。每组提交都对应 ROADMAP 中的阶段性验收：
 
@@ -1408,8 +1725,9 @@ Sources:
 12. M11：Agentic deep search tool、run 内 visited memory、SQLite trace history、workflow registry 重构。（已完成。）
 13. M12：WebSoc POST 表单、结果验证、服务端强制 restriction workflow、linked-page evidence。（已完成。）
 14. M13：自动学期上下文、conversation auto/pinned term、只读 term UI 和跨学期 Schedule。（已完成。）
+15. M14：restriction 查询分类、完整正文/时间线解析、证据门禁、确定性事实、claim validator 与实际抓取审计。（已完成。）
 
-## 20. 进度记录
+## 21. 进度记录
 
 | 日期 | 阶段 | 变更 | Commit/PR | 验收结果 |
 |---|---|---|---|---|
@@ -1426,3 +1744,4 @@ Sources:
 | 2026-07-21 | M11 | 完成 developer workflow registry、`fetch_page`、run 去重与 depth/page 预算、SQLite 公共 trace、本地相似匹配、历史强建议与 fresh-source 门禁 | `fcebe7d`–`1439583` | `compileall` 与完整离线回归通过：`202 passed`；`.idea/` 未纳入提交。 |
 | 2026-07-21 | M12 | 修复 WebSoc 同 URL 表单抓取，增加 live option/response validation、server-forced restriction workflow 和 linked-page structured evidence | `af3e8ea`–本阶段收尾提交 | `compileall`、完整离线回归 `219 passed, 2 deselected`；真实 ART POST 验证得到 major restriction `2026-08-24 noon`、NORS `2026-08-21 noon`。 |
 | 2026-07-22 | M13 | 完成自动学期上下文、Anteater calendar/WebSoc 发布门禁、conversation auto/pinned、只读 term、跨学期 Schedule 和 live smoke | `4c791e9`–本阶段收尾提交 | `307 passed, 2 deselected`；calendar 108 条、WebSoc term 162 个；`2026 Fall` 发布探针只取 53 courses/458 sections、258,563 bytes，较原完整抓取 7,830,665 bytes 减少 96.7%；启动不再预热完整课表，runtime 数据未纳入 Git。 |
+| 2026-07-23 | M14 | 完成 restriction query/evidence schema、语义正文与跨行 timeline parser、query-aware linked selection、完整性门禁、确定性事实、eligibility、claim validator、compact LLM context 与实际抓取审计 | `bb17e63`–本阶段收尾提交 | focused tests 与完整离线回归 `330 passed, 2 deselected`；真实只读 smoke 验证 I&C SCI School/Major `2026-09-18 12:00`、NOR `2026-09-01 12:00`、139W 例外，以及 WebSoc GET/POST + ICS GET 三条请求。 |

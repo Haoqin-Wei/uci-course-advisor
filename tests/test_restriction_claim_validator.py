@@ -32,6 +32,7 @@ def _bundle(*, eligible=True) -> dict:
             "eligible": eligible,
             "student_major": "CSE",
             "reason": "CSE is explicitly listed." if eligible else "Unknown.",
+            "evidence_event_id": "major",
         },
         "sources": [
             {"url": "https://www.reg.uci.edu/perl/WebSoc"},
@@ -65,6 +66,21 @@ def test_restriction_validator_accepts_grounded_fact_block() -> None:
 
 **来源：**[WebSoc](https://www.reg.uci.edu/perl/WebSoc)、
 [ICS](https://ics.uci.edu/course-enrollment-restrictions/)。
+"""
+
+    issues = RestrictionClaimValidator().check(_context(answer))
+
+    assert issues == []
+
+
+def test_restriction_validator_accepts_repeated_markdown_date_without_time() -> None:
+    answer = """
+**直接答案：**I&C SCI School/Major 专业限制解除时间为 2026-09-18 12:00。
+
+补充解释：专业限制会在 **2026-09-18** 解除。
+New Only（NOR）则在 **2026-09-01** 解除。
+
+**例外：**I&C SCI 139W remains restricted.
 """
 
     issues = RestrictionClaimValidator().check(_context(answer))
@@ -115,6 +131,22 @@ I&C SCI 139W 是例外。You can enroll now.
     )
 
     assert "RESTRICTION_ELIGIBILITY_UNGROUNDED" in {
+        issue.code for issue in issues
+    }
+
+
+def test_restriction_validator_blocks_access_before_verified_event() -> None:
+    issues = RestrictionClaimValidator().check(
+        _context(
+            """
+专业限制解除时间为 2026-09-18 12:00。
+你在学期初即可选课，无需等到 9/18。
+I&C SCI 139W 是例外。
+"""
+        )
+    )
+
+    assert "RESTRICTION_ELIGIBILITY_TIME_UNGROUNDED" in {
         issue.code for issue in issues
     }
 

@@ -286,17 +286,86 @@ def _workflow_result_message(
 ) -> Optional[dict[str, str]]:
     if not results:
         return None
+    llm_results = [_compact_workflow_record(record) for record in results]
+    restriction_only = all(
+        record.get("tool") == "get_department_restrictions"
+        for record in results
+    )
+    restriction_instruction = ""
+    if restriction_only:
+        restriction_instruction = (
+            " The deterministic verified_facts block is already visible to the "
+            "user. Add at most two short sentences of explanation or a next-step "
+            "question. Do not repeat dates, sources, exceptions, tables, or the "
+            "fact block. Do not infer access before an event's effective_at, and "
+            "do not restate school affiliation as an enrollment rule."
+        )
     return {
         "role": "system",
         "content": (
             "The server already executed the developer-owned primary workflow before "
             "this model call. Do not call these primary tools again. Use the results "
             "below as the primary evidence, report structured failures honestly, and "
-            "only use web_search/fetch_page for optional supplemental evidence.\n"
+            "only use web_search/fetch_page for optional supplemental evidence."
+            f"{restriction_instruction}\n"
             f"Workflow route: {json.dumps(route, ensure_ascii=False, default=str)}\n"
-            f"Primary workflow results: {json.dumps(results, ensure_ascii=False, default=str)}"
+            f"Primary workflow results: "
+            f"{json.dumps(llm_results, ensure_ascii=False, default=str)}"
         ),
     }
+
+
+def _compact_workflow_record(record: dict) -> dict:
+    if record.get("tool") != "get_department_restrictions":
+        return record
+    result = record.get("result") or {}
+    bundle = result.get("evidence_bundle") or {}
+    keep_ids = {
+        bundle.get("primary_event_id"),
+        *(bundle.get("related_event_ids") or []),
+        *(
+            event_id
+            for conflict in bundle.get("conflicts") or []
+            for event_id in conflict.get("event_ids") or []
+        ),
+    }
+    compact_bundle = {
+        key: bundle.get(key)
+        for key in (
+            "query",
+            "primary_event_id",
+            "related_event_ids",
+            "eligibility",
+            "sources",
+            "evidence_status",
+            "missing_required_fields",
+            "conflicts",
+        )
+    }
+    compact_bundle["events"] = [
+        event
+        for event in bundle.get("events") or []
+        if event.get("event_id") in keep_ids
+    ]
+    compact_result = {
+        key: result.get(key)
+        for key in (
+            "ok",
+            "error_code",
+            "message",
+            "term",
+            "department",
+            "course_id",
+            "restriction_type",
+            "restriction_query",
+            "source_url",
+            "verified_facts",
+            "fetch_summary",
+        )
+        if result.get(key) is not None
+    }
+    compact_result["evidence_bundle"] = compact_bundle
+    return {**record, "result": compact_result}
 
 
 def _clarification_text(user_query: str, clarification: dict) -> str:

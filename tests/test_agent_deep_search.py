@@ -200,7 +200,9 @@ def test_fetch_page_humanized_chip_label() -> None:
     ) == "深读网页 · https://reg.uci.edu/policy"
 
 
-def test_fixed_workflow_can_deep_read_supplement_after_primary_tool(monkeypatch) -> None:
+def test_restriction_workflow_does_not_delegate_missing_evidence_to_model(
+    monkeypatch,
+) -> None:
     supplement_url = "https://ics.uci.edu/course-enrollment-restrictions/"
     monkeypatch.setattr(
         agent_tools.websoc_workflow,
@@ -218,14 +220,6 @@ def test_fixed_workflow_can_deep_read_supplement_after_primary_tool(monkeypatch)
         agent_tools.websoc_workflow,
         "fetch_linked_official_pages",
         lambda _result: {"ok": True, "pages": [], "errors": []},
-    )
-    deep_search.set_fake_pages(
-        [
-            {
-                "url": supplement_url,
-                "html": "<html><p>Current official ICS restriction update.</p></html>",
-            }
-        ]
     )
     messages = [{"role": "user", "content": "Fall 2026 ICS 专业限制什么时候解除？"}]
     client = ScriptedLLMClient(
@@ -250,11 +244,9 @@ def test_fixed_workflow_can_deep_read_supplement_after_primary_tool(monkeypatch)
     )
 
     tool_names = [event["name"] for event in events if event["type"] == "tool_call_start"]
-    assert tool_names == ["get_department_restrictions", "fetch_page"]
-    prompt = "\n".join(message.get("content") or "" for message in client.calls[0].messages)
-    assert "Developer workflow registry match" in prompt
-    assert "server already executed" in prompt
-    assert "present both claims and both sources" in prompt
-    page_payload = json.loads(messages[2]["content"])
-    assert page_payload["ok"] is True
-    assert page_payload["depth"] == 1
+    assert tool_names == ["get_department_restrictions"]
+    assert client.calls == []
+    final = next(event for event in reversed(events) if event["type"] == "final")
+    assert final["deterministic_restriction_answer"] is True
+    assert final["restriction_evidence"]["evidence_status"] == "unavailable"
+    assert "无法" in final["text"] or "没有足够证据" in final["text"]

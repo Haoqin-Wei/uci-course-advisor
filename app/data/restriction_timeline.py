@@ -193,14 +193,9 @@ def build_restriction_evidence_bundle(
 
     target_events = _target_events(events, query)
     primary = _select_primary_event(target_events, query)
-    related = [
-        event
-        for event in events
-        if (primary is None or event.event_id != primary.event_id)
-        and _departments_match(event.department, query.department)
-    ]
+    related = _related_events_for_query(events, primary, query)
     missing = _missing_required_fields(query, primary)
-    conflicts = _find_conflicts(target_events)
+    conflicts = _find_conflicts(target_events, primary)
     if conflicts:
         status = EvidenceStatus.CONFLICTING
     elif primary is not None and not missing:
@@ -506,6 +501,42 @@ def _target_events(
     ]
 
 
+def _related_events_for_query(
+    events: list[RestrictionEvent],
+    primary: Optional[RestrictionEvent],
+    query: RestrictionQuery,
+) -> list[RestrictionEvent]:
+    related_types = {
+        RestrictionType.SCHOOL_MAJOR: {RestrictionType.NEW_ONLY},
+        RestrictionType.NEW_ONLY: {RestrictionType.SCHOOL_MAJOR},
+        RestrictionType.AMBIGUOUS: {
+            RestrictionType.SCHOOL_MAJOR,
+            RestrictionType.NEW_ONLY,
+        },
+    }.get(query.restriction_type, set())
+    if not related_types:
+        return []
+
+    related: list[RestrictionEvent] = []
+    seen_types: set[RestrictionType] = (
+        {primary.restriction_type} if primary is not None else set()
+    )
+    for event in events:
+        if primary is not None and event.event_id == primary.event_id:
+            continue
+        if event.restriction_type not in related_types:
+            continue
+        if event.restriction_type in seen_types:
+            continue
+        if not _departments_match(event.department, query.department):
+            continue
+        if not event.effective_at:
+            continue
+        related.append(event)
+        seen_types.add(event.restriction_type)
+    return related
+
+
 def _select_primary_event(
     target_events: list[RestrictionEvent],
     query: RestrictionQuery,
@@ -513,15 +544,23 @@ def _select_primary_event(
     if not target_events:
         return None
     if query.restriction_type == RestrictionType.AMBIGUOUS:
-        return next(
-            (
-                event
-                for event in target_events
-                if event.restriction_type == RestrictionType.SCHOOL_MAJOR
-            ),
-            target_events[0],
-        )
-    return target_events[0]
+        major_events = [
+            event
+            for event in target_events
+            if event.restriction_type == RestrictionType.SCHOOL_MAJOR
+        ]
+        if major_events:
+            target_events = major_events
+    return max(
+        target_events,
+        key=lambda event: (
+            event.effective_at is not None,
+            event.action == "removed",
+            bool(event.exceptions),
+            bool(event.audience),
+            int((event.source_position or {}).get("block_index") or -1),
+        ),
+    )
 
 
 def _missing_required_fields(
@@ -556,10 +595,24 @@ def _missing_required_fields(
 
 def _find_conflicts(
     events: list[RestrictionEvent],
+    primary: Optional[RestrictionEvent],
 ) -> list[dict[str, Any]]:
+    if primary is None:
+        return []
+    comparable = [
+        event
+        for event in events
+        if event.action == primary.action
+        and event.course_scope == primary.course_scope
+        and (
+            not primary.audience
+            or not event.audience
+            or event.audience == primary.audience
+        )
+    ]
     dates = {
         event.effective_at
-        for event in events
+        for event in comparable
         if event.effective_at
     }
     if len(dates) <= 1:
@@ -568,7 +621,7 @@ def _find_conflicts(
         {
             "field": "effective_at",
             "values": sorted(dates),
-            "event_ids": [event.event_id for event in events],
+            "event_ids": [event.event_id for event in comparable],
         }
     ]
 
@@ -745,6 +798,7 @@ _IGNORED_TAGS = {
 }
 _BLOCK_TAGS = {
     "body",
+    "button",
     "h1",
     "h2",
     "h3",
@@ -906,6 +960,8 @@ def parse_restriction_timeline(
         section = _SECTION.search(text)
         if section:
             current_department = _canonical_section_department(section.group(1))
+            current_date = None
+            current_time = None
             active_event = None
             continue
 
@@ -1001,12 +1057,12 @@ def _action_type(text: str) -> Optional[tuple[RestrictionType, str]]:
         return None
     if re.search(r"new only|\bNORS?\b|新生预留", text, re.I):
         return RestrictionType.NEW_ONLY, action
-    if re.search(r"school/major|school or major|major restrictions?", text, re.I):
-        return RestrictionType.SCHOOL_MAJOR, action
     if re.search(r"upper[- ]division standing|class[- ]level", text, re.I):
         return RestrictionType.CLASS_LEVEL, action
     if re.search(r"repeat restrictions?", text, re.I):
         return RestrictionType.REPEAT, action
+    if re.search(r"school/major|school or major|major restrictions?", text, re.I):
+        return RestrictionType.SCHOOL_MAJOR, action
     if any(iter_course_mentions(text)):
         return RestrictionType.COURSE_SPECIFIC, action
     return None

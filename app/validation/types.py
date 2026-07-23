@@ -121,7 +121,28 @@ class ValidationContext:
 
     @property
     def all_retrieved_refs(self) -> set[CourseRef]:
-        return self.retrieved_primary_refs | self.retrieved_flagged_refs
+        return (
+            self.retrieved_primary_refs
+            | self.retrieved_flagged_refs
+            | self.restriction_evidence_refs
+        )
+
+    @property
+    def restriction_evidence_refs(self) -> set[CourseRef]:
+        """Course IDs parsed from fetched restriction scopes/exceptions."""
+        from app.catalog.normalization import parse_course_mention
+
+        refs: set[CourseRef] = set()
+        for event in (self.restriction_evidence or {}).get("events") or []:
+            values = list(event.get("course_scope") or [])
+            for exception in event.get("exceptions") or []:
+                values.append(exception.get("course_id"))
+                values.extend(exception.get("course_ids") or [])
+            for value in filter(None, values):
+                ref = parse_course_mention(str(value))
+                if ref:
+                    refs.add(ref)
+        return refs
 
 
 def _refs_from_results(items: list[dict]) -> set[CourseRef]:

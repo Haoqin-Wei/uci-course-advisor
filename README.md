@@ -9,6 +9,8 @@ This project is not an official UCI advisor, degree audit, or enrollment system.
 - Streaming chat through `/api/chat/stream` with SSE events, tool chips, limit-reached continuation, and persisted history.
 - Tool-backed course, section, professor, grade, prerequisite, policy, and schedule-conflict lookups.
 - Controlled `web_search` agent tool with source classification, default-off safety, fake-provider tests, and markdown citations for web-sourced facts.
+- Fixed WebSoc restriction evidence pipeline: the backend follows query-relevant official links, parses cross-row timelines, selects dates/scopes/exceptions deterministically, and validates every restriction claim before display.
+- Expandable fetch audit under restriction tool chips showing each real GET/POST request, response status, byte count, source role, depth, and whether it supplied the final facts.
 - Structured recommendation cards with validation before they can be added to the weekly schedule.
 - Backend-owned automatic term resolution with conversation-level auto/pinned memory, a read-only term display, and canonical `YYYY Quarter` values.
 - Cross-term schedules: every entry keeps its own term, overlaps are non-blocking, and the same course/section can coexist across terms.
@@ -29,6 +31,7 @@ flowchart LR
   Memory["Persistent state<br/>sessions, profile, facts, preferences, schedule"]
   Validation["Validation<br/>grounding, term/source checks, card blocking"]
   Terms["Term resolution<br/>LA clock + UCI calendar + WebSoc publication gate"]
+  Restrictions["Restriction evidence<br/>WebSoc entry + official linked page + timeline parser"]
 
   Browser --> API
   API --> Agent
@@ -37,6 +40,8 @@ flowchart LR
   API --> Memory
   Agent --> Memory
   Agent --> Validation
+  Tools --> Restrictions
+  Restrictions --> Validation
   Validation --> API
   API --> Terms
   Terms --> Data
@@ -150,6 +155,35 @@ python scripts/smoke_term_state.py
 python scripts/smoke_term_state.py --term "2026 Fall"
 ```
 
+### Restriction evidence pipeline
+
+Questions about major/school restrictions, New Only restrictions, course-specific restrictions, and related enrollment rules always enter through the Registrar WebSoc workflow. The workflow submits the real WebSoc department query, reads only query-relevant links explicitly published in the returned comments, and follows a tightly allowlisted second hop only when required fields are still missing.
+
+Fetched HTML is cleaned into ordered headings, paragraphs, lists, tables, and links. A sequential parser binds department, date, time, action, audience, course scope, and exceptions into typed events using the `America/Los_Angeles` timezone. A completeness gate then marks the evidence `verified`, `partial`, `conflicting`, or `unavailable`; missing or conflicting data is never converted into a guessed date.
+
+The backend—not the LLM—renders the primary restriction type, effective time, related-but-different restrictions, eligibility, exceptions, and source URLs. The LLM may add at most a short explanation or next-step question. `RestrictionClaimValidator` checks its text against the evidence bundle and replaces unsupported dates, type substitutions, eligibility claims, omitted exceptions, or unfetched URLs with the deterministic fact block.
+
+The frontend’s restriction tool chip expands to the exact requests made during that turn. The compact audit is persisted with the assistant turn, so restored sessions show the same request list without fetching the websites again.
+
+Run the read-only M14 live checks manually (excluded from default CI):
+
+```bash
+python scripts/smoke_restriction_evidence.py \
+  --term "2026 Fall" \
+  --department "I&C SCI" \
+  --restriction-type school_major \
+  --expect-primary "2026-09-18T12:00:00-07:00" \
+  --expect-related "new_only=2026-09-01T12:00:00-07:00" \
+  --expect-exception "I&C SCI 139W"
+
+python scripts/smoke_restriction_evidence.py \
+  --term "2026 Fall" \
+  --department "I&C SCI" \
+  --restriction-type new_only \
+  --expect-primary "2026-09-01T12:00:00-07:00" \
+  --expect-related "school_major=2026-09-18T12:00:00-07:00"
+```
+
 The product uses data from [Anteater API](https://icssc.link/about-anteaterapi), maintained by the ICS Student Council. Its attribution policy requires credit in relevant query and data-display contexts; the app keeps that credit in the persistent sidebar and Schedule footers. Anteater data is derived from public UCI sources, but should still be verified against official UCI systems for enrollment decisions.
 
 ## Run
@@ -202,6 +236,7 @@ GitHub Actions runs install, syntax lint, dependency graph validation, and offli
 
 - The assistant is strongest for catalog, schedule, prerequisite, professor, and course-planning questions covered by the local data and implemented tools.
 - Local DB/tool data is the default highest-trust source. Web-sourced facts must be linked and shown separately; complete local DB data is not overridden by external web pages unless the answer explicitly describes the conflict.
+- Restriction dates, types, scopes, exceptions, eligibility, and cited URLs come only from the typed restriction evidence bundle; the LLM is an explanation layer, not a fact source.
 - Degree Audit is not implemented. Major requirement support is limited and should not be treated as official degree certification.
 - `partial`, `stale`, and `unavailable` coverage states mean the assistant must say it cannot confirm a fact rather than inventing certainty.
 - Web source classes are `official_uci`, `official_university`, `government`, `professor_page`, `rmp`, `reddit`, `commercial`, `news`, and `unknown`. Reddit/forum/social results are anecdotal, and any web claim without a URL is not usable as a factual source.

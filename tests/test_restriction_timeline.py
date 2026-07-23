@@ -113,6 +113,7 @@ def test_cross_line_timeline_keeps_major_and_nor_as_separate_events() -> None:
         for event in events
         if event.restriction_type == RestrictionType.SCHOOL_MAJOR
         and event.department == "I&C SCI"
+        and event.effective_at
     )
 
     assert nor.effective_at == "2026-09-01T12:00:00-07:00"
@@ -122,6 +123,11 @@ def test_cross_line_timeline_keeps_major_and_nor_as_separate_events() -> None:
     assert any(
         event.department == "COMPSCI"
         and event.effective_at == "2026-09-20T09:00:00-07:00"
+        for event in events
+    )
+    assert not any(
+        event.department == "I&C SCI"
+        and "STATS" in event.statement
         for event in events
     )
 
@@ -199,6 +205,45 @@ def test_evidence_gate_selects_major_as_primary_and_keeps_nor_related() -> None:
     assert "I&C SCI 139W" in facts["summary_markdown"]
     assert "reg.uci.edu" in facts["summary_markdown"]
     assert "ics.uci.edu" in facts["summary_markdown"]
+
+
+def test_ambiguous_evidence_returns_one_major_and_one_nor_event() -> None:
+    html = (FIXTURES / "ics_restrictions_live_layout.html").read_text()
+    events = parse_restriction_timeline(
+        extract_main_content_blocks(html),
+        term="2026 Fall",
+        department="I&C SCI",
+        source_url="https://ics.uci.edu/course-enrollment-restrictions/",
+        source_role="ics_undergraduate_restrictions",
+        retrieved_at="2026-07-23T12:00:00Z",
+    )
+    bundle = build_restriction_evidence_bundle(
+        RestrictionQuery(
+            term="2026 Fall",
+            department="I&C SCI",
+            restriction_type=RestrictionType.AMBIGUOUS,
+        ),
+        websoc_result={"source_url": "https://www.reg.uci.edu/perl/WebSoc"},
+        linked_result={
+            "pages": [
+                {
+                    "url": "https://ics.uci.edu/course-enrollment-restrictions/",
+                    "timeline_events": [event.to_dict() for event in events],
+                }
+            ]
+        },
+    )
+    events_by_id = {event.event_id: event for event in bundle.events}
+    returned_types = [
+        events_by_id[bundle.primary_event_id].restriction_type,
+        *[
+            events_by_id[event_id].restriction_type
+            for event_id in bundle.related_event_ids
+        ],
+    ]
+
+    assert returned_types.count(RestrictionType.SCHOOL_MAJOR) == 1
+    assert returned_types.count(RestrictionType.NEW_ONLY) == 1
 
 
 def test_evidence_gate_marks_conflicts_and_unavailable_without_guessing() -> None:

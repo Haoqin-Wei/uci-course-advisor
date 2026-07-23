@@ -188,3 +188,29 @@ def test_web_retrieval_allows_policy_answer_to_reference_catalog_courses(
     assert action.value == "keep"
     assert final_answer == answer
     assert changed is False
+
+
+def test_restriction_evidence_course_is_not_reported_as_lateral(
+    minimal_catalog,
+):
+    catalog = _spring_2025_fixture_catalog(minimal_catalog)
+    ctx = ValidationContext(
+        llm_answer="I&C SCI 139W is a verified restriction exception.",
+        retrieved={"primary": [], "flagged": [], "total_found": 0},
+        catalog=catalog,
+        session_state={"term": "Spring 2025"},
+        restriction_evidence={
+            "events": [
+                {
+                    "course_scope": [],
+                    "exceptions": [{"course_id": "I&C SCI 139W"}],
+                }
+            ]
+        },
+    )
+
+    report = validate(ctx)
+
+    assert "LATERAL_COURSE_MENTION" not in {
+        issue.code for issue in report.issues
+    }

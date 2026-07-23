@@ -39,6 +39,14 @@ _ELIGIBLE_CLAIM = re.compile(
     r"|你(?:现在)?(?:可以|能)(?:选|注册|加课)|符合资格",
     re.I,
 )
+_EARLY_ELIGIBILITY_CLAIM = re.compile(
+    r"无需等(?:到)?|不用等(?:到)?|不必等(?:到)?"
+    r"|原本就不适用|一开始就不适用"
+    r"|学期初.{0,16}(?:即可|可以|能)(?:选|注册|加课)"
+    r"|before.{0,30}(?:can|may|eligible|enroll)"
+    r"|already eligible",
+    re.I,
+)
 
 
 class RestrictionClaimValidator(Validator):
@@ -76,7 +84,10 @@ class RestrictionClaimValidator(Validator):
                 _match_minute_key(match)
                 for match in _DATE_TIME.finditer(ctx.llm_answer)
             }
-            if primary_value not in answer_values:
+            if not any(
+                _claim_matches_known(value, {primary_value})
+                for value in answer_values
+            ):
                 issues.append(
                     Issue(
                         validator=self.name,
@@ -102,7 +113,7 @@ class RestrictionClaimValidator(Validator):
                 for restriction_type, pattern in _TYPE_PATTERNS.items()
                 if pattern.search(window)
             }
-            if value not in known_all and claimed_types:
+            if not _claim_matches_known(value, known_all) and claimed_types:
                 issues.append(
                     _date_issue(
                         "RESTRICTION_UNSUPPORTED_DATE",
@@ -116,7 +127,7 @@ class RestrictionClaimValidator(Validator):
                 continue
             for restriction_type in claimed_types:
                 allowed = known_by_type.get(restriction_type) or set()
-                if allowed and value not in allowed:
+                if allowed and not _claim_matches_known(value, allowed):
                     issues.append(
                         _date_issue(
                             "RESTRICTION_TYPE_DATE_MISMATCH",
@@ -165,6 +176,35 @@ class RestrictionClaimValidator(Validator):
                         "explicit supporting evidence."
                     ),
                     evidence={"eligibility": eligibility},
+                    suggested_action=SuggestedAction.BLOCK,
+                )
+            )
+        eligibility_event = next(
+            (
+                event
+                for event in events
+                if event.get("event_id") == eligibility.get("evidence_event_id")
+            ),
+            None,
+        )
+        if (
+            eligibility_event
+            and eligibility_event.get("effective_at")
+            and _EARLY_ELIGIBILITY_CLAIM.search(ctx.llm_answer)
+        ):
+            issues.append(
+                Issue(
+                    validator=self.name,
+                    code="RESTRICTION_ELIGIBILITY_TIME_UNGROUNDED",
+                    severity=Severity.ERROR,
+                    message=(
+                        "The answer claims enrollment access before the "
+                        "verified eligibility event takes effect."
+                    ),
+                    evidence={
+                        "effective_at": eligibility_event.get("effective_at"),
+                        "event_id": eligibility_event.get("event_id"),
+                    },
                     suggested_action=SuggestedAction.BLOCK,
                 )
             )
@@ -228,10 +268,21 @@ def _minute_key(value: str) -> str:
 
 def _match_minute_key(match: re.Match[str]) -> str:
     year, month, day, hour, minute = match.groups()
+    date_key = f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+    if hour is None:
+        return date_key
     return (
-        f"{int(year):04d}-{int(month):02d}-{int(day):02d} "
+        f"{date_key} "
         f"{int(hour or 0):02d}:{int(minute or 0):02d}"
     )
+
+
+def _claim_matches_known(value: str, known_values: set[str]) -> bool:
+    if value in known_values:
+        return True
+    if len(value) == 10:
+        return any(known.startswith(f"{value} ") for known in known_values)
+    return False
 
 
 def _date_issue(
