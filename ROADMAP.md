@@ -235,7 +235,7 @@
 - [x] 为每次数据构建生成 manifest：term、记录数、部门覆盖、来源、更新时间、schema version。
 - [x] 学期状态统一为 `complete / partial / stale / unavailable`。
 - [x] 将当前 Fall 2026 标记为 partial，禁止将 452 条数据视为完整学期。
-- [x] `/api/terms` 返回 coverage status，不只返回名称。
+- [x] `/api/terms` 返回 coverage status，不只返回名称。（历史实现；M13 收尾后旧 selector 接口已移除。）
 - [x] 前端 term selector 显示 partial/stale 标识。
 - [x] API 失败时区分“没有开课”和“无法确认”。
 
@@ -302,7 +302,7 @@
 - [x] 删除无调用方的 `appendTyping()`。
 - [x] 删除无调用方的 `appendAI()`。
 - [x] 抽取统一 `consumeSSE(response, handlers)`，供 send 和 continue 共用。
-- [x] 删除已经被后端 `/api/terms` 替代的静态 term 假数据 fallback；API 不可用时显示 unavailable。
+- [x] 删除曾由后端 `/api/terms` 替代的静态 term 假数据 fallback；M13 后改为最小 `/api/term-state`，API 不可用时显示 unavailable。
 - [x] JavaScript 颜色从 CSS custom properties 读取，不再维护第二份 hardcoded palette。
 
 ### M6.2 模块拆分
@@ -1190,11 +1190,11 @@ Sources:
   - `GET /v2/rest/websoc?year=...&quarter=...`
 - [x] `/calendar/all` 负责提供 `instructionStart` 等学期日历字段。
 - [x] `/websoc/terms` 只作为“term 已出现在 WebSoc”的第一层条件，不能单独判定可用。
-- [x] 对候选下一学期请求完整 WebSoc 数据，至少找到一门 course 和一个 section 才标记 `data_available=true`。
+- [x] 对候选下一学期按 `COMPSCI -> MATH -> BIO SCI` 做部门级 WebSoc 探测，首个非空结果至少包含一门 course 和一个 section 才标记 `data_available=true`；不再下载全校 WebSoc。
 - [x] 空 term shell、只有 school/department 但没有 course/section 的响应不能触发自动切换。
 - [x] WebSoc 有数据但 calendar 缺少该 term 的 `instructionStart` 时，不自动切换。
 - [x] API non-200、timeout、invalid JSON、`ok=false`、schema 缺失分别返回结构化状态并记录日志。
-- [x] 只在同步到期时抓取完整候选 term，普通聊天请求不得重复下载整个 WebSoc。
+- [x] 只在同步到期时探测候选 term，普通聊天请求不得重复执行 availability probe。
 
 ### M13.4 Week 2 Friday 截止点
 
@@ -1222,7 +1222,7 @@ Sources:
   - last_attempt_at
   - last_error
 - [x] 运行期间每 30 天同步一次。
-- [x] 应用启动时只有缓存年龄超过 30 天才同步，不能每次重启都下载完整 WebSoc。
+- [x] 应用启动时只有缓存年龄超过 30 天才同步；不再启动时预热约 90 页全校课程，Onboarding 按需加载。
 - [x] 缓存 45 天内仍可用于解析和自动 term；同步失败时保留最近一次成功状态。
 - [x] 缓存超过 45 天且同步失败时，使用代码内置、随版本更新的 fallback term。
 - [x] fallback 状态必须返回 `source=code_fallback` 和 `status=fallback`，禁止伪装成实时 Anteater 判定。
@@ -1234,7 +1234,7 @@ Sources:
   - 当前默认学期已超过统一 Week 2 Friday 17:00 截止点。
   - 下一常规学期存在完整 calendar 数据。
   - 下一常规学期出现在 `/websoc/terms`。
-  - 下一常规学期完整 WebSoc 至少包含一门 course 和一个 section。
+  - 下一常规学期的部门级 WebSoc 探测至少包含一门 course 和一个 section。
 - [x] 任一条件不满足时，继续使用当前默认学期。
 - [x] Summer 数据即使已经发布，也不能成为自动默认学期。
 - [x] 系统恢复时如果已经跨过多个截止点，并且多个后续常规 term 都满足条件，一次前进到满足规则的最新 term。
@@ -1308,7 +1308,7 @@ Sources:
 
 ### M13.11 API、可观测性与运维
 
-- [x] 新增只读 term-state API，至少返回 automatic term、source、status、last success/attempt 和 next cutoff。
+- [x] 新增只读 term-state API；浏览器只返回 automatic term、source、status，last success/attempt、next cutoff、availability 与 transition 留在 health/metrics。
 - [x] session API 返回 resolved effective term 和 `term_mode`，前端不自行推断。
 - [x] health/metrics 增加 calendar sync、WebSoc availability probe、cache age、fallback 和 term transition 状态。
 - [x] 日志事件至少包括：
@@ -1318,7 +1318,7 @@ Sources:
   - `conversation_term_pinned`
   - `conversation_term_reset_auto`
   - `term_fallback_activated`
-- [x] 完整 WebSoc 响应不写入日志，只记录计数、候选 term、URL、status、content length 和提取结果。
+- [x] Agent 真实联网使用统一审计日志：started/completed/failed 记录 URL、method、status、content length、duration、trigger、`cache_hit=false`，结束时列出实际 fetched URLs；页面正文、passages、restriction fields 和完整工具结果不写日志。
 - [x] 记录 Anteater API attribution 要求，并在使用其数据的相关产品位置保留归属说明。
 - [x] 本地文件 store 路径进入 runtime data 目录并加入 `.gitignore`，不得提交实时缓存。
 
@@ -1350,7 +1350,7 @@ Sources:
 ### M13.13 分阶段提交计划
 
 1. `M13-A`：Term model、canonical parser、timezone clock、Week 2 cutoff 计算与单元测试。
-2. `M13-B`：Anteater calendar/terms/full-WebSoc client 与 availability fixture 测试。
+2. `M13-B`：Anteater calendar/terms/WebSoc availability client 与 fixture 测试；收尾优化为部门级短路探测。
 3. `M13-C`：TermStateStore、30 天同步、45 天 stale、fallback 和 observability。
 4. `M13-D`：automatic term state machine、auto/pinned conversation metadata 和旧 session 迁移。
 5. `M13-E`：chat/workflow/agentic/validation 统一 effective term，删除前端 term authority。
@@ -1425,4 +1425,4 @@ Sources:
 | 2026-07-05 | M9 | 完成 controlled `web_search`、source classifier、Search Skill prompt、前端 chip/source badge 和离线 fake-provider 测试 | `feat: add controlled web search evidence chain` | `compileall`、`pip check`、`139 passed, 2 deselected` 通过；默认测试不联网，搜索关闭时结构化 unavailable。 |
 | 2026-07-21 | M11 | 完成 developer workflow registry、`fetch_page`、run 去重与 depth/page 预算、SQLite 公共 trace、本地相似匹配、历史强建议与 fresh-source 门禁 | `fcebe7d`–`1439583` | `compileall` 与完整离线回归通过：`202 passed`；`.idea/` 未纳入提交。 |
 | 2026-07-21 | M12 | 修复 WebSoc 同 URL 表单抓取，增加 live option/response validation、server-forced restriction workflow 和 linked-page structured evidence | `af3e8ea`–本阶段收尾提交 | `compileall`、完整离线回归 `219 passed, 2 deselected`；真实 ART POST 验证得到 major restriction `2026-08-24 noon`、NORS `2026-08-21 noon`。 |
-| 2026-07-22 | M13 | 完成自动学期上下文、Anteater calendar/WebSoc 发布门禁、conversation auto/pinned、只读 term、跨学期 Schedule 和 live smoke | `4c791e9`–本阶段收尾提交 | `304 passed, 2 deselected`；calendar 108 条、WebSoc term 162 个、`2026 Fall` 2,889 courses/13,032 sections；A–H 独立提交，runtime 数据未纳入 Git。 |
+| 2026-07-22 | M13 | 完成自动学期上下文、Anteater calendar/WebSoc 发布门禁、conversation auto/pinned、只读 term、跨学期 Schedule 和 live smoke | `4c791e9`–本阶段收尾提交 | `307 passed, 2 deselected`；calendar 108 条、WebSoc term 162 个；`2026 Fall` 发布探针只取 53 courses/458 sections、258,563 bytes，较原完整抓取 7,830,665 bytes 减少 96.7%；启动不再预热完整课表，runtime 数据未纳入 Git。 |

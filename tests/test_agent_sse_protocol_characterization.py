@@ -253,9 +253,25 @@ def test_stream_chat_returns_grounded_fallback_when_agent_errors_before_streamin
     assert [event["type"] for event in events] == ["token", "meta", "done"]
     assert "I can’t reach the agent right now" in events[0]["text"]
     assert "LLM call failed: offline" in events[0]["text"]
-    assert events[1]["session_state"]["term"] == "2025 Spring"
-    assert events[1]["intent"] == "agent"
+    session_state = sessions_data.get_session_state(
+        "demo_001",
+        events[1]["session_id"],
+    )
+    assert session_state["term"] == "2025 Spring"
+    assert "session_state" not in events[1]
+    assert "intent" not in events[1]
     assert events[1]["cards"] == []
+    assert set(events[1]) == {
+        "type",
+        "session_id",
+        "cards",
+        "followups",
+        "validation_report",
+        "final_answer",
+        "effective_term",
+        "term_source",
+        "term_status",
+    }
     assert "error" not in {event["type"] for event in events}
 
 

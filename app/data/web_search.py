@@ -369,18 +369,17 @@ def _duckduckgo_search(
     last_error: Optional[requests.RequestException] = None
     for attempt, search_query in enumerate(queries, start=1):
         web_search_url = _build_search_url(search_query)
-        observability.log_event(
+        request_started = observability.now()
+        observability.log_agent_web_fetch_started(
             logger,
-            logging.INFO,
-            "web_search_provider_attempt",
-            provider="duckduckgo",
+            url=web_search_url,
+            method="GET",
+            tool="web_search",
+            workflow_id="agentic_web_search",
             attempt=attempt,
-            endpoint=DUCKDUCKGO_HTML_URL,
-            web_search_url=web_search_url,
-            search_query=_log_value(search_query),
-            preferred_domains=preferred_domains,
             timeout_seconds=config.web_search_timeout_seconds(),
         )
+        response = None
         try:
             response = session.get(
                 DUCKDUCKGO_HTML_URL,
@@ -389,45 +388,37 @@ def _duckduckgo_search(
                 timeout=config.web_search_timeout_seconds(),
             )
             if response.status_code != 200:
-                observability.log_event(
-                    logger,
-                    logging.WARNING,
-                    "web_search_provider_attempt_failed",
-                    provider="duckduckgo",
-                    attempt=attempt,
-                    status_code=response.status_code,
-                    web_search_url=web_search_url,
-                    search_query=_log_value(search_query),
-                )
                 raise requests.RequestException(
                     f"unexpected DuckDuckGo status {response.status_code}"
                 )
             response.raise_for_status()
         except requests.RequestException as e:
             last_error = e
-            observability.log_event(
+            observability.log_agent_web_fetch_failed(
                 logger,
-                logging.WARNING,
-                "web_search_provider_attempt_failed",
-                provider="duckduckgo",
+                url=web_search_url,
+                method="GET",
+                tool="web_search",
+                workflow_id="agentic_web_search",
+                duration_ms=observability.elapsed_ms(request_started),
+                error=f"{type(e).__name__}: {e}",
                 attempt=attempt,
-                error_type=type(e).__name__,
-                web_search_url=web_search_url,
-                search_query=_log_value(search_query),
+                status_code=getattr(response, "status_code", None),
             )
             continue
 
-        observability.log_event(
+        observability.log_agent_web_fetch_completed(
             logger,
-            logging.INFO,
-            "web_search_content",
-            provider="duckduckgo",
-            attempt=attempt,
-            web_search_url=web_search_url,
+            url=web_search_url,
+            final_url=getattr(response, "url", None) or web_search_url,
+            method="GET",
+            tool="web_search",
+            workflow_id="agentic_web_search",
             status_code=response.status_code,
-            content_length=len(response.text or ""),
-            search_query=_log_value(search_query),
-            content_preview=_log_content_preview(response.text),
+            content_length=len((response.text or "").encode("utf-8")),
+            content_type=(getattr(response, "headers", {}) or {}).get("content-type"),
+            duration_ms=observability.elapsed_ms(request_started),
+            attempt=attempt,
         )
         parser = _DuckDuckGoHTMLParser()
         parser.feed(response.text)
@@ -435,13 +426,11 @@ def _duckduckgo_search(
         observability.log_event(
             logger,
             logging.INFO,
-            "web_search_provider_attempt_parsed",
+            "agent_web_search_results",
             provider="duckduckgo",
             attempt=attempt,
-            web_search_url=web_search_url,
-            search_query=_log_value(search_query),
             result_count=len(parser.results),
-            result_urls=[r.get("url") for r in parser.results[:5]],
+            candidate_urls=[r.get("url") for r in parser.results[:5]],
         )
         if parser.results or search_query == query:
             return parser.results[:max_results]
@@ -761,14 +750,10 @@ def _log_search_result(rank: int, result: dict[str, Any]) -> None:
     observability.log_event(
         logger,
         logging.INFO,
-        "web_search_result",
+        "agent_web_search_candidate",
         rank=rank,
-        title=_log_value(result.get("title") or ""),
         url=result.get("url"),
-        web_search_url=result.get("url"),
         domain=result.get("domain"),
-        snippet=_log_value(result.get("snippet") or ""),
-        published_at=result.get("published_at"),
         source_class=result.get("source_class"),
         trust_level=result.get("trust_level"),
         usable_as_fact=result.get("usable_as_fact"),

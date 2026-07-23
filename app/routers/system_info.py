@@ -1,8 +1,7 @@
 """
 Read-only metadata endpoints consumed by the frontend on page load.
 
-  GET /api/term-state     Backend-resolved automatic term and cache health
-  GET /api/terms          Legacy catalog coverage listing
+  GET /api/term-state     Minimal backend-resolved automatic term
   GET /api/system_prompt  Current default LLM system prompt
 
 These exist so the frontend doesn't have to hard-code terms or guess
@@ -18,125 +17,22 @@ Wire-up:
 
 from __future__ import annotations
 
-import logging
-from typing import Optional
-
 from fastapi import APIRouter, HTTPException
 
-from app import config, observability
+from app import config
 from app.terms.service import get_term_resolution_service
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
 
 
 @router.get("/api/term-state")
 def get_term_state() -> dict:
-    """Return the backend-resolved automatic term and cache health."""
-    return get_term_resolution_service().automatic_state()
-
-
-# ── /api/terms ───────────────────────────────────────────
-
-@router.get("/api/terms")
-def list_terms() -> dict:
-    """
-    Return the terms the backend actually has section data for, plus
-    coverage status and which one is the default. Frontend uses this to
-    populate the term dropdown without hard-coded term names.
-
-    Response shape:
-        {
-          "terms": [
-            {"name": "Spring 2026", "coverage_status": "complete", ...},
-            {"name": "Fall 2026", "coverage_status": "partial", ...}
-          ],
-          "term_names": ["Spring 2026", "Fall 2026"],
-          "default": "Spring 2026"
-        }
-    """
-    try:
-        from app.catalog.coverage import default_term_name, get_coverage_manifest
-
-        manifest = get_coverage_manifest()
-        terms = manifest["terms"]
-        for item in terms:
-            status = item.get("coverage_status")
-            if status in {"partial", "stale", "unavailable"}:
-                observability.increment("catalog.coverage_status", status=status)
-                observability.log_event(
-                    logger,
-                    logging.WARNING,
-                    "catalog_coverage",
-                    term=item.get("name"),
-                    status=status,
-                    section_count=item.get("section_count"),
-                    updated_at=item.get("updated_at"),
-                )
-        term_names = [item["name"] for item in terms]
-        return {
-            "terms": terms,
-            "term_names": term_names,
-            "default": default_term_name(manifest),
-            "manifest": {
-                "schema_version": manifest["schema_version"],
-                "generated_at": manifest["generated_at"],
-                "updated_at": manifest["updated_at"],
-                "source": manifest["source"],
-            },
-        }
-    except Exception as e:
-        # Fallback: scan sections.csv directly if the catalog isn't
-        # importable for whatever reason (e.g. validation module not wired).
-        observability.increment("catalog.terms_fallback")
-        observability.log_event(
-            logger,
-            logging.WARNING,
-            "catalog_terms_fallback",
-            error=f"{type(e).__name__}: {e}",
-        )
-        return _terms_from_csv_fallback(error=str(e))
-
-
-def _terms_from_csv_fallback(error: Optional[str] = None) -> dict:
-    """Read terms straight from data/uci/sections.csv as a last resort."""
-    import csv
-    from collections import Counter
-    from pathlib import Path
-
-    path = Path("data/uci/sections.csv")
-    if not path.exists():
-        return {"terms": [], "default": None, "error": error or "no sections.csv"}
-
-    counter: Counter = Counter()
-    with path.open("r", encoding="utf-8") as f:
-        for r in csv.DictReader(f):
-            y, q = r.get("year"), r.get("quarter")
-            if y and q:
-                counter[f"{q} {y}"] += 1
-
-    # Sort by (year DESC, quarter order). Most recent first.
-    QUARTER_ORDER = {"Fall": 4, "Spring": 3, "Winter": 2,
-                     "Summer2": 1.3, "Summer10wk": 1.2, "Summer1": 1.1}
-    def sort_key(label: str):
-        q, y = label.rsplit(" ", 1)
-        return (-int(y), -QUARTER_ORDER.get(q, 0))
-    terms = sorted(counter.keys(), key=sort_key)
-
-    term_objects = [
-        {
-            "name": term,
-            "coverage_status": "partial" if counter[term] < 1_000 else "complete",
-            "section_count": counter[term],
-        }
-        for term in terms
-    ]
-
+    """Return only the automatic-term fields consumed by the browser."""
+    state = get_term_resolution_service().automatic_state()
     return {
-        "terms": term_objects,
-        "term_names": terms,
-        "default": terms[0] if terms else None,
-        **({"error": error} if error else {}),
+        "automatic_term": state["automatic_term"],
+        "source": state["source"],
+        "status": state["status"],
     }
 
 

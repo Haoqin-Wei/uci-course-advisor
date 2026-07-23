@@ -343,7 +343,7 @@ async function wizardSavePartial() {
       body: JSON.stringify(payload),
     });
     // Refresh sidebar so the partial profile shows up immediately
-    loadSidebar();
+    loadSidebar(true);
   } catch (err) {
     // Non-blocking — the user can still proceed even if persistence
     // hiccups. Their in-memory wizardState is intact for this session.
@@ -865,7 +865,7 @@ async function wizardSave() {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     closeWizard();
     // Re-paint sidebar with the new profile
-    await loadSidebar();
+    await loadSidebar(true);
   } catch (err) {
     console.error('wizard save failed:', err);
     alert(`Save failed: ${err.message || err}`);
@@ -885,7 +885,6 @@ async function wizardSave() {
   paintAuthChrome();
   await Promise.all([
     loadTermState(),
-    loadDefaultPromptFromAPI(),
     loadSidebar(),
     loadSessionList(),
   ]);

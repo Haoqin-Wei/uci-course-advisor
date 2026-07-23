@@ -66,8 +66,10 @@ def test_chat_ignores_frontend_term_and_uses_backend_effective_term(monkeypatch)
     assert captured["term"] == "2025 Spring"
     assert captured["state"]["term"] == "2025 Spring"
     assert meta["effective_term"] == "2025 Spring"
-    assert meta["term_mode"] == "auto"
-    assert meta["term_update"]["changed"] is False
+    persisted = sessions_data.get_session_meta("demo_001", meta["session_id"])
+    assert persisted["term_mode"] == "auto"
+    assert "term_mode" not in meta
+    assert "term_update" not in meta
 
 
 def test_successful_single_available_term_pins_conversation(
@@ -91,12 +93,8 @@ def test_successful_single_available_term_pins_conversation(
     persisted = sessions_data.get_session_meta("demo_001", meta["session_id"])
 
     assert meta["effective_term"] == "2026 Fall"
-    assert meta["term_mode"] == "pinned"
-    assert meta["term_update"] == {
-        "changed": True,
-        "mode": "pinned",
-        "scope": "2026 Fall",
-    }
+    assert "term_mode" not in meta
+    assert "term_update" not in meta
     assert persisted["term_scope"] == "2026 Fall"
     assert persisted["term_mode"] == "pinned"
 
@@ -127,8 +125,8 @@ def test_failed_turn_does_not_pin_explicit_term(runtime_paths, monkeypatch):
     )
 
     assert meta["effective_term"] == "2025 Spring"
-    assert meta["term_mode"] == "auto"
-    assert meta["term_update"]["changed"] is False
+    persisted = sessions_data.get_session_meta("demo_001", meta["session_id"])
+    assert persisted["term_mode"] == "auto"
 
 
 def test_unknown_term_can_pin_only_after_tool_finds_term_data(monkeypatch):
@@ -162,8 +160,10 @@ def test_unknown_term_can_pin_only_after_tool_finds_term_data(monkeypatch):
     )
 
     assert meta["effective_term"] == "2026 Fall"
-    assert meta["term_mode"] == "pinned"
-    assert meta["query_terms"] == ["2026 Fall"]
+    persisted = sessions_data.get_session_meta("demo_001", meta["session_id"])
+    assert persisted["term_mode"] == "pinned"
+    assert persisted["term_scope"] == "2026 Fall"
+    assert "query_terms" not in meta
 
 
 def test_known_unavailable_term_is_rejected_without_running_agent(
@@ -193,13 +193,16 @@ def test_known_unavailable_term_is_rejected_without_running_agent(
 
     assert "has not been published" in events[0]["text"]
     assert meta["effective_term"] == "2025 Spring"
-    assert meta["term_mode"] == "auto"
+    persisted = sessions_data.get_session_meta("demo_001", meta["session_id"])
+    assert persisted["term_mode"] == "auto"
 
 
 def test_multi_term_query_does_not_change_conversation_term(runtime_paths, monkeypatch):
     _seed_available_terms(runtime_paths, "2026 Winter", "2026 Fall")
+    captured = {}
 
-    async def fake_handle(_message, _state, _memory, *, queue, **_kwargs):
+    async def fake_handle(_message, state, _memory, *, queue, **_kwargs):
+        captured["query_terms"] = state["query_terms"]
         await queue.put({"type": "token", "text": "comparison"})
         return "comparison", [], [], None
 
@@ -215,9 +218,11 @@ def test_multi_term_query_does_not_change_conversation_term(runtime_paths, monke
         )
     )
 
-    assert meta["query_terms"] == ["2026 Winter", "2026 Fall"]
+    assert captured["query_terms"] == ["2026 Winter", "2026 Fall"]
+    assert "query_terms" not in meta
     assert meta["effective_term"] == "2025 Spring"
-    assert meta["term_mode"] == "auto"
+    persisted = sessions_data.get_session_meta("demo_001", meta["session_id"])
+    assert persisted["term_mode"] == "auto"
 
 
 def test_invalid_ambiguous_term_does_not_silently_use_default(monkeypatch):

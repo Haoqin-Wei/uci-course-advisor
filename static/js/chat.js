@@ -63,7 +63,6 @@ async function sendMessage(text) {
         // same session, and refresh the sidebar list.
         if (event.session_id && event.session_id !== currentSessionId) {
           currentSessionId = event.session_id;
-          loadSessionList();
         }
       },
       tool_call_start(event) {
@@ -114,7 +113,7 @@ async function sendMessage(text) {
     // Channel A may have updated profile.json (e.g. user mentioned a
     // newly-completed course). Re-fetch the sidebar so the UI stays in
     // sync with the durable profile state.
-    loadSidebar();
+    loadSidebar(true);
     loadScheduleForSession(currentSessionId);
 
     // Round 4 — _persist_turn ran during the stream and set the snippet
@@ -127,9 +126,7 @@ async function sendMessage(text) {
     // on stop because CancelledError bypasses persist entirely.
     if (isNewSession && !stopped) {
       loadSessionList();
-      setTimeout(loadSessionList, 2000);
-      setTimeout(loadSessionList, 5000);
-      setTimeout(loadSessionList, 9000);
+      setTimeout(loadSessionList, 7000);
     }
   }
 }

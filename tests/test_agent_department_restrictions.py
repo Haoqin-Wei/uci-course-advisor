@@ -220,8 +220,10 @@ def test_agent_can_dispatch_department_restrictions_with_sse_chip(
     assert "workflow_id" in caplog.text
     assert "source_url" in caplog.text
     assert "https://www.reg.uci.edu/perl/WebSoc?Dept=ART" in caplog.text
-    assert "restriction_fields" in caplog.text
-    assert "Monday, August 24th, 2026 at noon" in caplog.text
+    assert "event=agent_web_research_summary" in caplog.text
+    assert "fetched_urls=" in caplog.text
+    assert "restriction_fields" not in caplog.text
+    assert "Monday, August 24th, 2026 at noon" not in caplog.text
     client.assert_exhausted()
 
 

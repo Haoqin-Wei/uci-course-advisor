@@ -24,25 +24,8 @@ async def lifespan(app: FastAPI):
     # Memory provider self-initializes per session on first request.
     from app.data.sessions import migrate_term_metadata
     migrate_term_metadata()
-    # Warm the Anteater all-courses cache in the background so the
-    # first user to hit Step 4 of the wizard doesn't pay a ~40s wait
-    # for the ~90-page cursor-paginated fetch.
-    import threading
-    def _warm():
-        try:
-            from app.data.uci_general.anteater_programs import list_all_courses
-            list_all_courses()
-        except Exception as e:
-            observability.increment("data.refresh_failures", source="anteater_warmup")
-            observability.log_event(
-                logger,
-                logging.WARNING,
-                "data_refresh_failure",
-                source="anteater_warmup",
-                error=f"{type(e).__name__}: {e}",
-            )
-    threading.Thread(target=_warm, daemon=True, name="anteater-warmup").start()
 
+    import threading
     def _sync_terms():
         try:
             from app.terms.sync import get_term_synchronizer
@@ -126,6 +109,13 @@ async def security_middleware(request: Request, call_next):
                 secure=config.cookie_secure(),
                 path="/",
             )
+        # Static assets use stable filenames, so force browsers to revalidate
+        # them on every page load.  This prevents a new index.html from being
+        # paired with an older JavaScript bundle after a deployment.
+        if request.url.path == "/":
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+        elif request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache, must-revalidate"
         response.headers["X-Trace-Id"] = trace_id
         status_code = response.status_code
         return response
@@ -169,4 +159,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 async def serve_frontend():
-    return FileResponse("static/index.html")
+    return FileResponse(
+        "static/index.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )

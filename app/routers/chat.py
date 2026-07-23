@@ -1034,7 +1034,6 @@ async def _stream_chat(
             # M5: do not run pre-agent LLM classifiers/extractors. The
             # agent sees profile/session/history context directly; hard
             # facts captured here are deterministic regex-only updates.
-            intent = "agent"
             extracted = _extract_deterministic_hard_facts(req.message)
             if extracted:
                 _capture_hard_facts(session, extracted, user_id, mem)
@@ -1217,14 +1216,10 @@ async def _stream_chat(
             state["term_mode"] = final_session_meta.get("term_mode", "auto")
             state["term_source"] = final_effective_term.source
             state["pending_schedule"] = session.get("pending_schedule", [])
-            term_update = {
-                "changed": (
-                    original_term_mode != final_session_meta.get("term_mode")
-                    or original_term_scope != final_session_meta.get("term_scope")
-                ),
-                "mode": final_session_meta.get("term_mode", "auto"),
-                "scope": final_session_meta.get("term_scope"),
-            }
+            term_changed = (
+                original_term_mode != final_session_meta.get("term_mode")
+                or original_term_scope != final_session_meta.get("term_scope")
+            )
 
             observability.log_event(
                 logger,
@@ -1237,7 +1232,7 @@ async def _stream_chat(
                 explicit_terms=query_terms,
                 tool_terms=tool_terms,
                 validation_term=validation_term,
-                persisted=term_update["changed"],
+                persisted=term_changed,
             )
 
             mem.sync_turn(user_id, req.message, reply, active_session_id)
@@ -1259,19 +1254,13 @@ async def _stream_chat(
             await queue.put({
                 "type": "meta",
                 "session_id": persistent_sid,
-                "intent": intent,
                 "cards": cards,
                 "followups": followups,
                 "validation_report": validation_dict,
                 "final_answer": reply,
-                "session_state": state,
-                "pending_schedule": session.get("pending_schedule", []),
                 "effective_term": final_effective_term.canonical_name,
-                "query_terms": query_terms,
-                "term_mode": final_session_meta.get("term_mode", "auto"),
                 "term_source": final_effective_term.source,
                 "term_status": final_effective_term.status,
-                "term_update": term_update,
             })
         except asyncio.CancelledError:
             logger.info("[stream] producer cancelled (client disconnected)")

@@ -125,19 +125,18 @@ def test_live_websoc_fetch_logs_url_response_and_parsed_result(caplog) -> None:
     assert result["request_form"]["Dept"] == "ART"
     assert result["response_term"] == "Fall 2026"
     assert result["validation"] == {"ok": True, "errors": []}
-    assert "event=websoc_search_started" in caplog.text
-    assert f"web_search_url={result['source_url']!r}" in caplog.text
-    assert "request_method='POST'" in caplog.text
-    assert "request_form=" in caplog.text
-    assert "event=websoc_search_response" in caplog.text
+    assert "event=agent_web_fetch_started" in caplog.text
+    assert f"url={result['source_url']!r}" in caplog.text
+    assert "method='POST'" in caplog.text
+    assert "trigger='agent'" in caplog.text
+    assert "cache_hit=False" in caplog.text
+    assert "event=agent_web_fetch_completed" in caplog.text
     assert "status_code=200" in caplog.text
-    assert "event=websoc_search_completed" in caplog.text
-    assert "response_department='ART'" in caplog.text
+    assert "event=agent_web_extraction_completed" in caplog.text
+    assert "department='ART'" in caplog.text
     assert "comment_block_count=2" in caplog.text
-    assert "major_restriction_removed_at" in caplog.text
-    assert "Monday, August 24th, 2026 at noon" in caplog.text
-    assert "nors_removed_at" in caplog.text
-    assert "Friday, August 21st at noon" in caplog.text
+    assert "major_restriction_removed_at" not in caplog.text
+    assert "Monday, August 24th, 2026 at noon" not in caplog.text
 
 
 def test_websoc_form_parser_keeps_exact_term_and_department_values() -> None:
@@ -309,10 +308,11 @@ def test_deep_read_fetches_only_selected_official_websoc_links(caplog) -> None:
         "major_restriction_removed_at"
     ] == "Monday, August 24th, 2026 at noon"
     assert "event=websoc_linked_search_selected" in caplog.text
-    assert "event=websoc_linked_page_started" in caplog.text
-    assert "web_search_url='http://ics.uci.edu/course-enrollment-restrictions/'" in caplog.text
-    assert "event=websoc_linked_page_completed" in caplog.text
-    assert "Monday, August 24th, 2026 at noon" in caplog.text
+    assert "event=agent_web_fetch_started" in caplog.text
+    assert "url='http://ics.uci.edu/course-enrollment-restrictions/'" in caplog.text
+    assert "event=agent_web_fetch_completed" in caplog.text
+    assert "event=agent_web_extraction_completed" in caplog.text
+    assert "Monday, August 24th, 2026 at noon" not in caplog.text
     assert "event=websoc_linked_search_completed" in caplog.text
 
 

@@ -30,6 +30,8 @@ REQUEST_TIMEOUT_S = 12
 LINK_TEXT_MAX_CHARS = 1500
 LINK_MAX_BYTES = 500_000
 LOG_TEXT_MAX_CHARS = 1000
+AGENT_TOOL = "get_department_restrictions"
+WORKFLOW_ID = "websoc_department_restrictions"
 
 _QUARTER_CODES = {
     "Winter": "03",
@@ -150,47 +152,45 @@ def fetch_websoc_department_restrictions(
             available_departments=form_result["departments"],
         )
 
-    observability.log_event(
+    request_started = observability.now()
+    observability.log_agent_web_fetch_started(
         logger,
-        logging.INFO,
-        "websoc_search_started",
-        workflow_id="websoc_department_restrictions",
-        web_search_url=source_url,
-        request_method="POST",
-        request_form=_summarize_request_form(params),
+        url=source_url,
+        method="POST",
+        tool=AGENT_TOOL,
+        workflow_id=WORKFLOW_ID,
         term=term,
         department=(department or "").strip().upper(),
         timeout_seconds=REQUEST_TIMEOUT_S,
     )
     try:
         response = http.post(WEBSOC_URL, data=params, timeout=REQUEST_TIMEOUT_S)
-        observability.log_event(
+        response.raise_for_status()
+        observability.log_agent_web_fetch_completed(
             logger,
-            logging.INFO,
-            "websoc_search_response",
-            workflow_id="websoc_department_restrictions",
-            web_search_url=source_url,
-            request_method="POST",
-            request_form=_summarize_request_form(params),
+            url=source_url,
             final_url=getattr(response, "url", None) or source_url,
+            method="POST",
+            tool=AGENT_TOOL,
+            workflow_id=WORKFLOW_ID,
             status_code=getattr(response, "status_code", None),
             content_type=(getattr(response, "headers", {}) or {}).get("content-type"),
             content_length=len((getattr(response, "text", "") or "").encode("utf-8")),
-        )
-        response.raise_for_status()
-    except requests.RequestException as e:
-        observability.log_event(
-            logger,
-            logging.WARNING,
-            "websoc_search_failed",
-            workflow_id="websoc_department_restrictions",
-            web_search_url=source_url,
-            request_method="POST",
-            request_form=_summarize_request_form(params),
+            duration_ms=observability.elapsed_ms(request_started),
             term=term,
             department=(department or "").strip().upper(),
-            error_type=type(e).__name__,
-            error=str(e),
+        )
+    except requests.RequestException as e:
+        observability.log_agent_web_fetch_failed(
+            logger,
+            url=source_url,
+            method="POST",
+            tool=AGENT_TOOL,
+            workflow_id=WORKFLOW_ID,
+            duration_ms=observability.elapsed_ms(request_started),
+            error=f"{type(e).__name__}: {e}",
+            term=term,
+            department=(department or "").strip().upper(),
         )
         return {
             "ok": False,
@@ -217,25 +217,15 @@ def fetch_websoc_department_restrictions(
     observability.log_event(
         logger,
         logging.INFO if result.get("ok") else logging.WARNING,
-        "websoc_search_completed",
+        "agent_web_extraction_completed",
         workflow_id=result["workflow_id"],
-        web_search_url=result["source_url"],
-        request_method=result["request_method"],
-        request_form=_summarize_request_form(result["request_form"]),
+        tool=AGENT_TOOL,
         term=result["term"],
-        response_term=result.get("response_term"),
-        requested_department=result["department"],
-        response_department=(result.get("search_criteria") or {}).get("department"),
-        registration_ends=result.get("registration_ends"),
+        department=result["department"],
         extraction_status=result.get("extraction_status"),
-        validation=result.get("validation"),
         error_code=result.get("error_code"),
         comment_block_count=len(result.get("comment_blocks") or []),
-        school_comments=_log_text(result.get("school_comments")),
-        department_comments=_log_text(result.get("department_comments")),
-        restriction_fields=_summarize_restriction_fields(result.get("fields")),
         link_count=len(result.get("links") or []),
-        result_urls=[link.get("url") for link in (result.get("links") or [])[:10]],
     )
     return result
 
@@ -248,37 +238,39 @@ def fetch_websoc_form_options(
 
     http = session or requests.Session()
     retrieved_at = _utc_now()
-    observability.log_event(
+    request_started = observability.now()
+    observability.log_agent_web_fetch_started(
         logger,
-        logging.INFO,
-        "websoc_form_started",
-        web_search_url=WEBSOC_URL,
-        request_method="GET",
+        url=WEBSOC_URL,
+        method="GET",
+        tool=AGENT_TOOL,
+        workflow_id=WORKFLOW_ID,
         timeout_seconds=REQUEST_TIMEOUT_S,
     )
     try:
         response = http.get(WEBSOC_URL, timeout=REQUEST_TIMEOUT_S)
-        observability.log_event(
+        response.raise_for_status()
+        observability.log_agent_web_fetch_completed(
             logger,
-            logging.INFO,
-            "websoc_form_response",
-            web_search_url=WEBSOC_URL,
-            request_method="GET",
+            url=WEBSOC_URL,
             final_url=getattr(response, "url", None) or WEBSOC_URL,
+            method="GET",
+            tool=AGENT_TOOL,
+            workflow_id=WORKFLOW_ID,
             status_code=getattr(response, "status_code", None),
             content_type=(getattr(response, "headers", {}) or {}).get("content-type"),
             content_length=len((getattr(response, "text", "") or "").encode("utf-8")),
+            duration_ms=observability.elapsed_ms(request_started),
         )
-        response.raise_for_status()
     except requests.RequestException as exc:
-        observability.log_event(
+        observability.log_agent_web_fetch_failed(
             logger,
-            logging.WARNING,
-            "websoc_form_failed",
-            web_search_url=WEBSOC_URL,
-            request_method="GET",
-            error_type=type(exc).__name__,
-            error=str(exc),
+            url=WEBSOC_URL,
+            method="GET",
+            tool=AGENT_TOOL,
+            workflow_id=WORKFLOW_ID,
+            duration_ms=observability.elapsed_ms(request_started),
+            error=f"{type(exc).__name__}: {exc}",
         )
         return {
             "ok": False,
@@ -652,39 +644,41 @@ def fetch_linked_official_pages(
     for link in selected:
         retrieved_at = _utc_now()
         linked_url = link["url"]
-        observability.log_event(
+        request_started = observability.now()
+        observability.log_agent_web_fetch_started(
             logger,
-            logging.INFO,
-            "websoc_linked_page_started",
-            workflow_id=workflow_result.get("workflow_id"),
-            web_search_url=linked_url,
-            source_url=workflow_result.get("source_url"),
+            url=linked_url,
+            method="GET",
+            tool=AGENT_TOOL,
+            workflow_id=workflow_result.get("workflow_id") or WORKFLOW_ID,
             link_role=link.get("link_role"),
-            source_block=link.get("source_block"),
         )
         try:
             response = http.get(linked_url, timeout=REQUEST_TIMEOUT_S)
-            observability.log_event(
+            response.raise_for_status()
+            observability.log_agent_web_fetch_completed(
                 logger,
-                logging.INFO,
-                "websoc_linked_page_response",
-                workflow_id=workflow_result.get("workflow_id"),
-                web_search_url=linked_url,
+                url=linked_url,
                 final_url=getattr(response, "url", None) or linked_url,
+                method="GET",
+                tool=AGENT_TOOL,
+                workflow_id=workflow_result.get("workflow_id") or WORKFLOW_ID,
                 status_code=getattr(response, "status_code", None),
                 content_type=(getattr(response, "headers", {}) or {}).get("content-type"),
                 content_length=len((getattr(response, "text", "") or "").encode("utf-8")),
+                duration_ms=observability.elapsed_ms(request_started),
+                link_role=link.get("link_role"),
             )
-            response.raise_for_status()
         except requests.RequestException as e:
-            observability.log_event(
+            observability.log_agent_web_fetch_failed(
                 logger,
-                logging.WARNING,
-                "websoc_linked_page_failed",
-                workflow_id=workflow_result.get("workflow_id"),
-                web_search_url=linked_url,
-                error_type=type(e).__name__,
-                error=str(e),
+                url=linked_url,
+                method="GET",
+                tool=AGENT_TOOL,
+                workflow_id=workflow_result.get("workflow_id") or WORKFLOW_ID,
+                duration_ms=observability.elapsed_ms(request_started),
+                error=f"{type(e).__name__}: {e}",
+                link_role=link.get("link_role"),
             )
             errors.append(
                 {
@@ -762,16 +756,13 @@ def fetch_linked_official_pages(
         observability.log_event(
             logger,
             logging.INFO,
-            "websoc_linked_page_completed",
+            "agent_web_extraction_completed",
             workflow_id=workflow_result.get("workflow_id"),
-            web_search_url=linked_url,
-            final_url=final_url,
+            tool=AGENT_TOOL,
+            url=final_url,
             link_role=link.get("link_role"),
-            text_excerpt=_log_text(page["text_excerpt"]),
-            restriction_fields=_summarize_restriction_fields(restriction_fields),
-            relevant_passages=[_log_text(item) for item in relevant_passages[:5]],
+            passage_count=len(relevant_passages),
             link_count=len(page_links),
-            result_urls=[item.get("url") for item in page_links[:10]],
         )
 
     result = {

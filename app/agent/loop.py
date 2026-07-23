@@ -163,9 +163,6 @@ def _summarize_tool_result(result: dict) -> dict:
         "extraction_status": result.get("extraction_status"),
         "search_criteria": result.get("search_criteria"),
         "registration_ends": result.get("registration_ends"),
-        "restriction_fields": result.get("fields"),
-        "title": result.get("title"),
-        "summary": result.get("summary"),
     }
     if "results" in result and isinstance(result["results"], list):
         summary["result_count"] = len(result["results"])
@@ -203,6 +200,39 @@ def _summarize_tool_result(result: dict) -> dict:
         summary["staged_count"] = result.get("staged_count")
         summary["skipped_count"] = result.get("skipped_count")
     return {k: v for k, v in summary.items() if v is not None}
+
+
+def _agent_web_research_summary(tool_name: str, result: dict) -> Optional[dict]:
+    """Summarize only URLs that the tool actually fetched, not search hits."""
+    if not isinstance(result, dict):
+        return None
+    fetched_urls: list[str] = []
+    failure_count = 0
+    if tool_name == "get_department_restrictions":
+        if result.get("source_url"):
+            fetched_urls.append(result["source_url"])
+        linked = result.get("linked_pages")
+        if isinstance(linked, dict):
+            fetched_urls.extend(
+                page["url"]
+                for page in (linked.get("pages") or [])
+                if isinstance(page, dict) and page.get("url")
+            )
+            failure_count = len(linked.get("errors") or [])
+    elif tool_name == "fetch_page":
+        fetched = result.get("final_url") or result.get("source_url")
+        if fetched:
+            fetched_urls.append(fetched)
+        failure_count = 0 if result.get("ok") else 1
+    else:
+        return None
+
+    fetched_urls = list(dict.fromkeys(fetched_urls))
+    return {
+        "fetched_urls": fetched_urls,
+        "success_count": len(fetched_urls),
+        "failure_count": failure_count,
+    }
 
 
 def _result_has_term_data(result: dict) -> bool:
@@ -494,6 +524,16 @@ async def _run_loop(
             result=_summarize_tool_result(result),
             server_forced=True,
         )
+        web_audit = _agent_web_research_summary(tool_name, result)
+        if web_audit is not None:
+            observability.log_event(
+                logger,
+                logging.INFO if tool_ok else logging.WARNING,
+                "agent_web_research_summary",
+                workflow_id=primary_call.get("workflow_id"),
+                tool=tool_name,
+                **web_audit,
+            )
         yield {
             "type": "tool_call_done",
             "name": tool_name,
@@ -752,6 +792,15 @@ async def _run_loop(
                 tool_index=total_tool_calls,
                 result=_summarize_tool_result(result),
             )
+            web_audit = _agent_web_research_summary(tc["name"], result)
+            if web_audit is not None and tc["name"] not in forced_cache:
+                observability.log_event(
+                    logger,
+                    logging.INFO if tool_ok else logging.WARNING,
+                    "agent_web_research_summary",
+                    tool=tc["name"],
+                    **web_audit,
+                )
             yield {"type": "tool_call_done",
                    "name": tc["name"],
                    "ok": tool_ok,

@@ -104,12 +104,12 @@ def run(requested_term: str | None = None) -> None:
     availability = anteater.check_term_data_availability(candidate)
     if availability.status != "ok":
         raise SystemExit(
-            f"FAIL full WebSoc {candidate.canonical_name}: "
+            f"FAIL WebSoc availability probe {candidate.canonical_name}: "
             f"status={availability.status} error={availability.error or 'unknown'}"
         )
     if not availability.available:
         raise SystemExit(
-            f"FAIL full WebSoc {candidate.canonical_name} is an empty shell "
+            f"FAIL WebSoc availability probe {candidate.canonical_name} is empty "
             f"(courses={availability.course_count}, sections={availability.section_count})"
         )
 
@@ -122,7 +122,7 @@ def run(requested_term: str | None = None) -> None:
         f"terms={len(websoc_terms)} bytes={terms.content_length}"
     )
     print(
-        f"PASS full WebSoc term={candidate.canonical_name} "
+        f"PASS WebSoc probe term={candidate.canonical_name} "
         f"courses={availability.course_count} sections={availability.section_count} "
         f"bytes={availability.content_length}"
     )

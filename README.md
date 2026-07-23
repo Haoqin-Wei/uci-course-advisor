@@ -135,9 +135,13 @@ Network/data refresh scripts exist under `scripts/`, but default tests and offli
 
 ### Automatic term state
 
-The backend is the sole term authority. It combines the Los Angeles clock, UCI instruction dates from Anteater `calendar/all`, the Week 2 Friday 17:00 cutoff, the published WebSoc term list, and a non-empty full-WebSoc probe. Automatic selection advances only through Fall, Winter, and Spring; Summer remains available for explicit queries.
+The backend is the sole term authority. It combines the Los Angeles clock, UCI instruction dates from Anteater `calendar/all`, the Week 2 Friday 17:00 cutoff, the published WebSoc term list, and a non-empty department-level WebSoc probe. The probe checks a small sequence of common departments and stops after the first course with a section, avoiding a multi-megabyte all-department payload. Automatic selection advances only through Fall, Winter, and Spring; Summer remains available for explicit queries.
 
 Successful state is refreshed after 30 days and remains usable as last-known-good data for 45 days. If an older cache cannot refresh, the API and UI explicitly report the versioned `code_fallback` term. The JSON store uses atomic replacement and a process-local lock. Multi-process production deployments must replace the store/lock boundary with shared storage and a distributed lock before relying on one global sync writer.
+
+The browser-facing `/api/term-state` response intentionally contains only `automatic_term`, `source`, and `status`; detailed timestamps, cache age, availability evidence, fallback state, and transitions remain available through the health endpoints. Static asset URLs are versioned and revalidated so a new HTML shell cannot run against an older JavaScript bundle.
+
+Whole-catalog course data is loaded only when the onboarding course picker needs it. The default system prompt is likewise loaded only when Settings opens. Agent web activity is recorded as compact audit events: each real request logs its URL, method, status or error, byte count, duration, `cache_hit=false`, and trigger, followed by a deduplicated fetched-URL summary. Page bodies, extracted passages, restriction fields, and complete tool results are not written to logs.
 
 Run the read-only live source check manually (it is excluded from default CI):
 

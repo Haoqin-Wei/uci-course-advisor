@@ -227,12 +227,12 @@ def _fetch_live_page(url: str, *, retrieved_at: str) -> dict[str, Any]:
     current_url = url
     session = requests.Session()
     for redirect_count in range(MAX_REDIRECTS + 1):
-        observability.log_event(
+        observability.log_agent_web_fetch_started(
             logger,
-            logging.INFO,
-            "deep_search_page_request",
-            web_search_url=current_url,
-            source_url=url,
+            url=current_url,
+            method="GET",
+            tool="fetch_page",
+            workflow_id="agentic_deep_search",
             redirect_count=redirect_count,
             timeout_seconds=config.web_search_timeout_seconds(),
         )
@@ -261,19 +261,6 @@ def _fetch_live_page(url: str, *, retrieved_at: str) -> dict[str, Any]:
                 final_url=current_url,
                 normalized_url=validation["normalized_url"],
             )
-
-        observability.log_event(
-            logger,
-            logging.INFO,
-            "deep_search_page_response",
-            web_search_url=current_url,
-            source_url=url,
-            final_url=getattr(response, "url", None) or current_url,
-            redirect_count=redirect_count,
-            status_code=response.status_code,
-            content_type=response.headers.get("content-type", ""),
-            content_length=_safe_int(response.headers.get("content-length")),
-        )
 
         if response.is_redirect or response.is_permanent_redirect:
             location = response.headers.get("location")
@@ -326,7 +313,7 @@ def _fetch_live_page(url: str, *, retrieved_at: str) -> dict[str, Any]:
 
         encoding = response.encoding or "utf-8"
         body = body_result["content"].decode(encoding, errors="replace")
-        return _extract_response(
+        result = _extract_response(
             source_url=url,
             final_url=getattr(response, "url", None) or current_url,
             body=body,
@@ -334,6 +321,8 @@ def _fetch_live_page(url: str, *, retrieved_at: str) -> dict[str, Any]:
             status_code=response.status_code,
             retrieved_at=retrieved_at,
         )
+        result["_audit_content_length"] = len(body_result["content"])
+        return result
 
     return _fetch_error(url, retrieved_at, "too_many_redirects", "page exceeded redirect limit")
 
@@ -603,13 +592,36 @@ def _log_fetch_result(
 ) -> None:
     duration_ms = observability.elapsed_ms(started)
     source_url = result.get("source_url") or result.get("normalized_url")
+    audit_content_length = result.pop("_audit_content_length", None)
+    if fetch_mode == "live":
+        if result.get("ok"):
+            observability.log_agent_web_fetch_completed(
+                logger,
+                url=source_url,
+                final_url=result.get("final_url") or source_url,
+                method="GET",
+                tool="fetch_page",
+                workflow_id="agentic_deep_search",
+                status_code=int(result.get("status_code") or 200),
+                content_type=result.get("content_type"),
+                content_length=audit_content_length,
+                duration_ms=duration_ms,
+            )
+        else:
+            observability.log_agent_web_fetch_failed(
+                logger,
+                url=source_url,
+                method="GET",
+                tool="fetch_page",
+                workflow_id="agentic_deep_search",
+                duration_ms=duration_ms,
+                error=str(result.get("message") or result.get("error_code") or "fetch failed"),
+                final_url=result.get("final_url"),
+                status_code=result.get("status_code"),
+            )
+        return
+
     if result.get("ok"):
-        passages = [
-            passage.get("text")
-            for passage in (result.get("key_passages") or [])[:MAX_PASSAGES]
-            if isinstance(passage, dict) and passage.get("text")
-        ]
-        links = result.get("links") or []
         observability.log_event(
             logger,
             logging.INFO,
@@ -618,16 +630,6 @@ def _log_fetch_result(
             web_search_url=source_url,
             final_url=result.get("final_url"),
             status_code=result.get("status_code"),
-            content_type=result.get("content_type"),
-            domain=result.get("domain"),
-            title=result.get("title"),
-            summary=result.get("summary"),
-            key_passages=passages,
-            link_count=len(links),
-            result_urls=[link.get("url") for link in links[:20] if isinstance(link, dict)],
-            source_class=result.get("source_class"),
-            trust_level=result.get("trust_level"),
-            usable_as_fact=result.get("usable_as_fact"),
             duration_ms=duration_ms,
         )
         observability.observe_ms(

@@ -62,12 +62,11 @@ def test_new_empty_session_persists_turns_without_splitting_state_by_id(
     persistent_sid = first_meta["session_id"]
 
     assert persistent_sid.startswith("sess_")
-    assert first_meta["session_state"]["term"] == "2025 Spring"
-    assert first_meta["session_state"]["major"] == "Computer Science"
-    assert first_meta["session_state"]["selected_courses"] == ["ICS33"]
-    assert first_meta["session_state"]["difficulty_preference"] == "easy"
+    assert "session_state" not in first_meta
     assert not hasattr(state_module, "_sessions")
     persisted_state = sessions_data.get_session_state("demo_001", persistent_sid)
+    assert persisted_state["term"] == "2025 Spring"
+    assert persisted_state["major"] == "Computer Science"
     assert persisted_state["selected_courses"] == ["ICS33"]
     assert persisted_state["difficulty_preference"] == "easy"
     assert [turn["role"] for turn in sessions_data.read_turns(
@@ -87,11 +86,10 @@ def test_new_empty_session_persists_turns_without_splitting_state_by_id(
     second_meta = _meta_event(second_events)
 
     assert second_meta["session_id"] == persistent_sid
-    assert second_meta["session_state"]["term"] == "2025 Spring"
-    assert second_meta["session_state"]["major"] == "Computer Science"
-    assert second_meta["session_state"]["selected_courses"] == ["ICS33"]
-    assert second_meta["session_state"]["difficulty_preference"] == "easy"
+    assert "session_state" not in second_meta
     persisted_state = sessions_data.get_session_state("demo_001", persistent_sid)
+    assert persisted_state["term"] == "2025 Spring"
+    assert persisted_state["major"] == "Computer Science"
     assert persisted_state["selected_courses"] == ["ICS33"]
     assert persisted_state["difficulty_preference"] == "easy"
     assert [turn["role"] for turn in sessions_data.read_turns(
@@ -123,7 +121,8 @@ def test_new_session_second_turn_should_see_first_turn_state(
             )
         )
     )
-    second_state = _meta_event(second_events)["session_state"]
+    assert "session_state" not in _meta_event(second_events)
+    second_state = sessions_data.get_session_state("demo_001", persistent_sid)
 
     assert second_state["major"] == "Computer Science"
     assert second_state["selected_courses"] == ["ICS33"]

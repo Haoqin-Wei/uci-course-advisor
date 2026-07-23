@@ -49,6 +49,10 @@ LIVE_WEBSOC_TTL_SECONDS = 5 * 60
 CALENDAR_ALL_URL = f"{ANTEATER_BASE_URL}/calendar/all"
 WEBSOC_TERMS_URL = f"{ANTEATER_BASE_URL}/websoc/terms"
 WEBSOC_URL = f"{ANTEATER_BASE_URL}/websoc"
+# A regular UCI term should publish at least one of these high-volume
+# departments.  Availability checks stop after the first non-empty response,
+# avoiding the multi-megabyte all-department WebSoc payload.
+AVAILABILITY_PROBE_DEPARTMENTS = ("COMPSCI", "MATH", "BIO SCI")
 
 T = TypeVar("T")
 AnteaterResultStatus = Literal[
@@ -107,18 +111,56 @@ def _headers() -> dict:
     return {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
 
-def _get_json(url: str, params: Optional[dict] = None) -> Optional[dict]:
+def _get_json(
+    url: str,
+    params: Optional[dict] = None,
+    *,
+    audit_tool: Optional[str] = None,
+) -> Optional[dict]:
     """GET → parsed JSON body. Returns None on any failure path; the
     caller never sees an exception. The Anteater envelope is
     {"ok": bool, "data": ...} — we return the WHOLE body, callers pull
     `data` out themselves since shape varies per endpoint."""
+    started = observability.now()
+    if audit_tool:
+        observability.log_agent_web_fetch_started(
+            logger,
+            url=url,
+            method="GET",
+            tool=audit_tool,
+            workflow_id="anteater_api",
+            request_params=params,
+        )
     try:
         r = requests.get(url, params=params, headers=_headers(),
                          timeout=REQUEST_TIMEOUT_S)
     except requests.RequestException as e:
+        if audit_tool:
+            observability.log_agent_web_fetch_failed(
+                logger,
+                url=url,
+                method="GET",
+                tool=audit_tool,
+                workflow_id="anteater_api",
+                duration_ms=observability.elapsed_ms(started),
+                error=f"{type(e).__name__}: {e}",
+                request_params=params,
+            )
         logger.warning("Anteater request failed (%s): %s", url, e)
         return None
     if r.status_code != 200:
+        if audit_tool:
+            observability.log_agent_web_fetch_failed(
+                logger,
+                url=url,
+                method="GET",
+                tool=audit_tool,
+                workflow_id="anteater_api",
+                duration_ms=observability.elapsed_ms(started),
+                error=f"HTTP {r.status_code}",
+                status_code=r.status_code,
+                request_params=params,
+            )
         if r.status_code == 429:
             observability.increment("external_api.rate_limited", service="anteater")
             observability.log_event(
@@ -141,12 +183,50 @@ def _get_json(url: str, params: Optional[dict] = None) -> Optional[dict]:
     try:
         body = r.json()
     except ValueError as e:
+        if audit_tool:
+            observability.log_agent_web_fetch_failed(
+                logger,
+                url=url,
+                method="GET",
+                tool=audit_tool,
+                workflow_id="anteater_api",
+                duration_ms=observability.elapsed_ms(started),
+                error=f"invalid JSON: {e}",
+                status_code=r.status_code,
+                request_params=params,
+            )
         logger.warning("Anteater non-JSON response (%s): %s", url, e)
         return None
     if not body.get("ok"):
+        if audit_tool:
+            observability.log_agent_web_fetch_failed(
+                logger,
+                url=url,
+                method="GET",
+                tool=audit_tool,
+                workflow_id="anteater_api",
+                duration_ms=observability.elapsed_ms(started),
+                error=f"API ok=false: {body.get('message', '')}",
+                status_code=r.status_code,
+                request_params=params,
+            )
         logger.info("Anteater ok=false (%s %s): %s",
                     url, params, body.get("message", "")[:200])
         return None
+    if audit_tool:
+        observability.log_agent_web_fetch_completed(
+            logger,
+            url=url,
+            final_url=getattr(r, "url", None) or url,
+            method="GET",
+            tool=audit_tool,
+            workflow_id="anteater_api",
+            status_code=r.status_code,
+            content_length=len(getattr(r, "content", b"") or b""),
+            content_type=(getattr(r, "headers", {}) or {}).get("content-type"),
+            duration_ms=observability.elapsed_ms(started),
+            request_params=params,
+        )
     return body
 
 
@@ -343,32 +423,58 @@ def fetch_full_websoc(term: TermKey) -> AnteaterResult[dict]:
 
 
 def check_term_data_availability(term: TermKey) -> TermAvailabilityResult:
-    """Probe a complete term; a shell is not considered available."""
-    result = fetch_full_websoc(term)
-    if not result.ok or not isinstance(result.data, dict):
-        return TermAvailabilityResult(
-            term=term,
-            available=False,
-            course_count=0,
-            section_count=0,
-            status=result.status,
-            source_url=result.url,
-            checked_at=result.checked_at,
-            error=result.error,
-            http_status=result.http_status,
-            content_length=result.content_length,
+    """Probe small department slices; a term shell is not considered available."""
+    total_content_length = 0
+    last_result: Optional[AnteaterResult[dict]] = None
+    for department in AVAILABILITY_PROBE_DEPARTMENTS:
+        result = _get_json_result(
+            WEBSOC_URL,
+            params={
+                "year": str(term.year),
+                "quarter": term.quarter,
+                "department": department,
+            },
         )
-    course_count, section_count = _websoc_counts(result.data)
+        last_result = result
+        total_content_length += int(result.content_length or 0)
+        if not result.ok or not isinstance(result.data, dict):
+            return TermAvailabilityResult(
+                term=term,
+                available=False,
+                course_count=0,
+                section_count=0,
+                status=result.status,
+                source_url=result.url,
+                checked_at=result.checked_at,
+                error=result.error,
+                http_status=result.http_status,
+                content_length=total_content_length or result.content_length,
+            )
+        course_count, section_count = _websoc_counts(result.data)
+        if course_count > 0 and section_count > 0:
+            return TermAvailabilityResult(
+                term=term,
+                available=True,
+                course_count=course_count,
+                section_count=section_count,
+                status=result.status,
+                source_url=result.url,
+                checked_at=result.checked_at,
+                http_status=result.http_status,
+                content_length=total_content_length,
+            )
+
+    assert last_result is not None
     return TermAvailabilityResult(
         term=term,
-        available=course_count > 0 and section_count > 0,
-        course_count=course_count,
-        section_count=section_count,
-        status=result.status,
-        source_url=result.url,
-        checked_at=result.checked_at,
-        http_status=result.http_status,
-        content_length=result.content_length,
+        available=False,
+        course_count=0,
+        section_count=0,
+        status=last_result.status,
+        source_url=last_result.url,
+        checked_at=last_result.checked_at,
+        http_status=last_result.http_status,
+        content_length=total_content_length,
     )
 
 
@@ -380,7 +486,10 @@ def fetch_course(course_id: str) -> Optional[dict]:
     key = course_id.upper().replace(" ", "").replace("_", "")
     if key in _course_cache:
         return _course_cache[key]
-    body = _get_json(f"{ANTEATER_BASE_URL}/courses/{key}")
+    body = _get_json(
+        f"{ANTEATER_BASE_URL}/courses/{key}",
+        audit_tool="get_course",
+    )
     data = body.get("data") if body else None
     _course_cache[key] = data
     return data
@@ -413,6 +522,7 @@ def fetch_sections(
             "department":   department,
             "courseNumber": course_number,
         },
+        audit_tool="get_sections",
     )
     if not body:
         _sections_cache[key] = None
@@ -477,7 +587,11 @@ def fetch_live_sections(
 
     retrieved_at = _utc_now()
     started_at = observability.now()
-    body = _get_json(f"{ANTEATER_BASE_URL}/websoc", params=params)
+    body = _get_json(
+        f"{ANTEATER_BASE_URL}/websoc",
+        params=params,
+        audit_tool="get_live_sections",
+    )
     observability.observe_ms(
         "live_websoc.api_latency",
         observability.elapsed_ms(started_at),
@@ -516,7 +630,10 @@ def fetch_instructor(name_or_ucinetid: str) -> Optional[dict]:
     # caller passed a "LASTNAME, F." style string.
     if key in _instructor_cache:
         return _instructor_cache[key]
-    body = _get_json(f"{ANTEATER_BASE_URL}/instructors/{key}")
+    body = _get_json(
+        f"{ANTEATER_BASE_URL}/instructors/{key}",
+        audit_tool="get_instructor",
+    )
     data = body.get("data") if body else None
     _instructor_cache[key] = data
     return data

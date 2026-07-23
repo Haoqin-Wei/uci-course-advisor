@@ -21,7 +21,7 @@ def _schema_by_name(name: str) -> dict:
     )
 
 
-def test_agent_tool_log_summary_includes_deep_search_evidence() -> None:
+def test_agent_tool_log_summary_keeps_urls_without_page_content() -> None:
     summary = agent_loop._summarize_tool_result(
         {
             "ok": True,
@@ -40,8 +40,6 @@ def test_agent_tool_log_summary_includes_deep_search_evidence() -> None:
         "source_url": "https://example.com/start",
         "final_url": "https://example.com/final",
         "status_code": 200,
-        "title": "Restriction update",
-        "summary": "Major restrictions end at noon.",
         "link_count": 1,
         "link_urls": ["https://example.com/details"],
         "key_passage_count": 1,

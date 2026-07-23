@@ -3,17 +3,69 @@
    completed/enrolled lists. Called on boot and after each chat reply
    in case Channel A extracted new facts that updated the profile.
 */
-async function loadSidebar() {
+let sidebarSnapshot = null;
+let sidebarSnapshotUserId = null;
+let sidebarLoadPromise = null;
+let sessionListLoadPromise = null;
+
+async function loadSidebar(forceRefresh = false) {
   const uid = USER_ID;
+  if (!forceRefresh && sidebarSnapshot && sidebarSnapshotUserId === uid) {
+    renderSidebar(sidebarSnapshot, uid);
+    return;
+  }
+  if (!sidebarLoadPromise) {
+    sidebarLoadPromise = (async () => {
+      try {
+        const r = await fetch(`${API}/api/memory/${uid}`);
+        if (!r.ok) {
+          // Fallback: leave the placeholder text so the UI isn't blank.
+          return;
+        }
+        sidebarSnapshot = await r.json();
+        sidebarSnapshotUserId = uid;
+        renderSidebar(sidebarSnapshot, uid);
+      } catch (err) {
+        console.warn('sidebar load failed:', err);
+      }
+    })();
+  }
   try {
-    const r = await fetch(`${API}/api/memory/${uid}`);
-    if (!r.ok) {
-      // Fallback: leave the placeholder text so the UI isn't blank.
-      return;
-    }
-    renderSidebar(await r.json(), uid);
-  } catch (err) {
-    console.warn('sidebar load failed:', err);
+    await sidebarLoadPromise;
+  } finally {
+    sidebarLoadPromise = null;
+  }
+}
+
+function setActiveSessionItem(sessionId) {
+  document.querySelectorAll('.session-item').forEach(el => {
+    el.classList.toggle('is-active', el.dataset.sid === sessionId);
+  });
+}
+
+async function loadSessionList() {
+  const listEl = document.getElementById('sessionsList');
+  if (!listEl) return;
+  if (!sessionListLoadPromise) {
+    sessionListLoadPromise = (async () => {
+      try {
+        const r = await fetch(`${API}/api/sessions/${USER_ID}?limit=20`);
+        if (!r.ok) {
+          listEl.innerHTML = '<div class="sessions-empty">No conversations yet</div>';
+          return;
+        }
+        const data = await r.json();
+        renderSessionList(data.sessions || []);
+      } catch (err) {
+        console.warn('session list load failed:', err);
+        listEl.innerHTML = '<div class="sessions-empty">No conversations yet</div>';
+      }
+    })();
+  }
+  try {
+    await sessionListLoadPromise;
+  } finally {
+    sessionListLoadPromise = null;
   }
 }
 
@@ -45,23 +97,6 @@ function renderSidebar(memory, userId) {
 /* ──────────────────────────────────────────────────────
    Phase 3 R3 — session list management
    ────────────────────────────────────────────────────── */
-
-async function loadSessionList() {
-  const listEl = document.getElementById('sessionsList');
-  if (!listEl) return;
-  try {
-    const r = await fetch(`${API}/api/sessions/${USER_ID}?limit=20`);
-    if (!r.ok) {
-      listEl.innerHTML = '<div class="sessions-empty">No conversations yet</div>';
-      return;
-    }
-    const data = await r.json();
-    renderSessionList(data.sessions || []);
-  } catch (err) {
-    console.warn('session list load failed:', err);
-    listEl.innerHTML = '<div class="sessions-empty">No conversations yet</div>';
-  }
-}
 
 function renderSessionList(sessions) {
   const listEl = document.getElementById('sessionsList');
@@ -180,8 +215,8 @@ async function loadSession(sessionId) {
       });
     }
     await loadScheduleForSession(sessionId);
-    // Refresh sidebar list to update which item shows .is-active
-    loadSessionList();
+    // The session list itself is unchanged; update its highlight locally.
+    setActiveSessionItem(sessionId);
   } catch (err) {
     console.error('loadSession failed:', err);
   }

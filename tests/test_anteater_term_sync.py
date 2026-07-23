@@ -56,7 +56,7 @@ def test_websoc_terms_requires_short_names(monkeypatch) -> None:
     ]
 
 
-def test_full_websoc_requires_course_and_section_for_availability(monkeypatch) -> None:
+def test_department_probe_requires_course_and_section_for_availability(monkeypatch) -> None:
     calls = []
     monkeypatch.setattr(
         anteater.requests,
@@ -67,7 +67,27 @@ def test_full_websoc_requires_course_and_section_for_availability(monkeypatch) -
     result = anteater.check_term_data_availability(TermKey(2027, "Winter"))
     assert result.available is True
     assert (result.course_count, result.section_count) == (1, 1)
-    assert calls[0][1]["params"] == {"year": "2027", "quarter": "Winter"}
+    assert calls[0][1]["params"] == {
+        "year": "2027",
+        "quarter": "Winter",
+        "department": "COMPSCI",
+    }
+
+
+def test_department_probe_stops_after_first_nonempty_department(monkeypatch) -> None:
+    calls = []
+    empty = {"ok": True, "data": {"schools": []}}
+    available = fixture("websoc_full_available.json")
+
+    def fake_get(url, **kwargs):
+        calls.append(kwargs["params"]["department"])
+        return FakeResponse(empty if len(calls) == 1 else available)
+
+    monkeypatch.setattr(anteater.requests, "get", fake_get)
+    result = anteater.check_term_data_availability(TermKey(2027, "Winter"))
+
+    assert result.available is True
+    assert calls == ["COMPSCI", "MATH"]
 
 
 @pytest.mark.parametrize(

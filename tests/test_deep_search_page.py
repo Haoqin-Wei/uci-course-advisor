@@ -78,9 +78,9 @@ def test_fetch_fake_page_returns_bounded_structured_content(monkeypatch, caplog)
     assert "event=deep_search_page_started" in caplog.text
     assert "web_search_url='https://ics.uci.edu/course-enrollment-restrictions/" in caplog.text
     assert "event=deep_search_page_completed" in caplog.text
-    assert "title='ICS Enrollment Restrictions'" in caplog.text
-    assert "Major restrictions for Fall 2026 are removed on August 24 at noon" in caplog.text
-    assert "result_urls=['https://ics.uci.edu/academics/policies/" in caplog.text
+    assert "title='ICS Enrollment Restrictions'" not in caplog.text
+    assert "Major restrictions for Fall 2026 are removed on August 24 at noon" not in caplog.text
+    assert "result_urls=" not in caplog.text
 
 
 def test_live_page_logs_each_request_redirect_response_and_result(monkeypatch, caplog) -> None:
@@ -134,12 +134,14 @@ def test_live_page_logs_each_request_redirect_response_and_result(monkeypatch, c
 
     assert result["ok"] is True
     assert result["final_url"] == final_url
-    assert caplog.text.count("event=deep_search_page_request") == 2
-    assert caplog.text.count("event=deep_search_page_response") == 2
+    assert caplog.text.count("event=agent_web_fetch_started") == 2
+    assert caplog.text.count("event=agent_web_fetch_completed") == 1
     assert "event=deep_search_page_redirect" in caplog.text
     assert f"final_url={final_url!r}" in caplog.text
-    assert "event=deep_search_page_completed" in caplog.text
-    assert "Useful final evidence for the answer" in caplog.text
+    assert "cache_hit=False" in caplog.text
+    assert "trigger='agent'" in caplog.text
+    assert "content_length=82" in caplog.text
+    assert "Useful final evidence for the answer" not in caplog.text
 
 
 def test_fetch_fake_page_rejects_non_text_and_oversized_content() -> None:

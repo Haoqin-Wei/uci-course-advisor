@@ -28,7 +28,14 @@ _timings: dict[str, list[float]] = defaultdict(list)
 _LOG_VALUE_MAX_CHARS = 160
 _LOG_URL_MAX_CHARS = 2048
 _LOG_COLLECTION_MAX_ITEMS = 10
-_URL_FIELD_NAMES = {"url", "web_search_url", "source_url", "final_url"}
+_URL_FIELD_NAMES = {
+    "url",
+    "web_search_url",
+    "source_url",
+    "final_url",
+    "fetched_urls",
+    "candidate_urls",
+}
 
 
 def new_trace_id() -> str:
@@ -93,6 +100,100 @@ def log_event(logger: logging.Logger, level: int, event: str, **fields: Any) -> 
     }
     payload = " ".join(f"{key}={value!r}" for key, value in sorted(safe_fields.items()))
     logger.log(level, "event=%s trace_id=%s %s", event, get_trace_id(), payload)
+
+
+def log_agent_web_fetch_started(
+    logger: logging.Logger,
+    *,
+    url: str,
+    method: str,
+    tool: str,
+    workflow_id: str,
+    trigger: str = "agent",
+    **fields: Any,
+) -> None:
+    """Emit the auditable start of a real network request."""
+    increment("agent.web_fetch", result="started", tool=tool)
+    log_event(
+        logger,
+        logging.INFO,
+        "agent_web_fetch_started",
+        url=url,
+        method=method,
+        tool=tool,
+        workflow_id=workflow_id,
+        trigger=trigger,
+        cache_hit=False,
+        **fields,
+    )
+
+
+def log_agent_web_fetch_completed(
+    logger: logging.Logger,
+    *,
+    url: str,
+    final_url: str,
+    method: str,
+    tool: str,
+    workflow_id: str,
+    status_code: int,
+    duration_ms: float,
+    content_length: int | None = None,
+    content_type: str | None = None,
+    trigger: str = "agent",
+    **fields: Any,
+) -> None:
+    """Emit proof that an Agent-triggered HTTP request received a response."""
+    increment("agent.web_fetch", result="completed", tool=tool)
+    observe_ms("agent.web_fetch_ms", duration_ms, tool=tool)
+    log_event(
+        logger,
+        logging.INFO,
+        "agent_web_fetch_completed",
+        url=url,
+        final_url=final_url,
+        method=method,
+        tool=tool,
+        workflow_id=workflow_id,
+        trigger=trigger,
+        cache_hit=False,
+        status_code=status_code,
+        content_length=content_length,
+        content_type=content_type,
+        duration_ms=duration_ms,
+        **fields,
+    )
+
+
+def log_agent_web_fetch_failed(
+    logger: logging.Logger,
+    *,
+    url: str,
+    method: str,
+    tool: str,
+    workflow_id: str,
+    duration_ms: float,
+    error: str,
+    trigger: str = "agent",
+    **fields: Any,
+) -> None:
+    """Emit a compact failed-request audit record."""
+    increment("agent.web_fetch", result="failed", tool=tool)
+    observe_ms("agent.web_fetch_ms", duration_ms, tool=tool)
+    log_event(
+        logger,
+        logging.WARNING,
+        "agent_web_fetch_failed",
+        url=url,
+        method=method,
+        tool=tool,
+        workflow_id=workflow_id,
+        trigger=trigger,
+        cache_hit=False,
+        duration_ms=duration_ms,
+        error=error,
+        **fields,
+    )
 
 
 def estimate_tokens(text: str | None) -> int:

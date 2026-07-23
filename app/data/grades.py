@@ -274,15 +274,45 @@ def _fetch_aggregate(dept: str, course_number: str) -> Optional[dict]:
     params  = {"department": dept, "courseNumber": course_number}
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
+    started = observability.now()
+    observability.log_agent_web_fetch_started(
+        logger,
+        url=url,
+        method="GET",
+        tool="get_grade_distribution",
+        workflow_id="anteater_api",
+        request_params=params,
+    )
     try:
         r = requests.get(url, params=params, headers=headers,
                          timeout=REQUEST_TIMEOUT_S)
     except requests.RequestException as e:
+        observability.log_agent_web_fetch_failed(
+            logger,
+            url=url,
+            method="GET",
+            tool="get_grade_distribution",
+            workflow_id="anteater_api",
+            duration_ms=observability.elapsed_ms(started),
+            error=f"{type(e).__name__}: {e}",
+            request_params=params,
+        )
         logger.warning("grades API request failed for %s/%s: %s",
                        dept, course_number, e)
         return None
 
     if r.status_code != 200:
+        observability.log_agent_web_fetch_failed(
+            logger,
+            url=url,
+            method="GET",
+            tool="get_grade_distribution",
+            workflow_id="anteater_api",
+            duration_ms=observability.elapsed_ms(started),
+            error=f"HTTP {r.status_code}",
+            status_code=r.status_code,
+            request_params=params,
+        )
         if r.status_code == 429:
             observability.increment("external_api.rate_limited", service="grades")
             observability.log_event(
@@ -305,13 +335,49 @@ def _fetch_aggregate(dept: str, course_number: str) -> Optional[dict]:
     try:
         body = r.json()
     except ValueError:
+        observability.log_agent_web_fetch_failed(
+            logger,
+            url=url,
+            method="GET",
+            tool="get_grade_distribution",
+            workflow_id="anteater_api",
+            duration_ms=observability.elapsed_ms(started),
+            error="invalid JSON",
+            status_code=r.status_code,
+            request_params=params,
+        )
         logger.warning("grades API returned non-JSON for %s/%s", dept, course_number)
         return None
 
     if not body.get("ok"):
+        observability.log_agent_web_fetch_failed(
+            logger,
+            url=url,
+            method="GET",
+            tool="get_grade_distribution",
+            workflow_id="anteater_api",
+            duration_ms=observability.elapsed_ms(started),
+            error=f"API ok=false: {body.get('message', '')}",
+            status_code=r.status_code,
+            request_params=params,
+        )
         logger.info("grades API ok=false for %s/%s: %s",
                     dept, course_number, str(body)[:200])
         return None
+
+    observability.log_agent_web_fetch_completed(
+        logger,
+        url=url,
+        final_url=getattr(r, "url", None) or url,
+        method="GET",
+        tool="get_grade_distribution",
+        workflow_id="anteater_api",
+        status_code=r.status_code,
+        content_length=len(getattr(r, "content", b"") or b""),
+        content_type=(getattr(r, "headers", {}) or {}).get("content-type"),
+        duration_ms=observability.elapsed_ms(started),
+        request_params=params,
+    )
 
     records = body.get("data") or []
     if not records:

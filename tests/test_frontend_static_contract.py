@@ -55,12 +55,29 @@ def test_frontend_term_is_read_only_and_backend_resolved() -> None:
     assert "termSelect" not in text
     assert "term-select" not in text
     assert "loadTerms(" not in text
+    assert "/api/terms" not in text
     assert "/api/term-state" in api_client
     assert "· fallback" in api_client
     assert "payload.term" not in chat
     assert "applyTermPayload(event)" in chat
     assert "useAutomaticTermContext()" in sessions
     assert "applyTermPayload(data)" in sessions
+
+
+def test_boot_payloads_are_lazy_and_duplicate_refreshes_are_bounded() -> None:
+    api_client = (STATIC / "js" / "api-client.js").read_text(encoding="utf-8")
+    chat = (STATIC / "js" / "chat.js").read_text(encoding="utf-8")
+    onboarding = (STATIC / "js" / "onboarding.js").read_text(encoding="utf-8")
+    main = (ROOT / "main.py").read_text(encoding="utf-8")
+
+    boot = onboarding.split("/* ── Boot", 1)[1]
+    assert "loadDefaultPromptFromAPI()" not in boot
+    assert "defaultSystemPromptPromise" in api_client
+    assert "setTimeout(loadSessionList, 7000)" in chat
+    assert "setTimeout(loadSessionList, 2000)" not in chat
+    assert "setTimeout(loadSessionList, 5000)" not in chat
+    assert "setTimeout(loadSessionList, 9000)" not in chat
+    assert "anteater-warmup" not in main
 
 
 def test_frontend_assets_are_split_into_roadmap_modules() -> None:
@@ -74,6 +91,7 @@ def test_frontend_assets_are_split_into_roadmap_modules() -> None:
     for path in EXPECTED_FRONTEND_MODULES:
         rel = "/" + path.relative_to(ROOT).as_posix()
         assert rel in index
+        assert f'{rel}?v=20260723-1' in index
 
 
 def test_key_browser_regression_flows_are_wired() -> None:

@@ -45,7 +45,8 @@ function scheduleCourseKey(term, courseId) {
 
 /* ── Settings / generation state ───────────────────── */
 let currentAbortController = null;   // active fetch controller (null when idle)
-let defaultSystemPrompt = '';        // populated by /api/system_prompt
+let defaultSystemPrompt = null;      // loaded lazily when Settings opens
+let defaultSystemPromptPromise = null;
 const PROMPT_STORAGE_KEY = 'zotadvisor.systemPrompt';
 
 const COURSE_COLOR_TOKEN_COUNT = 6;
@@ -110,14 +111,25 @@ async function loadTermState() {
 }
 
 async function loadDefaultPromptFromAPI() {
+  if (defaultSystemPrompt !== null) return defaultSystemPrompt;
+  if (!defaultSystemPromptPromise) {
+    defaultSystemPromptPromise = (async () => {
+      try {
+        const res = await fetch(`${API}/api/system_prompt`);
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const data = await res.json();
+        defaultSystemPrompt = data.prompt || '';
+      } catch (err) {
+        console.warn('Failed to load /api/system_prompt — custom prompts can still be set manually', err);
+        defaultSystemPrompt = '';
+      }
+      return defaultSystemPrompt;
+    })();
+  }
   try {
-    const res = await fetch(`${API}/api/system_prompt`);
-    if (!res.ok) throw new Error(`status ${res.status}`);
-    const data = await res.json();
-    defaultSystemPrompt = data.prompt || '';
-  } catch (err) {
-    console.warn('Failed to load /api/system_prompt — custom prompts can still be set manually', err);
-    defaultSystemPrompt = '';
+    return await defaultSystemPromptPromise;
+  } finally {
+    defaultSystemPromptPromise = null;
   }
 }
 

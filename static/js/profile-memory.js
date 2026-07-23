@@ -260,17 +260,19 @@ async function forgetAllPreferences() {
   }
 }
 
-function openSettings() {
+async function openSettings() {
   const modal = document.getElementById('settingsModal');
   const ta = document.getElementById('promptTextarea');
   const stored = getActivePrompt();
   ta.value = stored;
-  ta.placeholder = defaultSystemPrompt
-    ? '(empty — using backend default)'
-    : 'Backend default unavailable. Enter custom prompt to override.';
+  ta.placeholder = 'Loading backend default…';
   updatePromptMeta();
   modal.classList.add('open');
   setTimeout(() => ta.focus(), 50);
+  await loadDefaultPromptFromAPI();
+  ta.placeholder = defaultSystemPrompt
+    ? '(empty — using backend default)'
+    : 'Backend default unavailable. Enter custom prompt to override.';
 }
 
 function closeSettings(ev) {
@@ -279,8 +281,9 @@ function closeSettings(ev) {
   document.getElementById('settingsModal').classList.remove('open');
 }
 
-function loadDefaultPrompt() {
+async function loadDefaultPrompt() {
   const ta = document.getElementById('promptTextarea');
+  await loadDefaultPromptFromAPI();
   if (!defaultSystemPrompt) {
     ta.value = '';
     document.getElementById('promptMeta').textContent =

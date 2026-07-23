@@ -6,23 +6,10 @@ import pytest
 import requests
 
 
-def test_terms_endpoint_uses_local_catalog(app_client):
+def test_legacy_terms_endpoint_is_removed(app_client):
     response = app_client.get("/api/terms")
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["terms"]
-    term_names = [term["name"] for term in payload["terms"]]
-    assert payload["default"] in term_names
-    assert payload["default"] == "Spring 2026"
-
-    fall_2026 = next(term for term in payload["terms"] if term["name"] == "Fall 2026")
-    spring_2026 = next(term for term in payload["terms"] if term["name"] == "Spring 2026")
-    assert fall_2026["coverage_status"] == "partial"
-    assert fall_2026["section_count"] == 452
-    assert fall_2026["department_count"] > 0
-    assert spring_2026["coverage_status"] == "complete"
-    assert payload["manifest"]["schema_version"] == "uci-relational-v1"
+    assert response.status_code == 404
 
 
 def test_term_state_endpoint_returns_backend_automatic_context(app_client):
@@ -33,9 +20,17 @@ def test_term_state_endpoint_returns_backend_automatic_context(app_client):
     assert payload["automatic_term"] == "2025 Spring"
     assert payload["source"] == "anteater"
     assert payload["status"] == "fresh"
-    assert payload["last_success_at"]
-    assert payload["next_cutoff"].startswith("2025-04-11T17:00:00")
-    assert payload["fallback"] is False
+    assert set(payload) == {"automatic_term", "source", "status"}
+
+
+def test_frontend_and_static_assets_force_cache_revalidation(app_client):
+    page = app_client.get("/")
+    asset = app_client.get("/static/js/api-client.js?v=20260723-1")
+
+    assert page.status_code == 200
+    assert page.headers["cache-control"] == "no-store, max-age=0"
+    assert asset.status_code == 200
+    assert asset.headers["cache-control"] == "no-cache, must-revalidate"
 
 
 def test_session_api_ignores_term_body_and_returns_resolved_context(app_client):

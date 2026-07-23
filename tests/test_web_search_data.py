@@ -140,12 +140,11 @@ def test_web_search_logs_started_provider_attempt_results_and_completion(
     assert "event=web_search_started" in caplog.text
     assert "event=web_search_provider_attempt_parsed" in caplog.text
     assert "provider='fake'" in caplog.text
-    assert "event=web_search_result" in caplog.text
+    assert "event=agent_web_search_candidate" in caplog.text
     assert "rank=1" in caplog.text
     assert "url='https://reg.uci.edu/calendars/quarterly/2025-2026/quarterly25-26.html'" in caplog.text
-    assert "web_search_url='https://reg.uci.edu/calendars/quarterly/2025-2026/quarterly25-26.html'" in caplog.text
-    assert "title='UCI Registrar — Quarterly Academic Calendar'" in caplog.text
-    assert "snippet='Official registrar calendar result.'" in caplog.text
+    assert "title='UCI Registrar — Quarterly Academic Calendar'" not in caplog.text
+    assert "snippet='Official registrar calendar result.'" not in caplog.text
     assert "source_class='official_uci'" in caplog.text
     assert "result_urls=['https://reg.uci.edu/calendars/quarterly/2025-2026/quarterly25-26.html']" in caplog.text
     assert "event=web_search_completed" in caplog.text
@@ -209,15 +208,16 @@ def test_duckduckgo_provider_parses_html_without_real_network(
             "usable_as_fact": True,
         }
     ]
-    expected_preview = FakeResponse.text.replace("\n", " ")[:100]
-    assert "event=web_search_content" in caplog.text
+    assert "event=agent_web_fetch_started" in caplog.text
+    assert "event=agent_web_fetch_completed" in caplog.text
     expected_search_url = web_search._build_search_url(
         "ICS major restriction release date 2026 site:ics.uci.edu"
     )
-    assert f"web_search_url='{expected_search_url}'" in caplog.text
+    assert f"url='{expected_search_url}'" in caplog.text
     assert "status_code=200" in caplog.text
-    assert f"content_length={len(FakeResponse.text)}" in caplog.text
-    assert f"content_preview={expected_preview!r}" in caplog.text
+    assert f"content_length={len(FakeResponse.text.encode('utf-8'))}" in caplog.text
+    assert "content_preview" not in caplog.text
+    assert "event=agent_web_search_results" in caplog.text
     assert "result_urls=['https://ics.uci.edu/student-affairs/']" in caplog.text
 
 
@@ -271,15 +271,15 @@ def test_duckduckgo_provider_falls_back_when_domain_hint_fails(
     assert calls[1] == "UCI ICS major restriction lifting date 2026"
     assert result["results"][0]["url"] == "https://ics.uci.edu/course-enrollment-restrictions/"
     assert result["results"][0]["published_at"] == "2026-05-01T00:00:00.0000000"
-    assert "event=web_search_provider_attempt" in caplog.text
-    assert "event=web_search_provider_attempt_failed" in caplog.text
+    assert "event=agent_web_fetch_started" in caplog.text
+    assert "event=agent_web_fetch_failed" in caplog.text
     assert "status_code=202" in caplog.text
     assert "attempt=2" in caplog.text
     expected_fallback_url = web_search._build_search_url(
         "UCI ICS major restriction lifting date 2026"
     )
-    assert f"web_search_url='{expected_fallback_url}'" in caplog.text
-    assert "event=web_search_provider_attempt_parsed" in caplog.text
+    assert f"url='{expected_fallback_url}'" in caplog.text
+    assert "event=agent_web_search_results" in caplog.text
 
 
 def test_fake_provider_marks_no_url_result_unusable(monkeypatch: pytest.MonkeyPatch) -> None:
