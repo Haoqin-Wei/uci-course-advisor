@@ -301,6 +301,8 @@ def test_deep_read_fetches_only_selected_official_websoc_links(caplog) -> None:
     ] == "Monday, August 24th, 2026 at noon"
     assert result["pages"][0]["restriction_fields"]["authorization_code_notes"]
     assert result["pages"][0]["relevant_passages"]
+    assert result["pages"][0]["content_block_count"] > 0
+    assert result["pages"][0]["selected_block_count"] > 0
     assert result["pages"][0]["links"][0]["url"] == (
         "http://ics.uci.edu/academics/policies/"
     )

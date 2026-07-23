@@ -21,6 +21,13 @@ import requests
 
 from app import observability
 from app.catalog.term import Term
+from app.data.restriction_timeline import (
+    RestrictionQuery,
+    RestrictionType,
+    extract_main_content_blocks,
+    parse_restriction_timeline,
+    select_query_focused_blocks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -737,8 +744,35 @@ def fetch_linked_official_pages(
             continue
 
         parsed = _parse_html(response.text)
+        content_blocks = extract_main_content_blocks(response.text)
+        raw_restriction_type = (
+            workflow_result.get("restriction_type") or "ambiguous"
+        )
+        try:
+            requested_restriction_type = RestrictionType(raw_restriction_type)
+        except ValueError:
+            requested_restriction_type = RestrictionType.AMBIGUOUS
+        query = RestrictionQuery(
+            term=str(workflow_result.get("term") or ""),
+            department=str(workflow_result.get("department") or ""),
+            course_id=workflow_result.get("course_id"),
+            restriction_type=requested_restriction_type,
+        )
+        focused_blocks = select_query_focused_blocks(content_blocks, query)
+        timeline_events = parse_restriction_timeline(
+            content_blocks,
+            term=query.term,
+            department=query.department,
+            source_url=final_url,
+            source_role=link.get("link_role") or "official_link",
+            retrieved_at=retrieved_at,
+        )
         restriction_fields = _extract_restriction_fields(parsed.text)
-        relevant_passages = _extract_restriction_passages(parsed.text)
+        _fill_fields_from_timeline(restriction_fields, timeline_events)
+        relevant_passages = [
+            block["text"] for block in focused_blocks[:12]
+        ] or _extract_restriction_passages(parsed.text)
+        excerpt_blocks = focused_blocks or content_blocks
         page_links = _normalize_page_links(parsed.links, source_url=final_url)
         page = {
             "url": final_url,
@@ -747,9 +781,15 @@ def fetch_linked_official_pages(
             "source_link_text": link.get("text"),
             "source_block": link.get("source_block"),
             "link_role": link.get("link_role"),
-            "text_excerpt": _truncate(parsed.text, LINK_TEXT_MAX_CHARS),
+            "text_excerpt": _truncate(
+                "\n".join(block["text"] for block in excerpt_blocks),
+                LINK_TEXT_MAX_CHARS,
+            ),
+            "content_block_count": len(content_blocks),
+            "selected_block_count": len(focused_blocks),
             "restriction_fields": restriction_fields,
             "relevant_passages": relevant_passages,
+            "timeline_events": [event.to_dict() for event in timeline_events],
             "links": page_links,
         }
         pages.append(page)
@@ -763,6 +803,7 @@ def fetch_linked_official_pages(
             link_role=link.get("link_role"),
             passage_count=len(relevant_passages),
             link_count=len(page_links),
+            timeline_event_count=len(timeline_events),
         )
 
     result = {
@@ -809,6 +850,27 @@ def _should_deep_read_link(link: dict[str, Any], workflow_result: dict[str, Any]
         needle in text
         for needle in ("restriction", "timeline", "policy", "policies", "enroll")
     )
+
+
+def _fill_fields_from_timeline(
+    fields: dict[str, Any],
+    events: list,
+) -> None:
+    """Backfill legacy flat fields from structured events for compatibility."""
+
+    for event in events:
+        if not event.effective_at or event.action != "removed":
+            continue
+        if (
+            event.restriction_type == RestrictionType.SCHOOL_MAJOR
+            and not fields.get("major_restriction_removed_at")
+        ):
+            fields["major_restriction_removed_at"] = event.effective_at
+        elif (
+            event.restriction_type == RestrictionType.NEW_ONLY
+            and not fields.get("nors_removed_at")
+        ):
+            fields["nors_removed_at"] = event.effective_at
 
 
 def _classify_link_role(url: str, text: str = "") -> Optional[str]:
