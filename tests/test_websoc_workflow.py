@@ -125,6 +125,16 @@ def test_live_websoc_fetch_logs_url_response_and_parsed_result(caplog) -> None:
     assert result["request_form"]["Dept"] == "ART"
     assert result["response_term"] == "Fall 2026"
     assert result["validation"] == {"ok": True, "errors": []}
+    assert [
+        (item["method"], item["source_role"], item["status_code"], item["ok"])
+        for item in result["fetches"]
+    ] == [
+        ("GET", "registrar_websoc_form", 200, True),
+        ("POST", "registrar_websoc_results", 200, True),
+    ]
+    assert all(item["url"] == websoc_workflow.WEBSOC_URL for item in result["fetches"])
+    assert all(item["bytes"] > 0 for item in result["fetches"])
+    assert all(item["duration_ms"] >= 0 for item in result["fetches"])
     assert "event=agent_web_fetch_started" in caplog.text
     assert f"url={result['source_url']!r}" in caplog.text
     assert "method='POST'" in caplog.text
@@ -308,6 +318,12 @@ def test_deep_read_fetches_only_selected_official_websoc_links(caplog) -> None:
     assert result["restriction_evidence"][0]["fields"][
         "major_restriction_removed_at"
     ] == "Monday, August 24th, 2026 at noon"
+    assert len(result["fetches"]) == 1
+    assert result["fetches"][0] == result["pages"][0]["fetch"]
+    assert result["fetches"][0]["method"] == "GET"
+    assert result["fetches"][0]["url"] == calls[0]
+    assert result["fetches"][0]["source_role"] == "ics_undergraduate_restrictions"
+    assert result["fetches"][0]["depth"] == 1
     assert "event=websoc_linked_search_selected" in caplog.text
     assert "event=agent_web_fetch_started" in caplog.text
     assert "url='http://ics.uci.edu/course-enrollment-restrictions/'" in caplog.text
@@ -771,6 +787,10 @@ def test_fetch_websoc_department_restrictions_returns_structured_error() -> None
     assert result["request_form"]["YearTerm"] == "2026-92"
     assert result["request_form"]["Dept"] == "ART"
     assert "Timeout" in result["message"]
+    assert [item["method"] for item in result["fetches"]] == ["GET", "POST"]
+    assert result["fetches"][0]["ok"] is True
+    assert result["fetches"][1]["ok"] is False
+    assert "Timeout" in result["fetches"][1]["error"]
 
 
 def test_build_websoc_department_params_rejects_missing_department() -> None:

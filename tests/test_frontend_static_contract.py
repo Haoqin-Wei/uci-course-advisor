@@ -91,7 +91,7 @@ def test_frontend_assets_are_split_into_roadmap_modules() -> None:
     for path in EXPECTED_FRONTEND_MODULES:
         rel = "/" + path.relative_to(ROOT).as_posix()
         assert rel in index
-        assert f'{rel}?v=20260723-1' in index
+        assert f'{rel}?v=20260723-2' in index
 
 
 def test_key_browser_regression_flows_are_wired() -> None:
@@ -113,6 +113,10 @@ def test_key_browser_regression_flows_are_wired() -> None:
 
     assert "/api/chat/stream" in chat
     assert "function startToolChip(" in chat
+    assert "function renderWebFetchSummary(" in chat
+    assert "event.fetch_summary || []" in chat
+    assert "实际抓取 ${fetches.length} 个请求" in chat
+    assert "用于最终事实" in chat
     assert "tool-chip-web-search" in chat
     assert 'event.label || event.name, event.name' in chat
     assert "function renderContinueBanner(" in chat
@@ -171,6 +175,9 @@ def test_live_and_restored_messages_share_structured_renderers() -> None:
 
     assert "renderCardsBlock(meta.cards)" in chat
     assert "renderValidationFooter(meta.validation_report)" in chat
+    assert "meta.web_fetches" in chat
+    assert "web_fetches: t.web_fetches" in sessions
+    assert "renderWebFetchSummary(wrap, extras.web_fetches)" in sessions
     assert "meta.final_answer" in chat
     assert "sendFollowup(" in chat
 

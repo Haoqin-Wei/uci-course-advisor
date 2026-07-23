@@ -168,7 +168,21 @@ def test_service_restart_keeps_term_profile_history_and_pending_schedule(runtime
         },
     )
     sessions.append_turn(user_id, session_id, "user", "Remember this schedule.")
-    sessions.append_turn(user_id, session_id, "assistant", "Schedule saved.")
+    sessions.append_turn(
+        user_id,
+        session_id,
+        "assistant",
+        "Schedule saved.",
+        web_fetches=[
+            {
+                "method": "GET",
+                "url": "https://ics.uci.edu/course-enrollment-restrictions/",
+                "status_code": 200,
+                "ok": True,
+                "provides_evidence": True,
+            }
+        ],
+    )
 
     fresh_manager = MemoryManager()
     fresh_manager.set_provider(
@@ -194,4 +208,13 @@ def test_service_restart_keeps_term_profile_history_and_pending_schedule(runtime
     assert [(turn["role"], turn["content"]) for turn in turns_after_restart] == [
         ("user", "Remember this schedule."),
         ("assistant", "Schedule saved."),
+    ]
+    assert turns_after_restart[1]["web_fetches"] == [
+        {
+            "method": "GET",
+            "url": "https://ics.uci.edu/course-enrollment-restrictions/",
+            "status_code": 200,
+            "ok": True,
+            "provides_evidence": True,
+        }
     ]

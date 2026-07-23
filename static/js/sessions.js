@@ -206,6 +206,7 @@ async function loadSession(sessionId) {
             cards:      t.cards,
             followups:  t.followups,
             validation: t.validation,
+            web_fetches: t.web_fetches,
           });
         }
       }
@@ -229,7 +230,7 @@ async function loadSession(sessionId) {
  * identical to the live one — cards, followup chips, and the
  * validation footer all reappear if they were persisted on the turn.
  * `extras` is the parsed-back JSONL extras dict ({cards, followups,
- * validation}); each field is optional and falsy values are skipped
+ * validation, web_fetches}); each field is optional and falsy values are skipped
  * (legacy turns persisted before Round 4 won't have them).
  */
 function appendAssistantStatic(text, extras) {
@@ -242,6 +243,10 @@ function appendAssistantStatic(text, extras) {
   `;
   wrap.querySelector('.msg-ai-body').innerHTML = formatMarkdown(text || '');
   document.getElementById('chatScroll').appendChild(wrap);
+
+  if (extras.web_fetches && extras.web_fetches.length > 0) {
+    renderWebFetchSummary(wrap, extras.web_fetches);
+  }
 
   if (extras.cards && extras.cards.length > 0) {
     const block = document.createElement('div');

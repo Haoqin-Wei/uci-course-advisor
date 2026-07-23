@@ -1086,6 +1086,11 @@ def _tool_get_department_restrictions(
         )
         result["evidence_bundle"] = bundle.to_dict()
         result["verified_facts"] = build_verified_restriction_facts(bundle)
+        result["fetch_summary"] = _restriction_fetch_summary(
+            result,
+            linked_result,
+            bundle.to_dict(),
+        )
         observability.log_event(
             logger,
             logging.INFO,
@@ -1103,9 +1108,55 @@ def _tool_get_department_restrictions(
             "department_comments",
             "comment_blocks",
             "links",
+            "fetches",
         ):
             result.pop(key, None)
     return result
+
+
+def _restriction_fetch_summary(
+    websoc_result: dict,
+    linked_result: dict,
+    evidence_bundle: dict,
+) -> list[dict]:
+    evidence_urls = {
+        _fetch_url_key(event.get("source_url"))
+        for event in evidence_bundle.get("events") or []
+        if event.get("source_url")
+    }
+    summary = []
+    for fetch in [
+        *(websoc_result.get("fetches") or []),
+        *(linked_result.get("fetches") or []),
+    ]:
+        item = {
+            key: fetch.get(key)
+            for key in (
+                "method",
+                "url",
+                "final_url",
+                "host",
+                "source_role",
+                "status_code",
+                "ok",
+                "bytes",
+                "duration_ms",
+                "depth",
+                "parent_url",
+                "error",
+            )
+        }
+        item["provides_evidence"] = bool(
+            item.get("source_role") != "registrar_websoc_form"
+            and _fetch_url_key(item.get("final_url") or item.get("url"))
+            in evidence_urls
+        )
+        summary.append(item)
+    return summary
+
+
+def _fetch_url_key(value: Optional[str]) -> str:
+    return (value or "").split("#", 1)[0].rstrip("/").lower()
 
 
 def _tool_get_student_profile(*, context: dict) -> dict:

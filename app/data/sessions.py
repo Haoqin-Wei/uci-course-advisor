@@ -368,16 +368,17 @@ def append_turn(
     cards: Optional[list] = None,
     followups: Optional[list] = None,
     validation: Optional[dict] = None,
+    web_fetches: Optional[list] = None,
 ) -> int:
     """
     Append a turn to turns.jsonl, return its turn_index.
     Auto-bumps turn_count and last_active_at in meta.
 
     Optional extras (assistant turns only, in practice): cards/followups/
-    validation are persisted so history replay can reconstruct course
-    cards, followup chips, and the validation footer. Falsy values are
-    omitted from the JSONL so legacy turns stay byte-identical when
-    re-read.
+    validation/web_fetches are persisted so history replay can reconstruct
+    course cards, followup chips, the validation footer, and the compact
+    actual-request audit. Falsy values are omitted from the JSONL so legacy
+    turns stay byte-identical when re-read.
     """
     if role not in ("user", "assistant"):
         raise ValueError(f"role must be 'user' or 'assistant', got {role!r}")
@@ -397,6 +398,8 @@ def append_turn(
         turn["followups"] = followups
     if validation:
         turn["validation"] = validation
+    if web_fetches:
+        turn["web_fetches"] = web_fetches
     _append_jsonl(_turns_path(user_id, session_id), turn)
 
     meta["turn_count"]     = turn_index

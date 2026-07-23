@@ -43,16 +43,47 @@ def test_department_restrictions_dispatcher_fetches_websoc_and_linked_pages(
 
     def fake_fetch(**kwargs):
         calls.append(("fetch", kwargs))
+        source_url = "https://www.reg.uci.edu/perl/WebSoc?Dept=ART"
         return {
             "ok": True,
             "workflow_id": "websoc_department_restrictions",
             "term": kwargs["term"],
             "department": kwargs["department"],
-            "source_url": "https://www.reg.uci.edu/perl/WebSoc?Dept=ART",
+            "source_url": source_url,
             "fields": {
                 "major_restriction_removed_at": "Monday, August 24th, 2026 at noon",
             },
             "links": [],
+            "fetches": [
+                {
+                    "method": "GET",
+                    "url": "https://www.reg.uci.edu/perl/WebSoc",
+                    "final_url": "https://www.reg.uci.edu/perl/WebSoc",
+                    "host": "www.reg.uci.edu",
+                    "source_role": "registrar_websoc_form",
+                    "status_code": 200,
+                    "ok": True,
+                    "bytes": 100,
+                    "duration_ms": 5,
+                    "depth": 0,
+                    "parent_url": None,
+                    "error": None,
+                },
+                {
+                    "method": "POST",
+                    "url": source_url,
+                    "final_url": source_url,
+                    "host": "www.reg.uci.edu",
+                    "source_role": "registrar_websoc_results",
+                    "status_code": 200,
+                    "ok": True,
+                    "bytes": 200,
+                    "duration_ms": 10,
+                    "depth": 0,
+                    "parent_url": None,
+                    "error": None,
+                },
+            ],
         }
 
     def fake_deep_read(result):
@@ -86,6 +117,10 @@ def test_department_restrictions_dispatcher_fetches_websoc_and_linked_pages(
     assert result["linked_pages"]["pages"] == []
     assert result["evidence_bundle"]["evidence_status"] == "verified"
     assert result["verified_facts"]["primary"]["restriction_type"] == "school_major"
+    assert len(result["fetch_summary"]) == 2
+    assert result["fetch_summary"][0]["provides_evidence"] is False
+    assert result["fetch_summary"][1]["provides_evidence"] is True
+    assert "fetches" not in result
     assert "school_comments" not in result
     assert "comment_blocks" not in result
     assert calls == [

@@ -72,7 +72,7 @@ async function sendMessage(text) {
         startToolChip(aiMsg, event.label || event.name, event.name);
       },
       tool_call_done(event) {
-        finishToolChip(aiMsg, event.ok !== false);
+        finishToolChip(aiMsg, event.ok !== false, event.fetch_summary || []);
       },
       limit_reached(event) {
         // Agent hit its budget. Stash the continuation_id on the
@@ -169,6 +169,7 @@ function startAiMessage() {
   // popped as done events arrive. Sequential because loop.py dispatches
   // tools one at a time per assistant message.
   wrap._toolChipQueue = [];
+  wrap._webFetchRendered = false;
   return wrap;
 }
 
@@ -199,11 +200,119 @@ function startToolChip(wrap, label, toolName) {
   scrollChat();
 }
 
-function finishToolChip(wrap, ok) {
+function finishToolChip(wrap, ok, fetchSummary) {
   const chip = (wrap._toolChipQueue || []).shift();
-  if (!chip) return;
-  chip.classList.remove('is-active');
-  chip.classList.add(ok ? 'is-done' : 'is-error');
+  if (chip) {
+    chip.classList.remove('is-active');
+    chip.classList.add(ok ? 'is-done' : 'is-error');
+  }
+  if (Array.isArray(fetchSummary) && fetchSummary.length > 0) {
+    renderWebFetchSummary(wrap, fetchSummary);
+    wrap._webFetchRendered = true;
+  }
+}
+
+function renderWebFetchSummary(wrap, fetches) {
+  if (!wrap || !Array.isArray(fetches) || fetches.length === 0) return;
+
+  let container = wrap.querySelector(':scope > .tool-calls');
+  if (!container) {
+    container = document.createElement('div');
+    container.className = 'tool-calls';
+    const body = wrap.querySelector('.msg-ai-body');
+    wrap.insertBefore(container, body);
+  }
+
+  const previous = container.querySelector(':scope > .tool-fetch-details');
+  if (previous) previous.remove();
+
+  const details = document.createElement('details');
+  details.className = 'tool-fetch-details';
+  const summary = document.createElement('summary');
+  summary.textContent = `实际抓取 ${fetches.length} 个请求`;
+  details.appendChild(summary);
+
+  const list = document.createElement('div');
+  list.className = 'tool-fetch-list';
+  const roleLabels = {
+    registrar_websoc_form: 'WebSoc 查询表单',
+    registrar_websoc_results: 'WebSoc 部门结果',
+    undergrad_restrictions: '本科限制官方页',
+    graduate_restrictions: '研究生限制官方页',
+    policy: '政策官方页',
+    restriction_spreadsheet: '课程限制表',
+    official_link: '官方链接',
+  };
+
+  for (const fetchItem of fetches) {
+    if (!fetchItem || typeof fetchItem !== 'object') continue;
+    const row = document.createElement('div');
+    row.className = `tool-fetch-row ${fetchItem.ok === false ? 'is-error' : 'is-ok'}`;
+
+    const header = document.createElement('div');
+    header.className = 'tool-fetch-row-main';
+    const status = document.createElement('span');
+    status.className = 'tool-fetch-status';
+    status.textContent = fetchItem.ok === false ? '失败' : '成功';
+    header.appendChild(status);
+
+    const method = document.createElement('span');
+    method.className = 'tool-fetch-method';
+    method.textContent = String(fetchItem.method || 'GET').toUpperCase();
+    header.appendChild(method);
+
+    const url = String(fetchItem.final_url || fetchItem.url || '');
+    const host = String(fetchItem.host || url || '未知地址');
+    if (/^https?:\/\//i.test(url)) {
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = host;
+      link.title = url;
+      header.appendChild(link);
+    } else {
+      const address = document.createElement('span');
+      address.textContent = host;
+      header.appendChild(address);
+    }
+
+    if (fetchItem.provides_evidence) {
+      const evidence = document.createElement('span');
+      evidence.className = 'tool-fetch-evidence';
+      evidence.textContent = '用于最终事实';
+      header.appendChild(evidence);
+    }
+    row.appendChild(header);
+
+    const meta = document.createElement('div');
+    meta.className = 'tool-fetch-meta';
+    const role = roleLabels[fetchItem.source_role]
+      || String(fetchItem.source_role || '网页来源');
+    const fields = [role];
+    if (fetchItem.status_code != null) fields.push(`HTTP ${fetchItem.status_code}`);
+    if (fetchItem.bytes != null) fields.push(`${Number(fetchItem.bytes).toLocaleString()} B`);
+    if (fetchItem.duration_ms != null) fields.push(`${Math.round(fetchItem.duration_ms)} ms`);
+    if (fetchItem.depth != null) fields.push(`深度 ${fetchItem.depth}`);
+    meta.textContent = fields.join(' · ');
+    row.appendChild(meta);
+
+    if (fetchItem.parent_url) {
+      const parent = document.createElement('div');
+      parent.className = 'tool-fetch-parent';
+      parent.textContent = `来自：${fetchItem.parent_url}`;
+      row.appendChild(parent);
+    }
+    if (fetchItem.error) {
+      const error = document.createElement('div');
+      error.className = 'tool-fetch-error';
+      error.textContent = String(fetchItem.error);
+      row.appendChild(error);
+    }
+    list.appendChild(row);
+  }
+  details.appendChild(list);
+  container.appendChild(details);
 }
 
 function appendStreamingToken(wrap, fullText) {
@@ -239,6 +348,13 @@ function finalizeAiMessage(wrap, fullText, meta, stopped) {
   body.classList.remove('thinking');
   body.classList.remove('streaming');
   body.innerHTML = formatMarkdown(fullText || '');
+
+  if (!wrap._webFetchRendered
+      && Array.isArray(meta.web_fetches)
+      && meta.web_fetches.length > 0) {
+    renderWebFetchSummary(wrap, meta.web_fetches);
+    wrap._webFetchRendered = true;
+  }
 
   // Cards
   if (meta.cards && meta.cards.length > 0) {
@@ -356,7 +472,7 @@ async function continueAgent(wrap, continuationId, btn) {
         startToolChip(wrap, event.label || event.name, event.name);
       },
       tool_call_done(event) {
-        finishToolChip(wrap, event.ok !== false);
+        finishToolChip(wrap, event.ok !== false, event.fetch_summary || []);
       },
       limit_reached(event) {
         newContinuationId = event.continuation_id;

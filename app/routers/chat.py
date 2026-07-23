@@ -158,6 +158,7 @@ def _persist_turn(
     cards: Optional[list] = None,
     followups: Optional[list] = None,
     validation: Optional[dict] = None,
+    web_fetches: Optional[list] = None,
 ) -> tuple[int, bool]:
     """
     Append user + assistant turns to sessions/{sid}/turns.jsonl.
@@ -184,7 +185,10 @@ def _persist_turn(
         sessions_data.append_turn(user_id, persistent_sid, "user", user_msg)
         idx = sessions_data.append_turn(
             user_id, persistent_sid, "assistant", assistant_reply,
-            cards=cards, followups=followups, validation=validation,
+            cards=cards,
+            followups=followups,
+            validation=validation,
+            web_fetches=web_fetches,
         )
 
         # First-turn snippet title (cheap heuristic; Round 4 LLM auto-title
@@ -841,6 +845,8 @@ async def _handle_agent(
                         execution_meta["restriction_verified_facts"] = event[
                             "verified_facts"
                         ]
+                    if event.get("fetch_summary") is not None:
+                        execution_meta["web_fetches"] = event["fetch_summary"]
                 if ok and event.get("name"):
                     successful_tools.add(event["name"])
                     call_record = {
@@ -862,12 +868,15 @@ async def _handle_agent(
                     ok=ok,
                     term=term,
                 )
-                await queue.put({
+                tool_done_payload = {
                     "type":  "tool_call_done",
                     "name":  event.get("name"),
                     "label": event.get("label"),
                     "ok":    ok,
-                })
+                }
+                if event.get("fetch_summary") is not None:
+                    tool_done_payload["fetch_summary"] = event["fetch_summary"]
+                await queue.put(tool_done_payload)
             elif t == "cards_proposed":
                 # propose_recommendation tool fired. Default behavior
                 # is REPLACE — if the LLM re-stages mid-turn during the
@@ -1291,6 +1300,7 @@ async def _stream_chat(
             new_turn_index, did_auto_title = _persist_turn(
                 user_id, persistent_sid, req.message, reply,
                 cards=cards, followups=followups, validation=validation_dict,
+                web_fetches=agent_meta.get("web_fetches"),
             )
             _maybe_schedule_auto_title(
                 background_tasks, did_auto_title,
@@ -1300,7 +1310,7 @@ async def _stream_chat(
 
             _maybe_schedule_reflection(background_tasks, mem, active_session_id, user_id)
 
-            await queue.put({
+            meta_event = {
                 "type": "meta",
                 "session_id": persistent_sid,
                 "cards": cards,
@@ -1310,7 +1320,10 @@ async def _stream_chat(
                 "effective_term": final_effective_term.canonical_name,
                 "term_source": final_effective_term.source,
                 "term_status": final_effective_term.status,
-            })
+            }
+            if agent_meta.get("web_fetches"):
+                meta_event["web_fetches"] = agent_meta["web_fetches"]
+            await queue.put(meta_event)
         except asyncio.CancelledError:
             logger.info("[stream] producer cancelled (client disconnected)")
             raise

@@ -209,28 +209,31 @@ def _agent_web_research_summary(tool_name: str, result: dict) -> Optional[dict]:
     fetched_urls: list[str] = []
     failure_count = 0
     if tool_name == "get_department_restrictions":
-        if result.get("source_url"):
-            fetched_urls.append(result["source_url"])
-        linked = result.get("linked_pages")
-        if isinstance(linked, dict):
-            fetched_urls.extend(
-                page["url"]
-                for page in (linked.get("pages") or [])
-                if isinstance(page, dict) and page.get("url")
-            )
-            failure_count = len(linked.get("errors") or [])
+        fetches = [
+            item
+            for item in (result.get("fetch_summary") or [])
+            if isinstance(item, dict)
+        ]
+        fetched_urls.extend(
+            item.get("final_url") or item.get("url")
+            for item in fetches
+            if item.get("final_url") or item.get("url")
+        )
+        failure_count = sum(item.get("ok") is False for item in fetches)
+        success_count = sum(item.get("ok") is not False for item in fetches)
     elif tool_name == "fetch_page":
         fetched = result.get("final_url") or result.get("source_url")
         if fetched:
             fetched_urls.append(fetched)
         failure_count = 0 if result.get("ok") else 1
+        success_count = len(fetched_urls) if result.get("ok") else 0
     else:
         return None
 
     fetched_urls = list(dict.fromkeys(fetched_urls))
     return {
         "fetched_urls": fetched_urls,
-        "success_count": len(fetched_urls),
+        "success_count": success_count,
         "failure_count": failure_count,
     }
 
@@ -546,6 +549,7 @@ async def _run_loop(
         if tool_name == "get_department_restrictions":
             tool_done_event["restriction_evidence"] = result.get("evidence_bundle")
             tool_done_event["verified_facts"] = result.get("verified_facts")
+            tool_done_event["fetch_summary"] = result.get("fetch_summary") or []
         yield tool_done_event
 
     restriction_result = next(
@@ -854,12 +858,21 @@ async def _run_loop(
                     tool=tc["name"],
                     **web_audit,
                 )
-            yield {"type": "tool_call_done",
-                   "name": tc["name"],
-                   "ok": tool_ok,
-                   "label": label,
-                   "args": args,
-                   "term_data_available": _result_has_term_data(result)}
+            tool_done_event = {
+                "type": "tool_call_done",
+                "name": tc["name"],
+                "ok": tool_ok,
+                "label": label,
+                "args": args,
+                "term_data_available": _result_has_term_data(result),
+            }
+            if tc["name"] == "get_department_restrictions":
+                tool_done_event["restriction_evidence"] = result.get(
+                    "evidence_bundle"
+                )
+                tool_done_event["verified_facts"] = result.get("verified_facts")
+                tool_done_event["fetch_summary"] = result.get("fetch_summary") or []
+            yield tool_done_event
 
             # Side-channel: propose_recommendation stages structured
             # cards on the tool_context dict (the LLM-visible return is

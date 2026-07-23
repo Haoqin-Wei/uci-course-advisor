@@ -146,6 +146,7 @@ def fetch_websoc_department_restrictions(
             request_form=params,
             retrieved_at=retrieved_at,
             available_terms=form_result["terms"],
+            fetches=form_result.get("fetches") or [],
         )
     if requested_department not in form_result["departments"]:
         return _workflow_error(
@@ -159,6 +160,7 @@ def fetch_websoc_department_restrictions(
             request_form=params,
             retrieved_at=retrieved_at,
             available_departments=form_result["departments"],
+            fetches=form_result.get("fetches") or [],
         )
 
     request_started = observability.now()
@@ -175,6 +177,20 @@ def fetch_websoc_department_restrictions(
     try:
         response = http.post(WEBSOC_URL, data=params, timeout=REQUEST_TIMEOUT_S)
         response.raise_for_status()
+        duration_ms = observability.elapsed_ms(request_started)
+        post_fetch = _fetch_record(
+            method="POST",
+            url=source_url,
+            final_url=getattr(response, "url", None) or source_url,
+            source_role="registrar_websoc_results",
+            status_code=getattr(response, "status_code", None),
+            content_length=len(
+                (getattr(response, "text", "") or "").encode("utf-8")
+            ),
+            duration_ms=duration_ms,
+            ok=True,
+            depth=0,
+        )
         observability.log_agent_web_fetch_completed(
             logger,
             url=source_url,
@@ -185,18 +201,31 @@ def fetch_websoc_department_restrictions(
             status_code=getattr(response, "status_code", None),
             content_type=(getattr(response, "headers", {}) or {}).get("content-type"),
             content_length=len((getattr(response, "text", "") or "").encode("utf-8")),
-            duration_ms=observability.elapsed_ms(request_started),
+            duration_ms=duration_ms,
             term=term,
             department=(department or "").strip().upper(),
         )
     except requests.RequestException as e:
+        duration_ms = observability.elapsed_ms(request_started)
+        post_fetch = _fetch_record(
+            method="POST",
+            url=source_url,
+            final_url=source_url,
+            source_role="registrar_websoc_results",
+            status_code=None,
+            content_length=None,
+            duration_ms=duration_ms,
+            ok=False,
+            depth=0,
+            error=f"{type(e).__name__}: {e}",
+        )
         observability.log_agent_web_fetch_failed(
             logger,
             url=source_url,
             method="POST",
             tool=AGENT_TOOL,
             workflow_id=WORKFLOW_ID,
-            duration_ms=observability.elapsed_ms(request_started),
+            duration_ms=duration_ms,
             error=f"{type(e).__name__}: {e}",
             term=term,
             department=(department or "").strip().upper(),
@@ -212,6 +241,10 @@ def fetch_websoc_department_restrictions(
             "request_method": "POST",
             "request_form": params,
             "retrieved_at": retrieved_at,
+            "fetches": [
+                *(form_result.get("fetches") or []),
+                post_fetch,
+            ],
         }
 
     result = parse_websoc_department_html(
@@ -223,6 +256,10 @@ def fetch_websoc_department_restrictions(
     )
     result["request_method"] = "POST"
     result["request_form"] = params
+    result["fetches"] = [
+        *(form_result.get("fetches") or []),
+        post_fetch,
+    ]
     observability.log_event(
         logger,
         logging.INFO if result.get("ok") else logging.WARNING,
@@ -259,6 +296,20 @@ def fetch_websoc_form_options(
     try:
         response = http.get(WEBSOC_URL, timeout=REQUEST_TIMEOUT_S)
         response.raise_for_status()
+        duration_ms = observability.elapsed_ms(request_started)
+        fetch_record = _fetch_record(
+            method="GET",
+            url=WEBSOC_URL,
+            final_url=getattr(response, "url", None) or WEBSOC_URL,
+            source_role="registrar_websoc_form",
+            status_code=getattr(response, "status_code", None),
+            content_length=len(
+                (getattr(response, "text", "") or "").encode("utf-8")
+            ),
+            duration_ms=duration_ms,
+            ok=True,
+            depth=0,
+        )
         observability.log_agent_web_fetch_completed(
             logger,
             url=WEBSOC_URL,
@@ -269,16 +320,29 @@ def fetch_websoc_form_options(
             status_code=getattr(response, "status_code", None),
             content_type=(getattr(response, "headers", {}) or {}).get("content-type"),
             content_length=len((getattr(response, "text", "") or "").encode("utf-8")),
-            duration_ms=observability.elapsed_ms(request_started),
+            duration_ms=duration_ms,
         )
     except requests.RequestException as exc:
+        duration_ms = observability.elapsed_ms(request_started)
+        fetch_record = _fetch_record(
+            method="GET",
+            url=WEBSOC_URL,
+            final_url=WEBSOC_URL,
+            source_role="registrar_websoc_form",
+            status_code=None,
+            content_length=None,
+            duration_ms=duration_ms,
+            ok=False,
+            depth=0,
+            error=f"{type(exc).__name__}: {exc}",
+        )
         observability.log_agent_web_fetch_failed(
             logger,
             url=WEBSOC_URL,
             method="GET",
             tool=AGENT_TOOL,
             workflow_id=WORKFLOW_ID,
-            duration_ms=observability.elapsed_ms(request_started),
+            duration_ms=duration_ms,
             error=f"{type(exc).__name__}: {exc}",
         )
         return {
@@ -287,6 +351,7 @@ def fetch_websoc_form_options(
             "message": f"Registrar WebSoc form request failed: {type(exc).__name__}",
             "source_url": WEBSOC_URL,
             "retrieved_at": retrieved_at,
+            "fetches": [fetch_record],
         }
 
     parsed = _parse_websoc_form(response.text)
@@ -307,6 +372,7 @@ def fetch_websoc_form_options(
             "message": "Registrar WebSoc form did not contain term and department options",
             "source_url": WEBSOC_URL,
             "retrieved_at": retrieved_at,
+            "fetches": [fetch_record],
         }
 
     observability.log_event(
@@ -324,6 +390,7 @@ def fetch_websoc_form_options(
         "retrieved_at": retrieved_at,
         "terms": parsed.terms,
         "departments": parsed.departments,
+        "fetches": [fetch_record],
     }
 
 
@@ -729,6 +796,22 @@ def fetch_linked_official_pages(
         "selected_count": len(attempted_urls),
         "fetched_urls": attempted_urls,
         "pages": pages,
+        "fetches": [
+            fetch
+            for fetch in (
+                [
+                    page.get("fetch")
+                    for page in pages
+                    if page.get("fetch")
+                ]
+                + [
+                    error.get("fetch")
+                    for error in errors
+                    if error.get("fetch")
+                ]
+            )
+            if fetch
+        ],
         "restriction_evidence": [
             {
                 "url": page["url"],
@@ -779,6 +862,21 @@ def _fetch_and_parse_linked_page(
     try:
         response = http.get(linked_url, timeout=REQUEST_TIMEOUT_S)
         response.raise_for_status()
+        duration_ms = observability.elapsed_ms(request_started)
+        request_fetch = _fetch_record(
+            method="GET",
+            url=linked_url,
+            final_url=getattr(response, "url", None) or linked_url,
+            source_role=link.get("link_role") or "official_link",
+            status_code=getattr(response, "status_code", None),
+            content_length=len(
+                (getattr(response, "text", "") or "").encode("utf-8")
+            ),
+            duration_ms=duration_ms,
+            ok=True,
+            depth=depth,
+            parent_url=parent_url,
+        )
         observability.log_agent_web_fetch_completed(
             logger,
             url=linked_url,
@@ -789,18 +887,32 @@ def _fetch_and_parse_linked_page(
             status_code=getattr(response, "status_code", None),
             content_type=(getattr(response, "headers", {}) or {}).get("content-type"),
             content_length=len((getattr(response, "text", "") or "").encode("utf-8")),
-            duration_ms=observability.elapsed_ms(request_started),
+            duration_ms=duration_ms,
             link_role=link.get("link_role"),
             depth=depth,
         )
     except requests.RequestException as e:
+        duration_ms = observability.elapsed_ms(request_started)
+        request_fetch = _fetch_record(
+            method="GET",
+            url=linked_url,
+            final_url=linked_url,
+            source_role=link.get("link_role") or "official_link",
+            status_code=None,
+            content_length=None,
+            duration_ms=duration_ms,
+            ok=False,
+            depth=depth,
+            parent_url=parent_url,
+            error=f"{type(e).__name__}: {e}",
+        )
         observability.log_agent_web_fetch_failed(
             logger,
             url=linked_url,
             method="GET",
             tool=AGENT_TOOL,
             workflow_id=workflow_result.get("workflow_id") or WORKFLOW_ID,
-            duration_ms=observability.elapsed_ms(request_started),
+            duration_ms=duration_ms,
             error=f"{type(e).__name__}: {e}",
             link_role=link.get("link_role"),
             depth=depth,
@@ -810,6 +922,7 @@ def _fetch_and_parse_linked_page(
             "depth": depth,
             "error_code": "linked_page_request_failed",
             "message": f"official linked page request failed: {type(e).__name__}",
+            "fetch": request_fetch,
         }
 
     final_url = getattr(response, "url", linked_url) or linked_url
@@ -820,6 +933,7 @@ def _fetch_and_parse_linked_page(
             "depth": depth,
             "error_code": "linked_page_left_allowed_domain",
             "message": "linked page redirected outside its allowed domain",
+            "fetch": request_fetch,
         }
 
     content_type = (getattr(response, "headers", {}) or {}).get("content-type", "")
@@ -830,6 +944,7 @@ def _fetch_and_parse_linked_page(
             "depth": depth,
             "error_code": "linked_page_unsupported_content_type",
             "message": f"linked page content type is not text/html: {content_type}",
+            "fetch": request_fetch,
         }
 
     content_length = _safe_int(
@@ -847,6 +962,7 @@ def _fetch_and_parse_linked_page(
             "depth": depth,
             "error_code": "linked_page_too_large",
             "message": "linked page body is larger than the workflow limit",
+            "fetch": request_fetch,
         }
 
     parsed = _parse_html(response_text)
@@ -877,6 +993,7 @@ def _fetch_and_parse_linked_page(
         "link_role": link.get("link_role"),
         "depth": depth,
         "parent_url": parent_url,
+        "fetch": request_fetch,
         "text_excerpt": _truncate(
             "\n".join(block["text"] for block in excerpt_blocks),
             LINK_TEXT_MAX_CHARS,
@@ -1113,6 +1230,37 @@ def _safe_int(value: Any) -> Optional[int]:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _fetch_record(
+    *,
+    method: str,
+    url: str,
+    final_url: str,
+    source_role: str,
+    status_code: Optional[int],
+    content_length: Optional[int],
+    duration_ms: float,
+    ok: bool,
+    depth: int,
+    parent_url: Optional[str] = None,
+    error: Optional[str] = None,
+) -> dict[str, Any]:
+    return {
+        "method": method,
+        "url": url,
+        "final_url": final_url,
+        "host": _domain_from_url(final_url or url),
+        "source_role": source_role,
+        "status_code": status_code,
+        "ok": ok,
+        "bytes": content_length,
+        "duration_ms": round(float(duration_ms), 2),
+        "depth": depth,
+        "parent_url": parent_url,
+        "error": error,
+        "provides_evidence": False,
+    }
 
 
 def _find_nth_link_block(
