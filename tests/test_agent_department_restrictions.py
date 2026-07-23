@@ -164,6 +164,8 @@ def test_agent_prompt_encodes_department_restriction_rules() -> None:
     assert "Do NOT use general `web_search` or DuckDuckGo first" in prompt
     assert "WebSoc comments point to an official UCI department page" in prompt
     assert "cite the Registrar WebSoc `source_url` as a markdown link" in prompt
+    assert "`evidence_bundle` is the ONLY authority" in prompt
+    assert "never substitute a New Only/NOR date" in prompt
 
 
 def test_agent_can_dispatch_department_restrictions_with_sse_chip(

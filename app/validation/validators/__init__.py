@@ -6,6 +6,7 @@ from app.validation.validators.cards import CardGroundingValidator
 from app.validation.validators.instructor import InstructorValidator
 from app.validation.validators.offered_term import OfferedTermValidator
 from app.validation.validators.consistency import ConsistencyValidator
+from app.validation.validators.restriction_claims import RestrictionClaimValidator
 
 
 PHASE_1_VALIDATORS: list[Validator] = [
@@ -14,6 +15,7 @@ PHASE_1_VALIDATORS: list[Validator] = [
     InstructorValidator(),
     OfferedTermValidator(),
     ConsistencyValidator(),
+    RestrictionClaimValidator(),
 ]
 
 
@@ -24,5 +26,6 @@ __all__ = [
     "InstructorValidator",
     "OfferedTermValidator",
     "ConsistencyValidator",
+    "RestrictionClaimValidator",
     "PHASE_1_VALIDATORS",
 ]

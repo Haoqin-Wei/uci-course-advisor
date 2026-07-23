@@ -259,6 +259,20 @@ def build_verified_restriction_facts(
             f"{_action_label(primary.action)}"
             f"{_format_effective_at(primary.effective_at)}。"
         )
+        if bundle.evidence_status == EvidenceStatus.CONFLICTING:
+            conflict_values = sorted(
+                {
+                    value
+                    for conflict in bundle.conflicts
+                    for value in conflict.get("values") or []
+                }
+            )
+            summary = (
+                f"**来源冲突：**已抓取来源对"
+                f"{_restriction_label(primary.restriction_type)}给出不同时间："
+                + "、".join(_format_effective_at(value) for value in conflict_values)
+                + "。以下来源需并列说明，不能替用户选择其中一个。"
+            )
 
     lines = [summary]
     related_facts = []

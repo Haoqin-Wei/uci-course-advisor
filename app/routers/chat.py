@@ -46,7 +46,12 @@ from app.catalog.coverage import get_term_coverage
 from app.catalog.departments import colloquial_course_id
 from app.catalog.normalization import iter_course_mentions, parse_course_mention
 from app.validation import (
-    ValidationContext, validate, decide_action, apply_report, write_log,
+    SuggestedAction,
+    ValidationContext,
+    apply_report,
+    decide_action,
+    validate,
+    write_log,
 )
 from app.terms import parse_term_key
 from app.terms.conversation import commit_conversation_resolution
@@ -474,6 +479,8 @@ def _validate_response(
     retrieval_performed: bool = False,
     query_terms: Optional[list[str]] = None,
     tool_terms: Optional[list[str]] = None,
+    restriction_evidence: Optional[dict] = None,
+    restriction_verified_facts: Optional[dict] = None,
 ) -> tuple[str, list[dict], Optional[dict]]:
     target_term = (
         Term.parse(term_str or "")
@@ -499,10 +506,29 @@ def _validate_response(
         query_terms=query_terms or [],
         tool_terms=tool_terms or [],
         validation_term=term_str,
+        restriction_evidence=restriction_evidence,
+        restriction_verified_facts=restriction_verified_facts,
     )
     report = validate(ctx)
     action = decide_action(report)
-    final_answer, final_cards, changed = apply_report(answer, cards, report, action)
+    if (
+        action == SuggestedAction.BLOCK
+        and restriction_evidence
+        and restriction_verified_facts
+    ):
+        final_answer = (
+            restriction_verified_facts.get("summary_markdown")
+            or "已抓取官方来源，但无法可靠验证该限制事实。"
+        )
+        final_cards = []
+        changed = final_answer != answer or bool(cards)
+    else:
+        final_answer, final_cards, changed = apply_report(
+            answer,
+            cards,
+            report,
+            action,
+        )
     write_log(ctx, report, action, changed, session_id=session_id)
     validation_dict = report.to_dict()
     validation_dict["applied_action"] = action.value
@@ -806,6 +832,15 @@ async def _handle_agent(
                 })
             elif t == "tool_call_done":
                 ok = event.get("ok", True)
+                if execution_meta is not None:
+                    if event.get("restriction_evidence"):
+                        execution_meta["restriction_evidence"] = event[
+                            "restriction_evidence"
+                        ]
+                    if event.get("verified_facts"):
+                        execution_meta["restriction_verified_facts"] = event[
+                            "verified_facts"
+                        ]
                 if ok and event.get("name"):
                     successful_tools.add(event["name"])
                     call_record = {
@@ -889,7 +924,15 @@ async def _handle_agent(
                 })
             elif t == "final":
                 # Tokens were already streamed; nothing extra to forward.
-                pass
+                if execution_meta is not None:
+                    if event.get("restriction_evidence"):
+                        execution_meta["restriction_evidence"] = event[
+                            "restriction_evidence"
+                        ]
+                    if event.get("verified_facts"):
+                        execution_meta["restriction_verified_facts"] = event[
+                            "verified_facts"
+                        ]
             elif t == "error":
                 # Mid-flight error — surface and stop. No fallback (we
                 # already showed partial output to the user).
@@ -1162,6 +1205,12 @@ async def _stream_chat(
                     retrieval_performed=retrieval_performed,
                     query_terms=query_terms,
                     tool_terms=tool_terms,
+                    restriction_evidence=agent_meta.get(
+                        "restriction_evidence"
+                    ),
+                    restriction_verified_facts=agent_meta.get(
+                        "restriction_verified_facts"
+                    ),
                 )
 
             validation_blocked = bool(

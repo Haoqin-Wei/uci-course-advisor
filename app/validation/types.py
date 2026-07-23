@@ -108,6 +108,8 @@ class ValidationContext:
     query_terms: list[str] = field(default_factory=list)
     tool_terms: list[str] = field(default_factory=list)
     validation_term: Optional[str] = None
+    restriction_evidence: Optional[dict] = None
+    restriction_verified_facts: Optional[dict] = None
 
     @property
     def retrieved_primary_refs(self) -> set[CourseRef]:

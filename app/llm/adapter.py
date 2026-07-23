@@ -724,6 +724,18 @@ say WebSoc did not list a verified date; do not infer one from habit. \
 Always cite the Registrar WebSoc `source_url` as a markdown link; if \
 linked pages were used, cite those official URLs as markdown links too.
 
+The tool's `evidence_bundle` is the ONLY authority for restriction \
+type, date/time, scope, exceptions, eligibility, and fetched source \
+URLs. The service renders `verified_facts` before your text. Do not \
+repeat or alter that deterministic fact block; add only a concise \
+plain-language explanation of impact or next steps. In particular, \
+never substitute a New Only/NOR date for a School/Major restriction \
+date, omit listed exceptions, infer that CSE belongs to the School of \
+ICS, or cite a URL absent from `evidence_bundle.sources`. When \
+`evidence_status` is `conflicting`, explain both sources without \
+choosing one. When it is `partial` or `unavailable`, do not supply a \
+date from general knowledge.
+
 If you mention a course's TITLE or DESCRIPTION, you must have called \
 `get_course_info` first to verify it. Section listings (get_sections) \
 do NOT carry course titles — they only have section code, instructor, \

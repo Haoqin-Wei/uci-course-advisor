@@ -534,7 +534,7 @@ async def _run_loop(
                 tool=tool_name,
                 **web_audit,
             )
-        yield {
+        tool_done_event = {
             "type": "tool_call_done",
             "name": tool_name,
             "ok": tool_ok,
@@ -543,6 +543,10 @@ async def _run_loop(
             "term_data_available": _result_has_term_data(result),
             "server_forced": True,
         }
+        if tool_name == "get_department_restrictions":
+            tool_done_event["restriction_evidence"] = result.get("evidence_bundle")
+            tool_done_event["verified_facts"] = result.get("verified_facts")
+        yield tool_done_event
 
     restriction_result = next(
         (
@@ -579,6 +583,14 @@ async def _run_loop(
             "deterministic_restriction_answer": True,
         }
         return
+
+    restriction_prefix = ""
+    if restriction_status in {"verified", "conflicting"}:
+        verified_facts = restriction_result.get("verified_facts") or {}
+        restriction_prefix = verified_facts.get("summary_markdown") or ""
+        if restriction_prefix:
+            restriction_prefix += "\n\n"
+            yield {"type": "token", "text": restriction_prefix}
 
     tool_context["_forced_workflow_results"] = forced_results
     route_hint_message = build_route_hint_message(workflow_route)
@@ -664,7 +676,7 @@ async def _run_loop(
         #    the final answer. We've already streamed the tokens; emit
         #    the "final" event with the full text for persistence.
         if not tool_calls_acc:
-            final_text = accumulated_content
+            final_text = restriction_prefix + accumulated_content
             verification_missing = history_refresh_missing(deep_search_state)
             if verification_missing:
                 final_text = verification_required_text(user_query)
@@ -677,6 +689,11 @@ async def _run_loop(
             }
             if verification_missing:
                 final_event["verification_required"] = True
+            if restriction_bundle:
+                final_event["restriction_evidence"] = restriction_bundle
+                final_event["verified_facts"] = (
+                    restriction_result.get("verified_facts") or {}
+                )
             if trace_result.get("stored"):
                 final_event["deep_search_trace_id"] = trace_result.get("trace_id")
             yield final_event
