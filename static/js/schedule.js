@@ -19,6 +19,7 @@ async function addCourse(courseId, section, btnEl, term) {
   if (!data.ok) throw new Error(data.reason || 'add failed');
   pendingScheduleEntries = data.pending_schedule || [];
   scheduleEvents = data.events || [];
+  scheduleValidation = data.schedule_validation || scheduleValidation;
   _hydrateScheduleState();        // rebuild local sets from server-of-truth
   renderScheduleGrid();
   showCrossTermToast(data.cross_term_notice);
@@ -40,6 +41,7 @@ async function removeCourse(courseId, btnEl, section, term) {
   if (!res.ok || !data.ok) throw new Error(data.detail || data.reason || 'remove failed');
   pendingScheduleEntries = data.pending_schedule || [];
   scheduleEvents = data.events || [];
+  scheduleValidation = data.schedule_validation || scheduleValidation;
   _hydrateScheduleState();        // rebuild local sets from server-of-truth
   renderScheduleGrid();
 }
@@ -90,6 +92,9 @@ async function clearSchedule() {
     if (!data.ok) throw new Error(data.reason || 'clear failed');
     pendingScheduleEntries = data.pending_schedule || [];
     scheduleEvents = data.events || [];
+    scheduleValidation = data.schedule_validation || {
+      valid: true, warnings: [], conflicts: [], unknowns: [],
+    };
     _hydrateScheduleState();
     renderScheduleGrid();
   } catch (err) {
@@ -101,6 +106,7 @@ async function loadScheduleForSession(sessionId) {
   if (!sessionId) {
     pendingScheduleEntries = [];
     scheduleEvents = [];
+    scheduleValidation = {valid: true, warnings: [], conflicts: [], unknowns: []};
     _hydrateScheduleState();
     renderScheduleGrid();
     return;
@@ -113,10 +119,39 @@ async function loadScheduleForSession(sessionId) {
     if (!res.ok || !data.ok) throw new Error(data.detail || 'schedule load failed');
     pendingScheduleEntries = data.pending_schedule || [];
     scheduleEvents = data.events || [];
+    scheduleValidation = data.schedule_validation || {
+      valid: true, warnings: [], conflicts: [], unknowns: [],
+    };
     _hydrateScheduleState();
     renderScheduleGrid();
   } catch (err) {
     console.warn('schedule load failed:', err);
+  }
+}
+
+async function refreshSchedule() {
+  if (!currentSessionId || pendingScheduleEntries.length === 0) return;
+  const button = document.getElementById('scheduleRefreshBtn');
+  if (button) button.disabled = true;
+  try {
+    const res = await fetch(`${API}/api/schedule/refresh`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({session_id: currentSessionId}),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.detail || 'schedule refresh failed');
+    }
+    pendingScheduleEntries = data.pending_schedule || [];
+    scheduleEvents = data.events || [];
+    scheduleValidation = data.schedule_validation || scheduleValidation;
+    _hydrateScheduleState();
+    renderScheduleGrid();
+  } catch (err) {
+    console.warn('schedule refresh failed:', err);
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 
@@ -242,29 +277,77 @@ function renderScheduleGrid() {
   // day so two events at the same time don't stack on top of each
   // other (the previous renderer placed both at left:0).
   const layout = _computeOverlapLayout(scheduleEvents);
+  const conflictKeys = _scheduleConflictKeys();
   for (const ev of scheduleEvents) {
     const meta = layout.get(ev) || {col: 0, cols: 1};
-    placeEvent(ev, meta.col, meta.cols);
+    placeEvent(
+      ev,
+      meta.col,
+      meta.cols,
+      _scheduleItemHasConflict(conflictKeys, ev),
+    );
   }
+}
+
+function _scheduleConflictKeys() {
+  const keys = new Set();
+  for (const issue of scheduleValidation?.conflicts || []) {
+    if (!['time_conflict', 'final_exam_conflict'].includes(issue?.type)) continue;
+    for (const section of issue.sections || []) {
+      const cid = section.course_id || '';
+      for (const value of [section.section_num, section.section_code]) {
+        if (cid && value) keys.add(`${cid}|${value}`);
+      }
+    }
+  }
+  return keys;
+}
+
+function _scheduleItemHasConflict(keys, item) {
+  const cid = item?.course_id || '';
+  return [item?.section, item?.section_num, item?.section_code]
+    .filter(Boolean)
+    .some(section => keys.has(`${cid}|${section}`));
 }
 
 function _renderScheduleEntryList() {
   if (pendingScheduleEntries.length === 0) return '';
+  const conflictKeys = _scheduleConflictKeys();
   const rows = pendingScheduleEntries.map(entry => {
     const term = entry.term || 'unknown';
-    return `<div class="schedule-entry" data-term="${escAttr(term)}"
+    const notice = (entry.notices || []).join(' ');
+    const materialization = entry.materialization_status || 'unresolved';
+    const hasConflict = _scheduleItemHasConflict(conflictKeys, entry);
+    const snapshot = entry.materialized_section || {};
+    const liveStatus = snapshot.is_cancelled
+      ? 'CANCELLED'
+      : String(snapshot.status || '').toUpperCase();
+    return `<div class="schedule-entry${hasConflict ? ' has-conflict' : ''}" data-term="${escAttr(term)}"
                  data-cid="${escAttr(entry.course_id || '')}"
-                 data-sec="${escAttr(entry.section || '')}">
+                 data-sec="${escAttr(entry.section || '')}"
+                 title="${escAttr(notice)}">
       <span class="schedule-entry-course">${escHTML(entry.course_id || 'Course')}</span>
       <span class="schedule-entry-section">${escHTML(entry.section || '—')}</span>
       <span class="schedule-entry-term">${escHTML(term)}</span>
+      ${hasConflict
+        ? '<span class="schedule-entry-risk schedule-entry-risk-conflict">time conflict</span>'
+        : ''}
+      ${liveStatus && liveStatus !== 'OPEN'
+        ? `<span class="schedule-entry-risk schedule-entry-risk-${escAttr(liveStatus.toLowerCase())}">${escHTML(liveStatus)}</span>`
+        : ''}
+      ${materialization !== 'resolved'
+        ? `<span class="schedule-entry-risk schedule-entry-risk-unresolved">${escHTML(materialization)}</span>`
+        : ''}
       <button type="button" aria-label="Remove ${escAttr(entry.course_id || 'course')}"
               onclick="removeScheduledEntry(this)">
         <span class="material-symbols-outlined">close</span>
       </button>
     </div>`;
   }).join('');
-  return `<div class="schedule-entry-list" aria-label="Scheduled sections">${rows}</div>`;
+  return `<div class="schedule-entry-list" aria-label="Scheduled sections">
+    <div class="schedule-planning-note">Planning draft only — confirm eligibility and seats in official UCI systems.</div>
+    ${rows}
+  </div>`;
 }
 
 function removeScheduledEntry(btn) {
@@ -309,7 +392,7 @@ function _computeOverlapLayout(events) {
   return out;
 }
 
-function placeEvent(ev, col, cols) {
+function placeEvent(ev, col, cols, hasConflict = false) {
   const dayIdx = DAYS.indexOf(ev.day);
   if (dayIdx < 0) return;
 
@@ -332,7 +415,7 @@ function placeEvent(ev, col, cols) {
   const trackX = `(${col} * (${trackW} + 2px))`;
 
   const evEl = document.createElement('div');
-  evEl.className = 'sg-event';
+  evEl.className = `sg-event${hasConflict ? ' has-conflict' : ''}`;
   evEl.dataset.cid = ev.course_id;
   evEl.dataset.sec = ev.section_num || '';
   evEl.dataset.term = ev.term || '';

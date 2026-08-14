@@ -162,6 +162,203 @@ def test_schedule_add_normalizes_section_codes_dedupes_and_builds_events(
     ]
 
 
+def test_schedule_add_ignores_removed_check_metadata_without_fake_event(
+    app_client,
+    fake_schedule_catalog,
+):
+    session_id = sessions_data.create_session(
+        "demo_001",
+        title="Direct schedule fixture",
+        term_scope="Spring 2025",
+    )
+
+    response = app_client.post(
+        "/api/schedule/add",
+        json={
+            "session_id": session_id,
+            "course_id": "COMPSCI161",
+            "section": "Z9",
+            "term": "Spring 2025",
+            "verification_status": "conflict",
+            "verification_notices": ["Section identity could not be confirmed."],
+            "verified_at": "2026-07-24T02:00:00Z",
+            "source_badges": ["live_anteater_websoc"],
+            "materialization_status": "unresolved",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    entry = payload["pending_schedule"][0]
+    assert "verification_status" not in entry
+    assert "verification_notices" not in entry
+    assert "source_badges" not in entry
+    assert payload["events"] == []
+
+
+def test_schedule_refresh_upgrades_unresolved_entry_without_deleting_it(
+    app_client,
+    fake_schedule_catalog,
+    monkeypatch,
+):
+    from app.data import db
+
+    session_id = sessions_data.create_session(
+        "demo_001",
+        title="Schedule refresh fixture",
+        term_scope="Spring 2025",
+    )
+    added = app_client.post(
+        "/api/schedule/add",
+        json={
+            "session_id": session_id,
+            "course_id": "COMPSCI161",
+            "section": "Z9",
+            "term": "Spring 2025",
+            "verification_status": "unverified",
+            "verification_notices": [
+                "Section could not be resolved; no calendar block was created."
+            ],
+            "materialization_status": "unresolved",
+        },
+    )
+    assert added.status_code == 200
+    assert added.json()["events"] == []
+
+    def fake_live(course_id, term, **kwargs):
+        assert (course_id, term) == ("COMPSCI161", "2025 Spring")
+        assert kwargs["force_refresh"] is True
+        return {
+            "found": True,
+            "source": "live_anteater_websoc",
+            "is_live": True,
+            "stale": False,
+            "retrieved_at": "2026-07-24T09:30:00Z",
+            "sections": [
+                {
+                    "section_code": "99999",
+                    "section_num": "Z9",
+                    "section_type": "Lec",
+                    "days": "TuTh",
+                    "start_time": "14:00",
+                    "end_time": "15:20",
+                    "location": "DBH 1500",
+                    "instructors": ["TESTER, A."],
+                    "status": "OPEN",
+                    "is_cancelled": False,
+                    "seats_open": 4,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(db, "get_live_sections", fake_live)
+    refreshed = app_client.post(
+        "/api/schedule/refresh",
+        json={"session_id": session_id},
+    )
+
+    assert refreshed.status_code == 200
+    payload = refreshed.json()
+    assert payload["ok"] is True
+    assert payload["timed_out"] is False
+    assert len(payload["pending_schedule"]) == 1
+    entry = payload["pending_schedule"][0]
+    assert entry["course_id"] == "COMPSCI161"
+    assert entry["section"] == "Z9"
+    assert entry["data_status"] == "current"
+    assert entry["materialization_status"] == "resolved"
+    assert entry["sources"] == ["live_anteater_websoc"]
+    assert entry["materialized_section"]["section_code"] == "99999"
+    assert [(event["day"], event["section_code"]) for event in payload["events"]] == [
+        ("Tue", "99999"),
+        ("Thu", "99999"),
+    ]
+    assert payload["schedule_validation"]["unknowns"] == []
+
+    monkeypatch.setattr(db, "get_live_sections", lambda *_args, **_kwargs: None)
+    unavailable = app_client.post(
+        "/api/schedule/refresh",
+        json={"session_id": session_id},
+    ).json()
+    assert len(unavailable["pending_schedule"]) == 1
+    assert unavailable["pending_schedule"][0]["materialization_status"] == "resolved"
+    assert any(
+        "planning item was kept" in notice
+        for notice in unavailable["pending_schedule"][0]["notices"]
+    )
+
+
+def test_live_materialized_sections_participate_in_conflict_validation(
+    app_client,
+    fake_schedule_catalog,
+    monkeypatch,
+):
+    from app.data import db
+
+    session_id = sessions_data.create_session(
+        "demo_001",
+        title="Live conflict fixture",
+        term_scope="Spring 2025",
+    )
+    for course_id, section in (("COMPSCI161", "Z9"), ("IN4MATX43", "Y8")):
+        response = app_client.post(
+            "/api/schedule/add",
+            json={
+                "session_id": session_id,
+                "course_id": course_id,
+                "section": section,
+                "term": "Spring 2025",
+            },
+        )
+        assert response.status_code == 200
+
+    def fake_live(course_id, term, **_kwargs):
+        section_num = "Z9" if course_id == "COMPSCI161" else "Y8"
+        section_code = "99999" if course_id == "COMPSCI161" else "88888"
+        return {
+            "found": True,
+            "source": "live_anteater_websoc",
+            "is_live": True,
+            "stale": False,
+            "retrieved_at": "2026-07-24T09:30:00Z",
+            "sections": [
+                {
+                    "section_code": section_code,
+                    "section_num": section_num,
+                    "section_type": "Lec",
+                    "days": "TuTh",
+                    "start_time": "14:00",
+                    "end_time": "15:20",
+                    "location": "DBH 1500",
+                    "instructors": ["TESTER, A."],
+                    "status": "OPEN",
+                    "is_cancelled": False,
+                    "seats_open": 4,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(db, "get_live_sections", fake_live)
+    payload = app_client.post(
+        "/api/schedule/refresh",
+        json={"session_id": session_id},
+    ).json()
+
+    assert len(payload["pending_schedule"]) == 2
+    assert len(payload["events"]) == 4
+    assert payload["schedule_validation"]["valid"] is False
+    conflict = next(
+        issue
+        for issue in payload["schedule_validation"]["conflicts"]
+        if issue["type"] == "time_conflict"
+    )
+    assert conflict["type"] == "time_conflict"
+    assert {
+        section["course_id"] for section in conflict["sections"]
+    } == {"COMPSCI161", "IN4MATX43"}
+
+
 def test_schedule_mutations_persist_pending_schedule_to_session_state_file(
     app_client,
     fake_schedule_catalog,

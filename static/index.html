@@ -6,8 +6,8 @@
 <title>ZotAdvisor — Academic Planning Console</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..24,300..500,0..1,0&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/styles/tokens.css?v=20260723-2">
-<link rel="stylesheet" href="/static/styles/components.css?v=20260723-2">
+<link rel="stylesheet" href="/static/styles/tokens.css?v=20260814-m17">
+<link rel="stylesheet" href="/static/styles/components.css?v=20260814-m17">
 </head>
 <body>
 
@@ -20,8 +20,18 @@
     ZotAdvisor
   </div>
   <div class="topbar-sep"></div>
-  <div class="term-display" id="termDisplay" aria-label="Current academic term"
-       aria-live="polite">Term: Loading…</div>
+  <div class="term-control" id="termControl">
+    <label class="sr-only" for="termSelect">Conversation default term</label>
+    <select class="term-select" id="termSelect"
+            aria-label="Conversation default term"
+            onchange="handleTermSelection(event)" disabled>
+      <option value="__auto__">Auto · Loading…</option>
+    </select>
+    <button class="term-restore" id="termRestoreAuto" type="button"
+            onclick="restoreAutoTerm()" hidden>Restore Auto</button>
+    <span class="term-error" id="termError" role="status"
+          aria-live="polite"></span>
+  </div>
   <div class="topbar-right">
     <div class="topbar-status"><span class="dot"></span>System ready</div>
     <button class="topbar-btn topbar-icon-btn" id="settingsBtn"
@@ -157,6 +167,11 @@
     <div class="schedule-header">
       <div class="schedule-header-title">Weekly Schedule</div>
       <span class="pill" id="scheduleCount">0 courses</span>
+      <button class="schedule-refresh"
+              id="scheduleRefreshBtn"
+              onclick="refreshSchedule()"
+              aria-label="Refresh schedule data"
+              title="Refresh live section status without removing planning items">Refresh</button>
       <button class="schedule-clear"
               id="scheduleClearBtn"
               onclick="clearSchedule()"
@@ -272,6 +287,14 @@
 
       <!-- ─ Step 4: Completed courses (single column + search + A-Z nav) ── -->
       <div id="wizardStep4" style="display:none;">
+        <label class="wizard-catalog-year">
+          <span>Catalog year (optional)</span>
+          <input type="text" id="wizardCatalogYear"
+                 placeholder="e.g. 2024-2025"
+                 inputmode="numeric"
+                 onchange="wizardState.catalog_year=this.value.trim()">
+          <small>Required before ZotAdvisor can confirm whether a course counts toward your degree.</small>
+        </label>
         <div class="wizard-matrix-label">
           <span>Selection Matrix</span>
           <button class="wizard-matrix-clear" id="wizardClearAll" onclick="wizardClearCourses()">Clear All</button>
@@ -439,14 +462,14 @@
   </div>
 </div>
 
-<script src="/static/js/api-client.js?v=20260723-2"></script>
-<script src="/static/js/chat.js?v=20260723-2"></script>
-<script src="/static/js/cards.js?v=20260723-2"></script>
-<script src="/static/js/schedule.js?v=20260723-2"></script>
-<script src="/static/js/sessions.js?v=20260723-2"></script>
-<script src="/static/js/profile-memory.js?v=20260723-2"></script>
-<script src="/static/js/auth.js?v=20260723-2"></script>
-<script src="/static/js/onboarding.js?v=20260723-2"></script>
+<script src="/static/js/api-client.js?v=20260814-m17"></script>
+<script src="/static/js/chat.js?v=20260814-m17"></script>
+<script src="/static/js/cards.js?v=20260814-m17"></script>
+<script src="/static/js/schedule.js?v=20260814-m17"></script>
+<script src="/static/js/sessions.js?v=20260814-m17"></script>
+<script src="/static/js/profile-memory.js?v=20260814-m17"></script>
+<script src="/static/js/auth.js?v=20260814-m17"></script>
+<script src="/static/js/onboarding.js?v=20260814-m17"></script>
 
 </body>
 </html>

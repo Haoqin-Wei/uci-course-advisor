@@ -1,14 +1,14 @@
 # UCI Course Advisor Roadmap
 
-> 更新日期：2026-07-23
+> 更新日期：2026-08-14
 >
-> 当前目标：M14「Restriction Evidence Pipeline 可靠性改造」已完成。
+> 当前目标：M17「多学期简写、严格 Term Guard 与官方 WebSoc 历史开课链路」已完成。
 >
 > 执行规则：严格按阶段推进。每一阶段通过验收后，再进入下一阶段；README 在全部工程调整完成后最后更新。
 
 ## 1. 当前定位
 
-项目已经完成 M0-M14 的主要产品、数据验证、联网搜索、WebSoc workflow、统一学期上下文、跨学期 Schedule 与 restriction evidence pipeline。
+项目已经完成 M0-M14 的主要产品、联网搜索、WebSoc workflow、统一学期上下文、跨学期 Schedule 与 restriction evidence pipeline。M15 Check 方案已归档，不进入 V1。M16 保留 M13 的 automatic term、canonical parsing、数据发布门禁和跨学期 Schedule，同时已用“稳定 `default_term` + 临时 `query_terms`”取代由聊天内容驱动的 `auto/pinned` 切换与只读 term UI。
 
 ### 已实现
 
@@ -40,7 +40,23 @@
 - M14 保留 M10–M12 的固定 WebSoc 入口，并补齐查询分类、正文分块、时间线解析、证据门禁、事实校验和抓取 URL 可见性。
 - 程序负责抓取和确定限制类型、日期、适用对象、例外与来源；LLM 只负责简短解释，未验证事实会被阻断并由确定性答案替换。
 
-## 2. M13 已完成目标与非目标
+### M16 已完成
+
+- conversation 使用稳定的 `default_term`；`auto` 只随系统时间与发布状态更新，`manual` 只由用户通过 selector/API 修改。
+- 用户问题只生成本轮 `query_terms`，不能修改 `default_term` 或 `term_mode`。
+- 每轮向 Agent 注入 Claude 风格的结构化 runtime context；XML 只负责分隔语义，后端 tool guard 才是 term 正确性的最终保障。
+- 前端恢复 conversation 级 term selector，并同时显示默认学期与本轮查询学期。
+- selector 显示与 mutation API 使用同一 WebSoc 发布口径；Profile 全课程列表改为本地优先、重启可复用缓存，消除了冷启动的串行全量 API 抓取。
+
+### V1 应答链路
+
+- Agent/LLM 的 token 直接流向前端，不再缓存整段回答等待 Check。
+- 不再二次改写正文、插入句子 badge、修改推荐卡片或返回 validation report。
+- 应答模板强制跟随用户语言，并要求课程事实来自本轮工具结果；不确定内容就地说明。
+- Markdown 表格由 Agent 一次生成并直接渲染，后处理不再向表格行中插入标记。
+- Schedule 的时间冲突和手动实时刷新继续保留；它们是规划功能，不是答案 Check。
+
+## 2. M13 已完成目标、M16 取代范围与非目标
 
 ### 已完成目标
 
@@ -52,6 +68,22 @@
 4. 前端删除全局 selector，只显示 conversation 对应的只读 canonical term。
 5. Schedule entry 保存自己的 term，并允许所有时间 overlap 非阻断加入。
 6. 同步、缓存、stale 和 fallback 行为有离线自动化测试及可观测性。
+
+### M16 取代的 M13 语义
+
+以下内容只保留为 M13 历史记录，不再代表 M16 完成后的产品契约：
+
+1. 用户在问题中明确提到一个学期并成功回答后，conversation 自动变为 `pinned`。
+2. 相对学期查询、工具成功结果或 validation 结果可以提交 conversation term change。
+3. 顶部 term 只能只读展示，用户不能通过 selector 明确修改默认学期。
+4. `term`、`effective_term`、`planning_term`、`discussion_terms` 与 `query_terms` 同时承担默认状态和本轮查询状态。
+
+M16 完成后：
+
+1. `default_term` 是 conversation 稳定默认值。
+2. `query_terms` 是本轮临时查询范围。
+3. 只有 term selector/API 可以把 conversation 切到 `manual` 或恢复 `auto`。
+4. Chat、Agent、LLM、tool、回答成功/失败和数据是否可用均无权修改 `default_term`。
 
 ### 暂不开发
 
@@ -85,6 +117,8 @@
 | M12 | WebSoc Restriction Workflow 可靠性 | 已完成 | M10、M11 |
 | M13 | 自动学期上下文与跨学期 Schedule | 已完成 | M2–M7、M10–M12 |
 | M14 | Restriction Evidence Pipeline 可靠性改造 | 已完成 | M10–M13 |
+| M15 | 非阻断式 Data Check 与确定性局部纠正 | 已归档，不进入 V1 | M4、M7、M13、M14 |
+| M16 | 稳定默认学期、显式 selector 与临时查询范围 | 已完成 | M13、M14、V1 scope |
 
 工作量按 1 名开发者估算，不是发布日期承诺。
 
@@ -1693,7 +1727,1262 @@ M14 在现有 `websoc_department_restrictions` 固定 workflow 上补强，不�
 - 前端与日志能证明实际抓了哪些 URL，同时不保存网页正文。
 - focused、完整离线回归和真实只读 smoke 均通过后，M14 才可标记完成。
 
-## 19. 跨阶段 Definition of Done
+## 19. M15 — Data Check 设计稿（V1 已取消，保留为历史研究）
+
+> 状态：2026-07-25 决定不纳入 V1；运行代码、接口、前端状态和测试已移除。
+>
+> 当前 V1 契约：Agent 输出直接展示；事实约束前移到工具调用和应答模板。
+> 以下 M15.1–M15.20 仅保存此前的 brainstorm/设计研究，不代表当前实现，
+> 也不得据此恢复 pre-display buffering、正文改写或 Developer Trace。
+
+### M15.1 已确认的产品决策
+
+- [x] 对聊天、课程卡片和 Schedule 均采用非阻断策略；系统不再输出
+  “I can’t provide that answer reliably” 一类拒答。
+- [x] Check 必须在答案首次展示前完成；不在用户看到正文后异步改写内容。
+- [x] Check 新增延迟目标为 P95 不超过 2 秒，3 秒达到硬 deadline 后降级返回，
+  不等待失控的外部请求。
+- [x] 纠正完全由确定性规则和权威数据完成；不增加第二次 LLM 调用。
+- [x] 只有唯一、明确且高置信度的证据才允许自动纠正；不确定时保留原意并提示风险，
+  不为了提高纠正覆盖率而猜测。
+- [x] 自由文本中的错误不能继续按字符删除；无法安全修改局部字段时，
+  删除整个事实句并插入标准化正确说明。
+- [x] 普通学生只看到与答案对应的简短风险提示；规则编号、候选证据、
+  原始值、纠正值和决策过程仅在 Developer Mode 中展示。
+- [x] 课程卡片即使无法核验、section 已取消或存在冲突，也继续展示“＋”；
+  加入 Schedule 后携带风险状态，不伪装成已验证项目。
+- [x] 第一版必须覆盖：
+  1. 课程是否存在
+  2. 先修课与选课限制
+  3. 学生是否满足条件
+  4. 具体学期开课、section 状态和余位
+  5. 是否属于专业毕业要求。
+- [x] 当前学生信息来自手动填写，只有年级、专业、已修课程等字段；没有成绩时，
+  所有最低成绩条件必须返回 `unknown`，不能假定学生已经满足。
+- [x] 当前按独立学生项目设计；未来 UCI 账号、成绩单或 DegreeWorks 接入不在
+  M15 范围内，并且必须单独经过 UCI 隐私、安全和系统接入评审。
+
+### M15.2 当前失败基线与根因
+
+| 当前实现 | 直接后果 | M15 处理 |
+|---|---|---|
+| `policies.py` 在任意 validator 建议 `BLOCK` 或累计 2 条 error 时全局阻断 | 两个局部错误会吞掉整段可用答案 | 删除面向回答的 `BLOCK` 和 error 数量阈值 |
+| `RestrictionClaimValidator` 和 `ConsistencyValidator` 直接返回 `BLOCK` | 限制日期或 retrieval 状态异常时整段拒答 | 用 verified facts 标准句替换，或保留并标为 unknown |
+| `apply.py` 的 `REMOVE` 按字符 span 删除 | 产生 `Avoid **** unless` 一类残缺句 | 以 `render_unit_id` 为单位替换整句 |
+| `CardGroundingValidator` 对错误卡片使用 `REMOVE` | 用户看不到候选卡片，也无法保留规划意图 | 修正结构化字段或把卡片标为 risky，仍允许加入 |
+| `CourseExistsValidator` 把“本地 catalog 未找到”直接当成课程不存在 | partial/stale catalog 会产生 `HALLUCINATED_COURSE_ID` 误报 | 先检查 coverage，再做 targeted live lookup；缺数据为 unknown |
+| `LATERAL_COURSE_MENTION` 虽为 INFO/KEEP，前端仍展示 | 学生看到内部 retrieval 诊断，以为答案有错 | 只写 Developer Trace，不进入学生提示 |
+| `cards.js` 渲染所有 issue 的 code/message | 技术噪音取代可行动建议 | 前端改用独立的 `user_notices` |
+| validation JSONL 保存 session ID、用户原问题和 LLM 原文 | 独立项目不必要地扩大个人数据与调试日志风险 | 默认日志最小化、假名化和限期删除 |
+
+截图中的现象可由现有策略直接解释：`LATERAL_COURSE_MENTION` 本身只是
+“课程不在本轮 retrieval set”，不代表错误；但两个
+`HALLUCINATED_COURSE_ID` 会达到全局 `BLOCK_THRESHOLD_ERRORS = 2`，
+最终由 `_build_blocked_answer()` 替换全部正文。
+
+### M15.3 目标架构
+
+```mermaid
+flowchart LR
+  Q["用户问题与手动 Profile"]
+  G["现有 LLM + Tools<br/>一次生成"]
+  A["Answer / Cards<br/>候选输出"]
+  X["Claim Extractor<br/>句子 + 结构化字段"]
+  R["Evidence Resolver<br/>并行、field-scoped"]
+  S1["UCI Catalog / 官方页面"]
+  S2["Live WebSoc / Anteater"]
+  S3["Student Declaration"]
+  S4["Local Snapshot / Last Known"]
+  D["Decision Engine<br/>verified / corrected / unknown / stale / conflict"]
+  C["Deterministic Corrector<br/>整句模板 + card field patch"]
+  U["User Notices<br/>简短、可行动"]
+  T["Developer Trace<br/>证据、规则、耗时"]
+  O["最终答案 + Cards + Schedule 风险状态"]
+
+  Q --> G
+  G --> A
+  A --> X
+  X --> R
+  R --> S1
+  R --> S2
+  R --> S3
+  R --> S4
+  S1 --> D
+  S2 --> D
+  S3 --> D
+  S4 --> D
+  D --> C
+  D --> U
+  D --> T
+  C --> O
+  U --> O
+  T -. "Developer Mode" .-> O
+```
+
+目标实现拆成六个边界明确的组件：
+
+1. `ClaimExtractor`
+   - 将答案按句子、列表项、表格行和卡片字段分成稳定的 `render_unit`。
+   - 提取课程 ID、term、section code、余位、先修关系、资格和专业要求等 claim。
+   - 同一次 LLM 响应可以附带结构化 claim metadata，但不能信任其完整性；
+     后端 deterministic parser 必须扫描最终正文作为 backstop。
+2. `EvidenceResolver`
+   - 根据 `claim_type + subject + term + field` 只查询必要来源。
+   - 官方页面、Anteater、学生声明和本地快照并行获取，不串行堆叠等待时间。
+   - 每个 resolver 受共享 deadline、并发上限和 circuit breaker 控制。
+3. `SourceResolver`
+   - 比较同一字段的候选证据、更新时间、term、coverage 和 completeness。
+   - 只在相同语义字段内解决冲突，不能用学生声明覆盖 Catalog 课程事实，
+     也不能用历史 GPA 覆盖实时 section 状态。
+4. `DecisionEngine`
+   - 输出事实状态和动作，不直接拼接用户文案。
+   - 不存在 `block_answer` 或 `remove_card` 动作。
+5. `DeterministicCorrector`
+   - 对正文替换整个 `render_unit`，对卡片直接 patch 结构化字段。
+   - 所有替换都由固定模板和 evidence value 生成，并留下 before/after trace。
+6. `PresentationMapper`
+   - 从内部决策生成普通用户的短提示和 Developer Mode 的完整 trace。
+   - 用户提示、开发者诊断和日志是三个不同的数据视图。
+
+### M15.4 核心数据契约
+
+新增 versioned schema，避免继续让 `Issue.message` 同时承担决策、日志和 UI：
+
+```text
+Claim
+  claim_id
+  render_unit_id
+  claim_type
+  subject
+  field
+  asserted_value
+  term
+  source_requirement
+
+Evidence
+  evidence_id
+  source_kind
+  source_url_or_id
+  source_updated_at
+  retrieved_at
+  term
+  field
+  value
+  coverage_status
+  completeness
+
+Decision
+  claim_id
+  status
+  selected_evidence_id
+  resolved_value
+  confidence
+  reason_code
+  correction
+  user_notice
+
+Correction
+  render_unit_id
+  mode = replace_sentence | patch_card_field
+  original_value
+  corrected_value
+  replacement_text
+```
+
+`Decision.status` 只允许：
+
+- `verified`：claim 与适用证据一致。
+- `corrected`：存在唯一明确证据，已确定性纠正。
+- `unknown`：证据缺失、不完整、学生字段不足或 checker 超时。
+- `stale`：实时查询失败，使用带时间戳的最近一次缓存。
+- `conflict`：候选来源冲突且无法按既定规则唯一选择。
+- `unsupported`：完整权威数据明确不支持该 claim，但没有唯一替代值。
+
+响应层动作只允许：
+
+- `keep`
+- `replace_sentence`
+- `patch_card`
+- `annotate`
+
+禁止重新引入：
+
+- `block`
+- `suppress_answer`
+- `remove_card`
+- `drop_schedule_entry`
+- 根据 error 数量升级成全局动作。
+
+### M15.5 数据来源与冲突规则
+
+所有来源作为并行 evidence provider，但每类事实仍有明确的 field ownership：
+
+| 事实字段 | 并行来源 | 正常选择规则 | 失败或缺字段 |
+|---|---|---|---|
+| 课程存在、名称、学分、课程级别 | UCI Catalog、Anteater Courses、本地 Catalog snapshot | 同值则 verified；冲突时比较更新时间，无可比时间默认官网 | targeted lookup 仍无结果时为 unknown/unsupported，不能仅凭 partial 本地库判不存在 |
+| 先修、corequisite、restriction、最低成绩 | UCI Catalog、Anteater Courses、官方院系页面 | 比较同一 catalog/term 适用范围；较新者优先，无时间官网优先 | 保留原 claim 并提示需核对，或用唯一 official tree 生成标准句 |
+| section、状态、余位、waitlist | UCI WebSoc、Anteater WebSoc live endpoint | 每次回答必须发起 live query；值冲突时使用更新时间较新者 | live 失败时只允许最近成功缓存，并显示更新时间 |
+| 专业毕业要求 | 对应 catalog year 的 UCI Catalog、Anteater Programs | catalog year 相同后再比较；较新者优先，无时间官网优先 | 缺 catalog year 时为 unknown，不用当前要求替学生断言 |
+| 学生专业、年级、已修课程 | 学生手动声明 | 仅作为个人事实；允许校验格式、课程 ID 和重复项 | 不静默改写用户记录，提示确认 |
+| 学生是否满足条件 | 权威规则 + 学生声明 | 三值逻辑计算 `met / not_met / unknown` | 缺成绩、placement、transfer/AP 或身份字段时必须 unknown |
+| 本地 snapshot | 版本化 CSV/SQLite、last-known live cache | 只做性能副本或 live failure fallback | 必须保留 source、source_updated_at、retrieved_at 和 stale 状态 |
+
+同一字段的 deterministic 冲突算法：
+
+1. 丢弃 term、catalog year 或 subject 不匹配的证据。
+2. 丢弃 completeness 不足以支持该字段的证据，但保留到 Developer Trace。
+3. 规范化值后若一致，选择 provenance 更完整的记录。
+4. 两方都有可比较的 `source_updated_at` 时，选择较新的值。
+5. 无法比较更新时间时，UCI 官方页面优先于 API 聚合结果。
+6. 仍不能唯一决定时返回 `conflict`，不得自动纠正。
+7. `retrieved_at` 只能说明系统何时取得数据，不能冒充来源更新时间。
+
+Live availability 的特殊规则：
+
+- 正常 Check 不使用 5 分钟 TTL 命中代替实时请求，必须尝试 refresh。
+- 实时请求失败时，可使用最多 5 分钟前的 last-known snapshot，
+  状态为 `stale`，文案必须包含 “截至 HH:MM”。
+- 缓存超过 5 分钟或不存在时，余位返回 `unknown`，不继续显示无时间说明的数字。
+- “开课”与“有余位”是不同 claim；课程开设可以 verified，余位仍可 unknown。
+
+### M15.6 三值 Eligibility 与专业要求
+
+先修和资格计算不得继续简化成布尔值：
+
+- `met`：所有必要条件均有明确证据满足。
+- `not_met`：至少一个必要条件有明确证据不满足。
+- `unknown`：没有明确不满足条件，但至少一个必要字段无法确认。
+
+具体规则：
+
+- 已修课程存在于学生声明中，只能证明“学生声明修过”，不能证明达到最低成绩。
+- 无成绩时，`minimum grade of C` 等节点一律为 unknown，并提示自行核对。
+- AND tree 中存在 unknown 且没有 not_met，整体为 unknown。
+- OR tree 中任一分支 met，整体为 met；所有分支 not_met 才是 not_met；
+  其余情况为 unknown。
+- corequisite 可以由当前 Schedule/计划中的课程满足，但必须明确标成 concurrent。
+- 专业、年级、School、New Only 和 course-specific restriction 分开计算，
+  不从专业名称猜测 School affiliation。
+- 毕业要求必须绑定 `catalog_year`；M15 在 Profile 增加可选字段，
+  缺失时只说“该课程出现在某 catalog year 的要求中”，不说“你的专业必修”。
+- 学生手动资料的格式错误、重复课程和不存在课程可提示确认，
+  但 Check 不得静默删除原始 Profile 数据。
+
+### M15.7 规则矩阵
+
+| Rule | 触发条件 | 唯一明确证据 | 不确定/冲突 | 普通用户效果 | Card / Schedule |
+|---|---|---|---|---|---|
+| `COURSE_EXISTENCE` | 答案或卡片出现课程 ID | 保留或规范化 ID；错误 ID 仅在唯一候选时纠正 | 标记“课程编号无法确认” | 对应句旁短提示 | 卡片保留；“＋”可用，加入后状态 `unverified` |
+| `LATERAL_MENTION` | 课程存在但不在 retrieval set | targeted lookup 后继续 | lookup 失败记 developer info | 不展示 | 不改变卡片 |
+| `PREREQUISITE_RULE` | 陈述先修、corequisite 或最低成绩 | 用 prerequisite tree 生成标准句 | 标记“先修条件未完全核验” | 显示纠正或 unknown | card 的 prereq 状态 patch |
+| `STUDENT_ELIGIBILITY` | 陈述学生能否选课 | 三值引擎给出 met/not_met | 缺成绩等为 unknown | “成绩条件需自行确认” | 仍可加入，附 eligibility risk |
+| `TERM_OFFERING` | 声称课程在 term 开设 | live term sections 非空 | live 失败使用合规 fallback 或 unknown | “开课状态暂未实时确认” | 卡片保留 |
+| `SECTION_IDENTITY` | 卡片含 section code | live source 唯一匹配后 patch 字段 | 未找到或多候选 | “Section 无法确认” | 仍可加入；unresolved 项不伪造日历时间块 |
+| `LIVE_SEATS` | 显示 OPEN/FULL/余位数字 | 用 live 最新值 patch | API 失败用 <=5 分钟缓存，否则 unknown | “实时”或“缓存截至…” | Schedule 保留状态和时间戳 |
+| `MAJOR_REQUIREMENT` | 声称属于毕业要求 | 匹配 major + catalog year 的 requirement tree | catalog year/规则缺失 | “是否计入你的要求需确认” | 不改变加入能力 |
+| `RESTRICTION_FACT` | 限制类型、日期、例外、资格错误 | 用 verified facts 整句替换 | partial/conflict 时标准 unknown 句 | 不拒答，保留来源提示 | 相关卡片附 restriction risk |
+| `ANSWER_WITHOUT_RETRIEVAL` | 正文有课程但无 retrieval metadata | targeted lookup 成功后验证 | lookup 失败记 unknown | 不拒答 | 不删除卡片 |
+| `SOURCE_CONFLICT` | 相同字段来源值不同 | 按更新时间/官网 fallback 决定 | 无法唯一决定 | 简短“来源暂不一致” | 保存 conflict 状态 |
+| `CHECK_TIMEOUT` | 共享 deadline 到期 | 已完成 claim 正常使用 | 未完成 claim 为 unknown/stale | “部分信息暂未完成核验” | 所有卡片和“＋”保留 |
+| `CHECK_INTERNAL_ERROR` | parser/resolver/renderer 异常 | 其他 checker 继续 | 对受影响 claim 降级 unknown | 不显示堆栈或规则码 | 不阻断 |
+
+自动纠正资格必须同时满足：
+
+- claim 边界明确，能定位到唯一 `render_unit` 或 card field。
+- source scope、term、catalog year 与问题一致。
+- 不存在 unresolved source conflict。
+- replacement value 唯一。
+- correction rule 有冻结 fixture 和回归测试。
+
+任一条件不满足时只能 `annotate`，不能自动修改。
+
+### M15.8 确定性纠正与渲染
+
+正文处理：
+
+- 先进行 Markdown-aware sentence/list/table segmentation，产生稳定的 `render_unit_id`。
+- 课程 ID alias 规范化可以做 token patch，但事实关系错误必须替换整句。
+- 标准句按 claim type 维护模板，例如：
+  - `根据 UCI Catalog，{course} 的先修要求是 {prerequisite_text}。`
+  - `根据 {source}，{course} 在 {term} 有开课记录。`
+  - `余位截至 {updated_at} 为 {seats_open}；该数字可能继续变化。`
+  - `该条件要求最低成绩 {grade}，目前没有你的成绩数据，无法确认。`
+- 删除整句前必须保留相邻 Markdown 结构，避免破坏列表、链接和表格。
+- replacement renderer 失败时回退原句 + unknown notice，不能回退字符删除。
+
+卡片处理：
+
+- `course_id`、title、section、status、seat、prerequisite status、requirement status
+  分字段 patch，不重建整张卡。
+- 卡片保留 `original_claims` 只供 Developer Mode 使用；普通 UI 读取 corrected fields。
+- 无唯一候选时不把“相似课程”偷偷换成另一门课。
+- 卡片新增：
+  - `verification_status`
+  - `verification_notices`
+  - `verified_at`
+  - `source_badges`
+  - `corrections_applied`
+  - `schedule_materialization_status`。
+
+### M15.9 Schedule 非阻断语义
+
+现有 Schedule 已经允许时间冲突项写入 `pending_schedule`，M15 保留并扩展该原则：
+
+- 点击“＋”始终可以保存用户规划意图。
+- Schedule entry 新增状态：
+  - `verified`
+  - `corrected`
+  - `unverified`
+  - `stale`
+  - `conflict`。
+- 对可解析 section，继续生成日历时间块，并把 full/cancelled/time conflict 作为 badge 和侧栏提示。
+- 对不存在或无法解析的 section，仍在 Schedule 列表显示，
+  `materialization_status = unresolved`，但不伪造 days/time 日历块。
+- 对同一时间冲突的两个 section，两者都保留并高亮冲突关系。
+- “＋”不是正式注册动作；界面必须继续说明 Schedule 是 planning draft，
+  余位和资格需在官方系统确认。
+- 后续刷新可以把 unresolved/stale entry 重新核验并升级状态，
+  但不能在后台静默删除用户已经加入的项。
+
+### M15.10 普通学生前端
+
+删除当前默认展开的 `Data check · N issues` 技术面板，改成三层轻量反馈：
+
+1. 正文级
+   - 仅在发生纠正或 unknown 时，在对应句后显示小型 badge。
+   - 示例：`已按 UCI Catalog 修正`、`成绩条件待确认`、
+     `实时数据暂不可用`、`缓存截至 11:20`。
+2. 卡片级
+   - 卡片顶部显示一个总体状态，不列 rule code。
+   - 纠正过的具体字段可以短暂高亮，用户能看出改了什么。
+   - “＋”始终保留。
+3. 回答底部
+   - 只有存在用户可行动风险时才显示一行汇总。
+   - 示例：`已修正 1 项课程信息；另有 1 项成绩条件需要你确认。`
+   - 纯 `LATERAL_MENTION`、内部 parser info 和成功验证不生成 footer。
+
+普通模式不得显示：
+
+- `HALLUCINATED_COURSE_ID` 等内部 code。
+- 原始 evidence payload。
+- validator 名称、堆栈、置信阈值。
+- “4 issues / 6 issues” 这类没有行动意义的计数。
+
+历史 session 重放使用当时持久化的 user notices 和 correction result，
+不因打开历史记录重新联网；用户主动 refresh 当前 Schedule 时再重新查询 live 数据。
+
+### M15.11 Developer Mode
+
+Developer Mode 在现有前端增加受控 toggle，显示：
+
+- trace ID、schema version、总耗时和各阶段耗时。
+- 每个 `claim_id`、`render_unit_id`、rule code 和最终状态。
+- 原始值、纠正值、replacement template。
+- 所有候选 evidence 的 source、term、catalog year、updated_at、retrieved_at、
+  coverage、completeness。
+- conflict resolution 选中或放弃某个来源的原因。
+- live query、cache fallback、timeout、circuit breaker 状态。
+- 原始/纠正后的卡片字段 diff。
+
+Developer Mode 仍不显示：
+
+- API key、cookie、access token、密码。
+- 与本次决策无关的完整学生 Profile。
+- 未经清洗的整页网页正文。
+
+生产环境默认关闭 Developer Mode；独立项目私测阶段只允许显式授权的开发者账号打开，
+并记录访问事件。
+
+### M15.12 延迟、并发与降级
+
+性能预算按新增 Check wall time 计算：
+
+| 阶段 | P95 预算 |
+|---|---:|
+| claim extraction / segmentation | 100 ms |
+| 本地 Catalog、Profile 和 requirement evaluation | 150 ms |
+| 并行 live/official evidence requests | 1,500 ms |
+| decision + deterministic correction | 150 ms |
+| serialization / UI metadata | 100 ms |
+| 预留抖动 | 0–500 ms |
+| 总目标 | <= 2,000 ms |
+| 全局 hard deadline | 3,000 ms |
+
+实现要求：
+
+- 所有独立 evidence 请求并行执行，共享一个 deadline，不为每个来源分别等待 2 秒。
+- 对相同 course/term/field 在单 turn 内去重。
+- 超时后取消未完成任务，已完成 evidence 继续生效。
+- API 错误、rate limit、DNS、parser crash 都映射成 claim-level unknown/stale。
+- 不因为日志写入、Developer Trace 或 metrics 失败延迟最终回答。
+- 不调用第二次 LLM；标准句 renderer 必须是本地纯函数。
+
+### M15.13 隐私与独立项目边界
+
+M15 采用保守默认值，但不宣称技术设计等同于法律意见：
+
+- onboarding 明确说明学生资料由学生主动提供、用途是课程规划与资格提示，
+  不是 UCI 官方记录或正式 degree audit。
+- 默认 validation log 不再保存完整 user message、完整 LLM answer、
+  真实 session ID 或完整 Profile snapshot。
+- 日志只保存：
+  - 随机 trace ID
+  - 假名化 session key
+  - claim/rule/status
+  - 与该判断直接相关的最少课程/专业字段
+  - source metadata、timing 和 correction diff。
+- 默认最小化日志保留 30 天后删除。
+- 只有学生主动开启一次性 diagnostics 时才保存完整诊断快照，
+  最多保留 7 天，并提供提前删除能力。
+- 日志和 Developer Mode 必须有访问控制；禁止提交到 Git。
+- 新增测试扫描 token、email、student ID、raw prompt/profile 等敏感字段。
+- 如果未来由 UCI 部门运营或接入正式学生记录，必须新建独立里程碑，
+  完成 FERPA/UC policy、数据处理、授权、审计、留存和供应商评审；
+  M15 不预设学校会批准接入。
+
+### M15.14 质量指标与发布门槛
+
+首版优先 precision，不用低置信纠正换取 recall：
+
+| 指标 | 定义 | 首版门槛 |
+|---|---|---:|
+| 自动纠正准确率 | 正确自动纠正数 / 全部自动纠正数 | >= 99% |
+| 干净事实误改率 | 原本正确却被修改的 claim / 全部 verified-clean claim | <= 0.5% |
+| 用户可见误报率 | 实际无问题却显示风险的 claim / 全部提示 claim | <= 2% |
+| 残缺句率 | 纠正后出现空 Markdown、断句或语法残片 | 0% |
+| 整段拒答率 | 因 Check 替换/吞掉整个答案 | 0% |
+| 卡片删除率 | 因 Check 从响应移除卡片 | 0% |
+| Schedule 写入拒绝率 | 因 Check 拒绝用户点击“＋” | 0% |
+| Check 新增延迟 | 端到端新增 wall time P95 | <= 2 秒 |
+| deadline 遵守率 | 3 秒内返回 corrected/annotated/degraded 结果 | 100% |
+| live fallback 可解释率 | 非 live 余位都有 source + timestamp + stale 标记 | 100% |
+| 默认日志敏感字段泄漏 | 自动扫描发现 raw profile/token/PII | 0 |
+
+自动纠正准确率和误报率必须在独立 golden set 上计算，不能只用开发该规则时的测试样本。
+每个 claim type 至少包含成功、明确错误、unknown、conflict、stale、timeout 和 parser failure。
+纠正 recall 单独报告但不作为首版放宽 precision 的理由。
+
+### M15.15 测试矩阵
+
+1. Characterization
+   - 固定现有截图场景：多个 lateral mentions + 1/2 个未知课程。
+   - 证明旧代码会 REMOVE/BLOCK，作为迁移前失败基线。
+2. Claim extraction
+   - 中英文课程号、`I&C SCI` alias、Markdown 粗体、链接、列表、表格。
+   - 一个句子多个 claim、一个 claim 跨多个字段、重复 mention 去重。
+3. Source resolution
+   - 官网与 Anteater 同值。
+   - 双方有更新时间且 API 更新。
+   - 双方有更新时间且官网更新。
+   - 无可比较时间时官网优先。
+   - term/catalog year 不一致不得参与比较。
+4. Course existence
+   - complete catalog 明确不存在。
+   - partial catalog 未命中但 live lookup 找到。
+   - 唯一 alias 自动纠正。
+   - 多个 fuzzy candidate 只提示、不纠正。
+5. Prerequisite / eligibility
+   - AND/OR/NOT/corequisite tree。
+   - 已修课程但缺成绩时为 unknown。
+   - 专业/年级满足、不满足和未知。
+   - 手动资料 typo/duplicate 只提示确认。
+6. Live offering / seats
+   - 每轮实际发起 live request。
+   - live 成功覆盖旧 cache。
+   - API timeout + <=5 分钟缓存。
+   - API timeout + 过期缓存转 unknown。
+   - status、capacity、enrolled、waitlist 缺字段不猜。
+7. Major requirements
+   - 正确 major + catalog year。
+   - 缺 catalog year。
+   - requirement tree 中多组选修规则。
+   - 当前 Catalog 不得覆盖旧 catalog year 的学生要求。
+8. Correction renderer
+   - 整句替换保持 Markdown 结构。
+   - 卡片字段 patch 保留其他字段。
+   - renderer 失败回退 annotate，不做 substring remove。
+9. Schedule
+   - cancelled/full/conflicting/unverified 卡片仍可点击“＋”。
+   - unresolved entry 可见但不生成虚假日历块。
+   - 后续 refresh 能升级状态但不删除 entry。
+10. Frontend
+   - 普通模式无 rule code、raw evidence 和 issue count。
+   - user notice 锚定正确句子/卡片。
+   - Developer Mode 展示完整 diff、source 和 timing。
+   - session restore 不重新联网且展示原检查时间。
+11. Chaos / performance
+   - 单 provider crash 不影响其他 provider。
+   - 全部外部 provider timeout 仍在 3 秒内返回。
+   - 并发重复请求合并。
+   - P50/P95/P99 指标可查询。
+12. Privacy
+   - 默认日志不含 user message、raw answer、email、真实 session ID、token、
+     完整 Profile。
+   - 30 天/7 天 retention job 使用 fake clock 测试。
+   - Developer Mode 权限和访问审计测试。
+
+Golden set 至少包含：
+
+- 现有 validation/schedule/restriction fixtures。
+- 历史问题经脱敏后的 replay case。
+- 人工标注的 clean answer，专门测 false positive。
+- 针对五类首发事实的 adversarial cases。
+- 冻结 Anteater/OpenAPI 和官方页面 fixture；默认 CI 不联网。
+
+### M15.16 API、持久化与兼容迁移
+
+- 新响应字段使用 `verification_report.schema_version = 2`。
+- `validation_report` v1 在一个过渡版本内保留只读兼容，但前端优先读取 v2。
+- v2 至少包含：
+  - `summary_status`
+  - `checked_at`
+  - `deadline_reached`
+  - `user_notices`
+  - `corrections`
+  - `card_states`
+  - `developer_trace_available`。
+- Developer Trace 使用单独的受控 endpoint 或受权限保护的 response field，
+  不默认发送给所有客户端。
+- session turn 持久化 v2 的 compact user view 和 correction result；
+  full trace 进入有 retention 的 diagnostics store。
+- Schedule entry schema 增加 verification/materialization 字段，并兼容没有这些字段的旧记录。
+- 迁移期间旧 `BLOCK/REMOVE` 语义先映射为 deterministic replacement、
+  sentence/card patch 或 annotate；M15-I 已删除 executable `BLOCK/REMOVE`
+  与旧前端 renderer，历史 turn JSON 仍保持可读。
+- 所有旧历史 turn 保持可读，不批量重写用户历史正文。
+
+### M15.17 分阶段实施结果
+
+1. `M15-A — Baseline 与契约`（已完成）
+   - 增加截图场景和现有 BLOCK/REMOVE characterization tests。
+   - 定义 Claim/Evidence/Decision/Correction v2 schema。
+   - 不改变生产行为。
+2. `M15-B — Evidence 与来源解析`（已完成）
+   - 建立 source adapters、field ownership、更新时间冲突算法和 coverage gate。
+   - 接入 Catalog、Anteater、WebSoc、Profile 和 last-known snapshot。
+3. `M15-C — 三值规则引擎`（已完成）
+   - 完成 course existence、prerequisite、eligibility、term/seat、
+     major requirement 五类规则。
+   - 加入 catalog year 和缺成绩 unknown 语义。
+4. `M15-D — Deterministic Corrector`（已完成）
+   - 实现 Markdown render unit、标准句模板和 card field patch。
+   - 删除 substring removal 路径；先以 shadow diff 运行。
+5. `M15-E — 非阻断 Policy 与 Schedule`（已完成）
+   - 移除 error count BLOCK、所有 validator 的直接 BLOCK 和 card REMOVE。
+   - 增加 risky card、Schedule verification/materialization 状态。
+   - 保证“＋”始终可用。
+6. `M15-F — 普通 UI 与 Developer Mode`（已完成）
+   - 用 user notices 替换现有 Data check 技术 footer。
+   - 增加句子/card badge、Schedule risk、Developer Trace 展开。
+7. `M15-G — 性能、隐私与可观测性`（已完成）
+   - 并行 resolver、共享 deadline、circuit breaker、last-known fallback。
+   - 最小化日志、retention job、Developer Mode 权限与访问审计。
+8. `M15-H — Shadow、指标与切换`（已完成）
+   - 旧 validator 与 v2 并行 shadow，对比 decision，不影响用户。
+   - 在 golden set 达到发布门槛后切换 v2 presentation。
+   - 保留单一 feature flag 回退到“只 annotate、不自动纠正”，
+     但不得回退到拒答。
+9. `M15-I — 收尾`（已完成）
+   - 删除 v1 BLOCK/REMOVE dead code 和旧前端 renderer。
+   - 更新 README、ROADMAP 进度、API schema 和运维说明。
+   - 完整离线回归、浏览器回归、性能测试和只读 live smoke。
+
+各阶段的实现与测试可以独立审查；业务切换前已通过 annotation-only
+shadow replay 与独立 golden set 门槛。
+不得把 `.idea/`、真实 validation log、用户 Profile、runtime SQLite、API cache
+或真实网页正文加入提交。
+
+### M15.18 主要文件改造地图
+
+| 范围 | 预计文件 |
+|---|---|
+| v2 types/schema | `app/validation/types.py` 或新增 `app/validation/v2/types.py` |
+| claim extraction | 新增 `app/validation/v2/claims.py` |
+| evidence/source resolution | 新增 `app/validation/v2/evidence.py`, `sources.py` |
+| three-valued rules | 新增 `app/validation/v2/rules/` |
+| deterministic correction | 新增 `app/validation/v2/corrections.py`, `templates.py` |
+| policy/application | `app/validation/policies.py`, `apply.py`, `orchestrator.py` |
+| existing validators migration | `app/validation/validators/*.py` |
+| chat response contract | `app/routers/chat.py` |
+| live data + cache | `app/data/anteater.py`, WebSoc/data cache modules |
+| Profile/catalog year | onboarding/profile/memory schema 与迁移 |
+| Schedule state | `app/routers/chat.py`, `app/scheduling/service.py` |
+| normal UI | `static/js/chat.js`, `cards.js`, `schedule.js`, component CSS |
+| Developer Mode | 新增/扩展 frontend debug module 与受控 backend endpoint |
+| privacy/metrics | `app/validation/log.py`, observability、retention script |
+| regression | `tests/test_validation_*`, schedule、frontend、privacy、performance tests |
+
+### M15.19 验收场景与最终效果
+
+必须通过的端到端场景：
+
+1. 用户问 `ICS33 的 prerequisite 呢？`
+2. LLM 正文横向提到 I&C SCI 45C、I&C SCI 33、EECS 40，
+   并错误写出 ART 9B、I&C SCI 32A。
+3. Check 对所有 course claim 做 targeted evidence lookup：
+   - lateral mention 不向学生报错。
+   - 唯一可纠正 ID 自动修正。
+   - 无唯一候选的 ID 保留为“无法确认”，不猜课程。
+   - prerequisite 用权威 tree 生成标准句。
+   - 最低成绩因 Profile 无成绩而标记 unknown。
+4. 即使存在两个以上 error，最终答案仍完整展示，不出现拒答模板。
+5. 技术 rule code 只在 Developer Mode 中可见。
+6. 课程卡片仍显示“＋”；加入 Schedule 后风险状态可见。
+7. live seat 查询成功时显示实时值和时间；失败时只显示 <=5 分钟缓存及时间，
+   否则显示 unknown。
+8. 整个 Check 新增耗时 P95 <=2 秒，最迟 3 秒降级完成。
+
+用户最终感知：
+
+- 不再因为局部课程错误失去整段答案。
+- 已确认的错误会在展示前被局部修正，而不是要求用户重新提问。
+- 无法确认的内容仍保留上下文，但清楚说明需要核对什么。
+- 普通页面不再出现内部规则码和长错误报告。
+- 课程规划意图不会因卡片或 Schedule 风险被系统删除。
+- 实时与缓存数据有明确时间，用户能区分“现在的数据”和“上次看到的数据”。
+
+开发者最终获得：
+
+- 每个事实从 claim、evidence、decision 到 correction 的完整可重放链路。
+- 能分别衡量纠正准确率、误报率、unknown、stale、conflict 和延迟，
+  不再只看笼统的 issue count。
+- validator 故障被限制在单个 claim，不会升级成全局产品故障。
+- 数据来源冲突、更新时间选择和 fallback 均可解释、可测试、可审计。
+
+### M15.20 设计参考
+
+- Palantir Data Expectations：检查失败可以选择 abort 或继续并 warning，
+  说明检查与处置策略应分离：
+  <https://www.palantir.com/docs/foundry/maintaining-pipelines/define-data-expectations>
+- Palantir Health Checks：severity、连续失败升级和通知路由是独立维度：
+  <https://www.palantir.com/docs/foundry/health-checks/checks-reference>
+- Databricks Expectations：`warn`、`drop`、`fail` 是显式策略，
+  默认 `warn` 保留记录并收集指标：
+  <https://docs.databricks.com/aws/en/ldp/expectations>
+- Great Expectations：`info`、`warning`、`critical` 与后续 action 分离：
+  <https://docs.greatexpectations.io/docs/core/define_expectations/create_an_expectation/>
+- Azure Groundedness Detection：支持检测原因和 corrected text，
+  可参考“检测 + 局部纠正”而非整段拒答：
+  <https://learn.microsoft.com/en-us/azure/ai-services/content-safety/quickstart-groundedness>
+- Anteater API v2 OpenAPI：课程、先修、WebSoc、专业要求、历史成绩等字段定义；
+  API 自身说明数据源适用时来自 UCI，但不保证绝对准确：
+  <https://anteaterapi.com/reference>
+- Google RAIL：超过 1 秒需要明确反馈，10 秒以上容易导致挫败和放弃：
+  <https://web.dev/articles/rail>
+- UCI Student Records 与 OWASP Logging：用于指导学生数据访问和日志最小化：
+  <https://www.reg.uci.edu/privacy/>、
+  <https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html>
+
+### M15 归档确认清单
+
+V1 采用以下替代结果：
+
+- [x] 删除 `app/validation/` 与 pre-display Check 调用链。
+- [x] 删除 `verification_report` / `validation_report` 响应字段和持久化。
+- [x] 删除 Data check footer、行内纠正 badge 和 Developer Trace UI/API。
+- [x] 推荐卡片保持 Agent 工具原始结构，不由后处理器修改。
+- [x] 固定错误提示模板跟随用户语言；模糊学期交给带历史的 Agent 理解。
+- [x] 保留 Schedule 冲突检测、实时刷新和 planning-draft 提示。
+- [x] 后续若重启 Check，须作为新的里程碑重新评审，不从历史 M15 直接启用。
+
+## 20. M16 — 稳定默认学期、显式 Selector 与临时查询范围
+
+目标：取消“根据问题内容自动切换 conversation term”。系统继续确定 automatic term，但只把它用于 `auto` conversation 的默认值；用户通过 selector 明确选择后，conversation 进入 `manual`。问题中出现的显式、相对或多个学期只形成当前 turn 的 `query_terms`，不写回默认状态。每轮 Agent 都收到结构化 runtime context，所有 term-scoped tool 再由后端强制执行 query scope。
+
+状态：已完成（2026-07-31）。M16-A–H 已按依赖顺序实施并在当前工作区形成可独立审查的改动；最终离线回归、Q1/Q2/Q3、selector API、浏览器交互与 Profile 冷加载性能验收均通过。
+
+### M16.0 冻结现状、失败基线与术语
+
+先固定当前行为，避免重构时误删 M13 中仍然正确的 automatic term、数据发布门禁和跨学期 Schedule。
+
+#### 任务
+
+- [x] 记录当前 conversation meta、session state、SSE meta、card 与 Schedule entry 中所有 term 字段及读写方。
+- [x] 增加 characterization tests，证明当前主链中“显式查询其他学期不改变 planning term”的实际行为。
+- [x] 增加失败基线，覆盖以下当前缺口：
+  - 顶部 term 是只读文本，用户无法明确选择默认学期。
+  - `term/effective_term/planning_term/discussion_terms/query_terms/term_scope` 命名重复。
+  - runtime term 以长自然语言附加在大型 system prompt 中。
+  - tool 仍可能先接收模型提出的 term，再做分散 fallback。
+  - input token 估算只计算用户问题，无法反映真实上下文。
+- [x] 建立术语表，后续代码、API、日志和文档只使用：
+  - `automatic_term`：系统按 UCI 时间、calendar、cutoff 与发布状态确定的默认候选。
+  - `default_term`：当前 conversation 未指定学期时使用的稳定默认值。
+  - `term_mode`：`auto | manual`。
+  - `query_terms`：当前 turn 临时查询的一个或多个 canonical term。
+  - `query_term_source`：`default | explicit | relative | followup | comparison`。
+  - `recent_query_focus`：用于“这门课/这两个学期”等追问的轻量结构化焦点。
+- [x] 冻结不变量：Chat 请求、LLM 输出、tool call、tool result、回答成功/失败和数据 availability 均不能修改 `default_term`。
+
+#### 验收
+
+- [x] 重构前失败基线可重复运行，且不需要真实 LLM、Anteater 或外网。
+- [x] 所有现有 term 字段和 mutation 路径有一张明确的迁移清单。
+- [x] M13 要保留与要取代的行为在测试和文档中可区分。
+
+### M16.1 产品语义与唯一状态机
+
+#### 状态模型
+
+```text
+ConversationTermState
+  default_term
+  term_mode = auto | manual
+  term_source
+  term_updated_at
+  term_updated_by = auto_sync | user_ui | migration
+```
+
+#### 硬规则
+
+- [x] 新 conversation 一律从当前 `automatic_term` 创建，`term_mode=auto`。
+- [x] `auto` conversation 在打开、恢复和新 turn 开始前重新读取 automatic term。
+- [x] automatic term 变化时，只更新 `auto` conversation；更新发生在 turn 边界，不能在回答流式生成中途切换。
+- [x] 用户操作 selector 后写入 `default_term` 并设置 `term_mode=manual`。
+- [x] `manual` conversation 不跟随后续 automatic term 变化。
+- [x] 用户点击“恢复自动”后设置 `term_mode=auto`，并立即使用当前 `automatic_term`。
+- [x] 用户问题中提到其他学期只影响 `query_terms`，不改变 selector、`default_term` 或 `term_mode`。
+- [x] 用户说“以后都看 2025 Fall”等自然语言时，Agent 最多返回 `suggest_term_change` action；只有用户点击确认后才调用 mutation API。
+- [x] 新 conversation 不继承其他 conversation 的 manual term。
+- [x] Schedule entry、卡片和历史 tool result 的 term 不反向修改 conversation state。
+
+#### 使用效果
+
+| 场景 | 本轮查询 | 回答后 `default_term` |
+|---|---|---|
+| 默认 `2025 Fall`，问“ICS 33 有开吗？” | `2025 Fall` | `2025 Fall` |
+| 默认 `2025 Fall`，问“2024 Fall 有开吗？” | `2024 Fall` | `2025 Fall` |
+| 默认 `2025 Fall`，比较 `2024/2025 Fall` | 两个 term | `2025 Fall` |
+| 用户在 selector 选择 `2026 Winter` | 后续默认查 `2026 Winter` | `2026 Winter`，`manual` |
+| 系统 automatic term 变为 `2027 Winter`，conversation 为 `manual` | 保持用户选择 | 不变 |
+| 用户点击“恢复自动” | 当前 automatic term | `2027 Winter`，`auto` |
+
+#### 验收
+
+- [x] 状态图中不存在 Question、Agent、Tool、Answer 指向 `default_term` 的写路径。
+- [x] 只有显式 term API 可以产生 `manual` 状态。
+- [x] automatic sync 只能更新 `auto` 状态。
+
+### M16.2 数据模型、兼容迁移与唯一真相源
+
+#### 任务
+
+- [x] conversation metadata 统一保存：
+  - `default_term`
+  - `term_mode`
+  - `term_source`
+  - `term_updated_at`
+  - `term_updated_by`
+  - `term_schema_version`
+- [x] `app/data/sessions.py` 继续作为 conversation term 的唯一持久化真相源。
+- [x] `auto` conversation 每次解析 automatic term 后更新可观测 snapshot，但不得生成 `manual`。
+- [x] 兼容读取旧 `term_scope`；新写入只使用 `default_term`。
+- [x] 实现幂等迁移：
+  - 旧 `auto` → 新 `auto`。
+  - 旧 `pinned` 且没有 `updated_by=user_ui` 证据 → 新 `auto`，因为旧 pin 可能来自问题内容。
+  - 未来若存在明确的 UI-origin metadata → 新 `manual`。
+  - 无法解析的旧 term 保留原文件备份并回退 automatic term，不静默猜测。
+- [x] 迁移只更新 meta，不重写历史正文、卡片和 Schedule entry。
+- [x] 删除 session state 中与 `default_term` 完全重复的 `effective_term/planning_term` 持久化副本。
+- [x] `recent_query_focus` 使用独立、有限大小的结构：
+
+```json
+{
+  "course_ids": ["ICS 33"],
+  "terms": ["2024 Fall", "2025 Fall"],
+  "updated_at": "2026-07-31T00:00:00Z"
+}
+```
+
+- [x] `recent_query_focus` 只帮助理解追问，不参与默认 term 解析。
+
+#### 验收
+
+- [x] 服务重启后 manual selector 选择不丢失。
+- [x] auto conversation 在 automatic term 变化后正确跟随。
+- [x] manual conversation 在 automatic term 变化后保持不变。
+- [x] 旧数据迁移可重复执行，第二次执行不再改变内容。
+- [x] 迁移失败不会破坏原 meta、turn 或 Schedule 文件。
+
+### M16.3 显式 Term API 与权限边界
+
+#### API 契约
+
+```http
+PUT /api/sessions/{session_id}/default-term
+Content-Type: application/json
+
+{"mode": "manual", "term": "2026 Winter"}
+```
+
+恢复自动：
+
+```http
+PUT /api/sessions/{session_id}/default-term
+Content-Type: application/json
+
+{"mode": "auto"}
+```
+
+#### 任务
+
+- [x] 新增 conversation default-term mutation endpoint。
+- [x] `mode=manual` 时 canonicalize 并验证 term；无效、歧义或未发布 term 返回结构化错误。
+- [x] `mode=auto` 时忽略客户端 term，使用后端当前 `automatic_term`。
+- [x] endpoint 使用当前认证身份验证 session ownership。
+- [x] endpoint 使用现有 CSRF/Origin、防重放和 rate-limit 规则。
+- [x] 更新成功后返回：
+
+```json
+{
+  "default_term": "2026 Winter",
+  "term_mode": "manual",
+  "term_source": "user_ui",
+  "term_updated_at": "..."
+}
+```
+
+- [x] ChatRequest 中旧 `term` 字段只保留一个过渡版本的兼容读取，不具有 mutation 权限。
+- [x] chat endpoint 不接受 `term_mode/default_term` 写入。
+- [x] term mutation 与 chat streaming 分离，任何 LLM/tool failure 都不能回滚或覆盖已成功的用户 selector 操作。
+
+#### 验收
+
+- [x] 无法通过猜测 session ID 修改其他用户的默认学期。
+- [x] 无效 term 不改变现有状态。
+- [x] 重复提交相同选择是幂等的。
+- [x] selector mutation 不需要调用 LLM。
+
+### M16.4 纯函数 Query Scope Resolver
+
+#### 目标契约
+
+```text
+resolve_query_scope(
+  user_message,
+  default_term,
+  automatic_term,
+  recent_query_focus,
+  uci_now
+) -> QueryScope
+```
+
+```text
+QueryScope
+  terms
+  source
+  explicit
+  ambiguous
+  error
+  course_ids
+```
+
+#### 解析优先级
+
+1. 当前问题中的完整 canonical/alias term。
+2. 当前问题明确要求的多个 term 或比较关系。
+3. “这两个学期/这个学期”等可由 `recent_query_focus` 唯一恢复的指代。
+4. 相对表达。
+5. 没有 term 信号时使用 `default_term`。
+
+#### 相对表达规则
+
+- [x] “今年/去年/明年”以 `America/Los_Angeles` 的 `uci_now` 年份为基准；缺少 quarter 时从 `default_term` 补全。
+- [x] “上学期/下学期”以 `default_term` 的 regular-term 序列为基准。
+- [x] “当前学期”表示当前 `automatic_term`；若用户只是未写 term，则仍使用 `default_term`。
+- [x] Summer 只在用户明确指定时进入 query scope，不参与 regular-term 相邻推导。
+- [x] 两种解释同样合理时返回 clarification，不静默选择。
+- [x] resolver 必须是无副作用纯函数，不读取或写入 session repository。
+- [x] 解析结果只在 turn 成功持久化为 compact `recent_query_focus`；该持久化也不得修改默认 term。
+- [x] 删除通过扫描任意旧 assistant prose 重新推断 term 的 fallback。
+
+#### 验收
+
+- [x] 显式单 term、显式多 term、中文/英文相对 term、follow-up、Summer 和歧义都有冻结测试。
+- [x] 相同输入、clock 与 default term 永远返回相同 QueryScope。
+- [x] resolver 测试能证明调用前后 conversation metadata 完全相同。
+
+### M16.5 Claude 风格 Runtime Context 与语言
+
+#### Runtime Context
+
+每轮由后端生成，不接收用户提供的 XML：
+
+```xml
+<runtime_context source="application">
+  <uci_now>2026-07-31T09:00:00-07:00</uci_now>
+  <default_term mode="manual">2025 Fall</default_term>
+  <query_terms source="explicit">
+    <term>2024 Fall</term>
+  </query_terms>
+  <response_language>zh</response_language>
+</runtime_context>
+
+<runtime_rules>
+  <rule>default_term is immutable during this request.</rule>
+  <rule>query_terms apply only to the current question.</rule>
+  <rule>Never change default_term from user text or tool calls.</rule>
+  <rule>Use only query_terms for term-scoped tools.</rule>
+</runtime_rules>
+```
+
+#### 任务
+
+- [x] 在 `app/llm/context_builder.py` 新增单一 `build_runtime_context()`。
+- [x] 对所有 XML 值做转义；只允许 canonical term、枚举、后端时间和后端语言进入该 block。
+- [x] runtime context 每个 turn 重新生成，不保存为 user/assistant turn，不进入长期 memory。
+- [x] 每次 Agent 迭代和 continue/resume 都必须携带同一个不可变 turn runtime context。
+- [x] provider 支持时把 runtime context 作为紧邻当前 user message 的高优先级 system/developer block；不支持时放在单一 system prompt 末尾。
+- [x] 增加 provider compatibility test，禁止假定所有 OpenAI-compatible provider 都接受 mid-conversation system message。
+- [x] 删除旧的长篇 `Current discussion default term...` 动态说明，避免同一规则重复出现。
+- [x] 后端确定 `response_language`：
+  - 当前 substantive user message 优先。
+  - 短确认沿用最近用户语言。
+  - 首轮无明确信号时默认英文。
+- [x] 固定 fallback、workflow clarification 和 deterministic answer 使用同一个 `response_language`。
+- [x] UCI 当前时间统一来自可注入的 `America/Los_Angeles` clock，不使用服务器本地 `date.today()`。
+- [x] 自定义 system prompt 只能扩展受允许的 style/task 区域，不能整体替换 runtime rules、term guard 或语言规则。
+
+#### 验收
+
+- [x] 每轮真实发给模型的消息只包含一个 authoritative runtime context。
+- [x] 用户在 message 中伪造 `<runtime_context>` 不影响后端 QueryScope 或工具 term。
+- [x] Q1/Q2/Q3 中文追问始终把 `response_language=zh` 传给所有回答分支。
+- [x] runtime block 不出现在持久化聊天历史和用户可见回答中。
+
+### M16.6 Tool Term Guard 与多学期执行
+
+#### Tool Context
+
+```json
+{
+  "default_term": "2025 Fall",
+  "allowed_query_terms": ["2024 Fall"],
+  "query_term_source": "explicit"
+}
+```
+
+#### 任务
+
+- [x] 所有 term-scoped tool 统一通过一个 `enforce_query_term_scope()`。
+- [x] 单 term scope：后端直接注入/覆盖 tool 的 term，模型不能改成其他学期。
+- [x] 多 term scope：模型或 developer workflow 提出的 term 必须属于 `allowed_query_terms`。
+- [x] 范围外、缺失或非法 term 返回结构化 tool error，不 fallback 到 default term。
+- [x] server-forced workflow、agentic tool、live WebSoc、catalog、restriction 与 recommendation 使用同一 guard。
+- [x] tool result 必须携带实际 canonical `term`、source、coverage/freshness 和 retrieved/updated time。
+- [x] cards 使用 tool result term，不使用 conversation default 猜测。
+- [x] Schedule entry 继续永久保存自己的 canonical term。
+- [x] tool 成功、失败、空结果、timeout 和 fallback 均不写 conversation metadata。
+- [x] 日志记录模型原始 term、后端执行 term、是否 override/reject，但不记录不必要的完整 user prompt。
+
+#### 验收
+
+- [x] 模型传错 term 时，单 term tool 仍查询正确 query term。
+- [x] 多 term comparison 只能查询批准的两个 term。
+- [x] 工具范围外 term 被拒绝，且不会改变 default term。
+- [x] 现有 restriction evidence 与 live availability workflow 的 term 回归全部通过。
+
+### M16.7 SSE、Turn 持久化与前端 Selector
+
+#### Chat Meta
+
+```json
+{
+  "default_term": "2025 Fall",
+  "term_mode": "manual",
+  "term_source": "user_ui",
+  "query_terms": ["2024 Fall"],
+  "query_term_source": "explicit",
+  "default_term_changed": false
+}
+```
+
+#### 任务
+
+- [x] 用 `default_term/query_terms` 取代用户可见 API 中含义模糊的单一 `effective_term`。
+- [x] chat SSE 的 `default_term_changed` 恒为 `false`；真正的 change 只从 term mutation API 返回。
+- [x] turn compact metadata 保存当时的 `query_terms/query_term_source`，历史恢复不重新解释原问题。
+- [x] 恢复 conversation 级 term selector：
+  - 默认显示当前 canonical `default_term`。
+  - 提供明确的 `Auto`/“恢复自动”入口。
+  - 用户选择 term 后先等待 mutation API 成功，再更新 UI。
+  - API 失败时保持原选择并显示可行动错误。
+- [x] 打开历史 conversation 时先读取该 conversation 状态，禁止闪回全局 automatic term。
+- [x] selector 变化只影响后续未指定学期的问题，不改写已显示回答、cards 或 Schedule。
+- [x] 回答旁显示：
+  - 单 term 且不同于 default：`本次查询：2024 Fall`。
+  - 多 term：`本次比较：2024 Fall ↔ 2025 Fall`。
+  - query term 等于 default 时可省略重复 badge。
+- [x] Agent 返回 `suggest_term_change` 时展示确认按钮；点击后调用 term mutation API。
+- [x] 默认学期和查询学期在桌面、移动端、历史恢复和 SSE streaming 中显示一致。
+
+#### 验收
+
+- [x] selector 是唯一能把 conversation 变为 manual 的普通用户入口。
+- [x] 问其他学期后 selector 不变化。
+- [x] 跨学期比较后 selector 不变化。
+- [x] 恢复自动后立即显示当前 automatic term。
+- [x] 每张 card 和 Schedule entry 在跨 term 场景仍显示/使用自己的 term。
+
+### M16.8 删除旧逻辑与字段收敛
+
+#### 删除
+
+- [x] 删除或退役 `commit_conversation_resolution()` 的“成功回答后 pin/reset”职责；如保留模块，只允许 term API 调用确定性 updater。
+- [x] 删除 chat turn 中不再有意义的：
+  - `original_term_mode`
+  - `original_term_scope`
+  - `term_changed`
+  - query/tool/answer 驱动的 commit 分支。
+- [x] 删除“validation block 决定能否提交 term change”的旧耦合。
+- [x] 删除从 frontend chat request 每轮隐式覆盖 term 的旧链路。
+- [x] 删除只读 term UI 及其“用户无法操作”的 M13 契约。
+- [x] 删除重复持久化的 `effective_term/planning_term`；内部临时变量必须使用明确名称。
+- [x] 删除旧 prompt 中重复的 dynamic term 说明。
+- [x] 删除通过 assistant prose 扫描 term 的历史 fallback。
+- [x] 删除“问题中明确 term 成功后 selector 自动变化”的前端处理和测试。
+
+#### 保留
+
+- [x] 保留 `TermResolutionService` 的 automatic term、canonical parser、calendar/WebSoc 发布门禁、cache 和 fallback。
+- [x] 保留 `America/Los_Angeles` 时间语义，并把 Agent today 统一到同一 clock。
+- [x] 保留显式单/多学期查询能力。
+- [x] 保留 Schedule entry 自带 term、跨 term 展示、去重、删除与非阻断 overlap。
+- [x] 保留 live availability、restriction evidence 和工具 provenance。
+
+#### 验收
+
+- [x] 代码中只有一个 conversation default-term 真相源。
+- [x] 代码中只有一个 QueryScope resolver 和一个 tool term guard。
+- [x] `rg` 不再发现 query-driven conversation pin/commit 路径。
+- [x] 旧兼容字段只存在于明确标注、带删除期限的 migration/serialization 层。
+
+### M16.9 可观测性、Token 统计与安全
+
+#### 任务
+
+- [x] 每次 LLM 调用记录真实或保守估算的分层 token：
+  - base system/developer prompt
+  - runtime context
+  - memory/summary
+  - recent turns
+  - tool schemas
+  - tool calls/results
+  - current user message
+  - total input/output/reasoning（provider 可用时）
+- [x] 不再用 `req.message` 单独代表全部 input tokens。
+- [x] term 日志至少包含：
+  - `automatic_term`
+  - `default_term`
+  - `term_mode`
+  - `query_terms`
+  - `query_term_source`
+  - 实际 tool terms
+  - guard override/reject
+  - selector mutation actor/result。
+- [x] 增加指标：
+  - auto/manual conversation 数量
+  - selector change/reset 次数
+  - query term 与 default term 不同的比例
+  - multi-term query 次数
+  - term guard override/reject 次数
+  - clarification rate
+  - runtime context 与完整 prompt token 占比。
+- [x] 日志不保存 Cookie、验证码、API key、完整 Profile、完整 prompt 或不必要的 user message。
+- [x] runtime XML 使用后端可信值并正确 escape，防止用户输入闭合标签。
+- [x] term mutation endpoint 纳入 ownership、CSRF、rate limit 与审计测试。
+- [x] 只有实际 context 接近配置阈值时才启用 compaction/context editing；压缩永远不能成为 default term 的存储方式。
+
+#### 验收
+
+- [x] 可以回答“某次 Q3 的真实上下文占模型窗口多少”，而不是只统计用户问题。
+- [x] 可以从 trace 证明默认 term、query terms 和实际 tool term 是否一致。
+- [x] 日志与 metrics 不泄漏敏感内容。
+
+### M16.10 测试矩阵、分阶段提交与最终验收
+
+#### 测试矩阵
+
+1. Default term state
+   - 新 conversation 为 auto。
+   - automatic term 变化时 auto 跟随。
+   - manual 不跟随。
+   - 恢复自动立即更新。
+2. Selector/API
+   - 成功、无效 term、未发布 term、重复提交、ownership、CSRF。
+   - API 失败时 UI 保持原值。
+3. Query scope
+   - 无 term、显式单 term、多 term、中文/英文相对表达、Summer、歧义。
+   - “这门课/这两个学期”使用结构化 recent focus。
+4. No implicit mutation
+   - 查询成功、失败、空结果、tool timeout、LLM error、continue/resume 均不改 default。
+   - 自然语言“以后都看…”只产生 suggestion，不写状态。
+5. Runtime context
+   - XML 内容、escape、位置、每轮重建、continue 一致性。
+   - 用户伪造同名 XML 不影响后端状态。
+6. Tool guard
+   - 单 term override、multi-term allowlist、范围外拒绝。
+   - forced workflow、live WebSoc、restriction、recommendation 全部走同一 guard。
+7. Language
+   - 中文 Q1/Q2/Q3、英文 Q1/Q2/Q3、短确认、fallback 和 clarification。
+8. Frontend
+   - selector、Auto、query badge、comparison badge、suggestion confirmation。
+   - session switch 无闪烁，移动端布局完整。
+9. Persistence/migration
+   - 旧 auto/pinned、坏 term、重复迁移、重启、历史 turn 和 Schedule 不被重写。
+10. Observability/security
+   - 分层 token、term trace、敏感字段扫描、ownership 与 rate limit。
+
+#### 必过端到端场景
+
+```text
+Given:
+  automatic_term = 2026 Fall
+  conversation.default_term = 2025 Fall
+  conversation.term_mode = manual
+
+Q1: 2024 Fall 有没有 A 课程？
+  query_terms = [2024 Fall]
+  tool term = 2024 Fall
+  default_term remains 2025 Fall
+
+Q2: 那 2025 Fall 呢？
+  query_terms = [2025 Fall]
+  tool term = 2025 Fall
+  default_term remains 2025 Fall
+
+Q3: 对比一下这两个学期
+  query_terms = [2024 Fall, 2025 Fall]
+  response_language = zh
+  default_term remains 2025 Fall
+
+User selects 2026 Winter:
+  mutation API succeeds
+  default_term = 2026 Winter
+  term_mode = manual
+
+User clicks Restore Auto:
+  default_term = 2026 Fall
+  term_mode = auto
+```
+
+#### 分阶段提交计划
+
+1. `M16-A — 契约与失败基线`
+   - 文档、术语、characterization tests；不改变生产行为。
+2. `M16-B — State Schema、迁移与 Term API`
+   - `default_term/auto|manual`、幂等迁移、ownership endpoint。
+3. `M16-C — QueryScope Resolver`
+   - 纯函数解析、relative/follow-up 规则、recent focus。
+4. `M16-D — Runtime Context 与统一 Clock/Language`
+   - XML builder、provider compatibility、fallback 语言。
+5. `M16-E — Tool Guard 与响应契约`
+   - allowlist/override、tool provenance、SSE meta。
+6. `M16-F — Selector、Query Badge 与 Suggestion Action`
+   - 前端交互、历史恢复、移动端。
+7. `M16-G — 旧逻辑删除、观测与完整回归`
+   - 字段收敛、token 统计、安全、默认/浏览器/live smoke。
+8. `M16-H — README 与 Roadmap 收尾`
+   - 仅在所有工程验收完成后更新 README、状态、提交号和验收数字。
+
+#### 主要文件改造地图
+
+| 范围 | 预计文件 |
+|---|---|
+| conversation state/migration | `app/data/sessions.py`, `app/terms/conversation.py` |
+| automatic/default/query resolution | `app/terms/service.py`, term parser modules |
+| term mutation + chat response | `app/routers/chat.py` 或独立 term router |
+| runtime context/language/clock | `app/llm/context_builder.py`, `app/llm/adapter.py` |
+| tool guard | `app/agent/tools.py`, workflow router/loop |
+| cards/schedule term propagation | agent tools、`app/scheduling/service.py`、chat schedule API |
+| selector/query badges/actions | `static/index.html`, `static/js/api-client.js`, `chat.js`, `sessions.js`, `schedule.js`, CSS |
+| observability | `app/observability.py`, chat/agent logging |
+| regression | `tests/test_term_*`, unified context、agent tools、SSE、frontend static/browser tests |
+
+#### M16 最终验收
+
+- [x] 用户问题永远不会直接或间接修改 conversation `default_term`。
+- [x] selector 是普通用户修改 manual default 的唯一入口。
+- [x] auto conversation 会按 automatic term 在 turn 边界更新；manual conversation 不会。
+- [x] Agent 每轮收到唯一、结构化、不可由用户伪造的 runtime context。
+- [x] 所有 term-scoped tool 只能查询本轮允许的 query terms。
+- [x] 多学期比较、cards 和 Schedule 不依赖切换默认 term。
+- [x] 顶部 default term 与回答旁 query term 清晰分离。
+- [x] Q1/Q2/Q3 跨学期追问正确、语言稳定、默认 term 不变。
+- [x] migration、focused tests、完整离线回归、浏览器回归和只读 live smoke 全部通过。
+- [x] README、ROADMAP、API contract 与实际实现一致后，M16 才可标记完成。
+
+## 21. M17 — 多学期简写、严格 Term Guard 与官方 WebSoc 历史开课链路
+
+> 状态：2026-08-14 已完成；离线回归与真实 Registrar 只读 smoke 均通过。
+>
+> 失败基线：用户输入“帮我查25和26winter开econ167了吗”时，两位年份未被 QueryScope 识别，本轮 allowlist 退回 conversation default `2026 Winter`；模型正确提出的 `2025 Winter` 又被 term guard 静默覆盖为 `2026 Winter`，导致同一学期重复查询。后续 Agent 用 GET 和错误的 `Year`/`Term` 参数访问只接受 POST + `YearTerm` 的 WebSoc，误将返回表单理解为服务端吞参数，并在外部搜索源上耗尽 tool budget。
+
+### M17.1 产品与安全契约
+
+1. `25和26winter`、`25/26 Winter`、`Winter 25 and 26`、`2025和2026冬季` 解析为 `2025 Winter` + `2026 Winter`。
+2. 两位年份只能在与 quarter 相邻且存在明确比较连接词时扩展为 `20YY`；单独 `25 winter` 要求澄清，避免把 `ECON 25 winter` 的课程号误判为年份。
+3. term-scoped tool 未传 term 且 allowlist 只有一项时可以注入；模型明确传入范围外 term 时必须拒绝，不得静默改写后执行。
+4. 历史学期开课事实优先来自 Registrar WebSoc 固定 POST workflow；模型不得自行拼接 WebSoc CGI URL。
+5. 只有官方结果页明确返回 no-match 时才可声明 `not_offered`；表单页、term/department 不匹配、超时或解析失败一律为 `unavailable`。
+6. 官方 workflow 已给出确定结果时停止 PeterPortal/Coursicle/Wayback 等无效扩散搜索。
+
+### M17.2 分阶段实施
+
+1. `M17-A — QueryScope 与失败防护`
+   - 抽取单一 explicit-term matcher，支持共享 quarter 的多年份简写。
+   - 对未被消费的两位年份 + quarter 返回 ambiguous，不使用 default term。
+   - 增加中英文、粘连输入、课程号防误判和 Q1/Q2/Q3 回归。
+2. `M17-B — Strict Tool Guard`
+   - 保留单 allowlist 的 missing-term injection。
+   - 删除范围外 term override，改为结构化 reject 与审计日志。
+   - 对幂等读取工具增加本轮同参数结果复用，不重复访问外部数据源。
+3. `M17-C — Registrar Course Offering Workflow`
+   - 复用 `app/data/websoc_workflow.py` 现有表单选项验证、POST transport、fetch audit 和 response identity 验证。
+   - 增加 `CourseNum`、课程 section 结果解析以及 `offered/not_offered/unavailable` 三态语义。
+   - 将 `get_sections` 的 unavailable 历史学期 fallback 接入官方 workflow；`get_live_sections` 继续仅表示当前可用性。
+4. `M17-D — Agent 停止条件与表达`
+   - tool schema/runtime prompt 明确历史开课不需要 agentic WebSoc URL。
+   - 官方 definitive result 禁止后续搜索；外部 provider 失败不能把 `not_offered` 改写为 unknown。
+   - UI/tool chip 区分“找到 section”、“官方无匹配”和“数据不可用”。
+5. `M17-E — 验收`
+   - focused parser/guard/WebSoc tests、SSE 多学期回归、完整离线测试。
+   - 只读 live smoke 验证正确 `POST + YearTerm + Dept + CourseNum`，并保存脱敏请求摘要而非网页正文。
+
+### M17.3 必过验收场景
+
+```text
+Given:
+  conversation.default_term = 2026 Winter
+
+User:
+  帮我查25和26winter开econ167了吗
+
+Expected query scope:
+  query_terms = [2025 Winter, 2026 Winter]
+  query_term_source = comparison
+
+Expected tool calls:
+  get_sections(ECON167, 2025 Winter)
+  get_sections(ECON167, 2026 Winter)
+
+Forbidden:
+  get_sections(ECON167, 2026 Winter)  # rewritten from model_term=2025 Winter
+  GET /perl/WebSoc?Year=2025&Term=Winter...
+  在 Registrar 已明确 no-match 后继续 web_search/fetch_page
+```
+
+### M17.4 完成标准
+
+- [x] 简写多学期解析不依赖 LLM，且不误认课程号。
+- [x] term guard 不再静默改写模型显式 term。
+- [x] 历史开课查询只通过已验证的 Registrar POST workflow 产生确定事实。
+- [x] 官方 no-match 与网络/解析 unavailable 有不同结构化结果。
+- [x] 同一读取工具同参数不会在一轮内重复执行。
+- [x] 用户原始复现句的 query/tool terms 和最终回答一致。
+- [x] focused 与完整离线回归通过后才标记 M17 完成。
+
+## 22. 跨阶段 Definition of Done
 
 每个任务只有同时满足以下条件才算完成：
 
@@ -1707,7 +2996,7 @@ M14 在现有 `websoc_department_restrictions` 固定 workflow 上补强，不�
 - 对实时数据链路，必须明确 freshness、cache TTL、source 和 fallback 语义。
 - 对固定 workflow，必须有 fixture 测试证明不会绕到 agentic search。
 
-## 20. 实际提交分组
+## 23. 实际提交分组
 
 工作已按可审查、可回滚的阶段提交。每组提交都对应 ROADMAP 中的阶段性验收：
 
@@ -1726,8 +3015,11 @@ M14 在现有 `websoc_department_restrictions` 固定 workflow 上补强，不�
 13. M12：WebSoc POST 表单、结果验证、服务端强制 restriction workflow、linked-page evidence。（已完成。）
 14. M13：自动学期上下文、conversation auto/pinned term、只读 term UI 和跨学期 Schedule。（已完成。）
 15. M14：restriction 查询分类、完整正文/时间线解析、证据门禁、确定性事实、claim validator 与实际抓取审计。（已完成。）
+16. M15：Data Check 方案完成研究后取消进入 V1；实现已拆除，历史设计保留供以后重新评审。
+17. M16：稳定 default term、auto/manual selector、临时 query scope、runtime context 与 tool term guard。（已完成。）
+18. M17：多学期简写、strict term guard、Registrar WebSoc 历史开课 workflow、无效搜索停止条件与三态 tool chip。（已完成。）
 
-## 21. 进度记录
+## 24. 进度记录
 
 | 日期 | 阶段 | 变更 | Commit/PR | 验收结果 |
 |---|---|---|---|---|
@@ -1745,3 +3037,8 @@ M14 在现有 `websoc_department_restrictions` 固定 workflow 上补强，不�
 | 2026-07-21 | M12 | 修复 WebSoc 同 URL 表单抓取，增加 live option/response validation、server-forced restriction workflow 和 linked-page structured evidence | `af3e8ea`–本阶段收尾提交 | `compileall`、完整离线回归 `219 passed, 2 deselected`；真实 ART POST 验证得到 major restriction `2026-08-24 noon`、NORS `2026-08-21 noon`。 |
 | 2026-07-22 | M13 | 完成自动学期上下文、Anteater calendar/WebSoc 发布门禁、conversation auto/pinned、只读 term、跨学期 Schedule 和 live smoke | `4c791e9`–本阶段收尾提交 | `307 passed, 2 deselected`；calendar 108 条、WebSoc term 162 个；`2026 Fall` 发布探针只取 53 courses/458 sections、258,563 bytes，较原完整抓取 7,830,665 bytes 减少 96.7%；启动不再预热完整课表，runtime 数据未纳入 Git。 |
 | 2026-07-23 | M14 | 完成 restriction query/evidence schema、语义正文与跨行 timeline parser、query-aware linked selection、完整性门禁、确定性事实、eligibility、claim validator、compact LLM context 与实际抓取审计 | `bb17e63`–本阶段收尾提交 | focused tests 与完整离线回归 `330 passed, 2 deselected`；真实只读 smoke 验证 I&C SCI School/Major `2026-09-18 12:00`、NOR `2026-09-01 12:00`、139W 例外，以及 WebSoc GET/POST + ICS GET 三条请求。 |
+| 2026-07-25 | V1 scope | 取消展示前 Check，删除正文/卡片改写、验证报告、Developer Trace 和对应前端；可靠性前移到工具证据与应答模板 | 当前工作区（未提交） | 回答恢复直接流式展示；中英文固定 fallback 不再默认跳英文；Schedule 冲突与实时刷新作为独立规划能力保留。 |
+| 2026-07-31 | M16 design | 批准稳定 `default_term`、`auto/manual` selector、临时 `query_terms`、Claude 风格 runtime context 与后端 tool guard | 当前工作区（未提交） | 产品语义与分阶段实施 Roadmap 已冻结；尚未修改生产代码，等待从 M16-A 按序实施。 |
+| 2026-07-31 | M16 implementation | 完成状态 schema/迁移、显式 Term API、QueryScope/recent focus、XML runtime context、tool guard、SSE、selector/query badge、token 分层观测和旧逻辑清理；同时修复 selector 发布口径与 Profile 全课程冷加载 | 当前工作区（未提交） | `340 passed, 2 deselected`；浏览器验证 Auto→manual→Restore Auto 且 console 无错误；Q1/Q2/Q3 保持 manual default；Profile 6,687 门课程由实测 126,222 ms 降至冷 HTTP 93.37 ms、热 HTTP 52.10 ms。 |
+| 2026-08-14 | M17 start | 批准多学期简写、strict term guard、通用 Registrar WebSoc 课程结果 workflow 和 definitive-result 停止条件 | 当前工作区（未提交） | 已记录失败基线与分阶段验收，开始 M17-A。 |
+| 2026-08-14 | M17 complete | 完成简写 term parser、strict guard、官方 WebSoc POST 课程 workflow、幂等读取复用、definitive-result runtime stop 与三态 tool chip | 当前工作区（未提交） | `compileall`、`node --check static/js/chat.js`、完整离线回归 `361 passed, 2 deselected`；真实只读 smoke 确认 ECON 167 在 2025/2026 Winter 均返回官方 `not_offered`，没有继续访问外部 provider。 |

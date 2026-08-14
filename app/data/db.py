@@ -5,13 +5,15 @@ Every public function here returns a uniform envelope:
 
     {"found": bool, "source": "db" | "api" | "none", ...payload..., "reason": str?}
 
-Resolution order is always DB-first, then API:
+Resolution order is DB-first, then the most authoritative applicable source:
 
     1. Local CatalogView (data/uci/*.csv, loaded by UCIRelationalLoader)
        — fast, deterministic, covers the terms we've crawled
-    2. Anteater API (app.data.anteater)
-       — live, authoritative, covers anything UCI publishes right now
-    3. Not found — return {"found": False, "source": "none", "reason": "..."}
+    2. Registrar WebSoc fixed POST workflow (app.data.websoc_workflow)
+       — official historical course-offering evidence when local coverage is absent
+    3. Anteater API (app.data.anteater)
+       — secondary live fallback for terms UCI still publishes through the API
+    4. Not found — return {"found": False, "source": "none", "reason": "..."}
 
 Term-strict: every term-scoped function requires a `term` parameter
 and never returns data from a different term. If the student selected
@@ -35,7 +37,7 @@ from app.catalog.normalization import parse_course_mention
 from app.catalog.term import Term
 from app.catalog.types import CourseRef, CourseRecord, SectionRecord
 from app import observability
-from app.data import anteater
+from app.data import anteater, websoc_workflow
 from app.data import professors as profs
 from app.data.prerequisites import evaluate_prerequisite_tree
 from app.memory import get_memory_manager
@@ -400,9 +402,10 @@ def batch_get_course_info(course_ids: list[str]) -> dict:
 def get_sections(course_id: str, term: str) -> dict:
     """
     Sections for a course in a specific term. DB first (CatalogView for
-    that term), then Anteater websoc. Returns an EMPTY list if neither
-    has data — distinct from found=False which means we could not even
-    interpret the request.
+    that term), then the official Registrar WebSoc POST workflow, then
+    Anteater only if the official workflow is unavailable. An authoritative
+    empty Registrar result means the course was not offered in that term;
+    an unavailable result remains distinct from that conclusion.
     """
     ref = _to_ref(course_id)
     if not ref:
@@ -468,10 +471,54 @@ def get_sections(course_id: str, term: str) -> dict:
                 ),
             }
 
-    # API fallback only when local term data is unavailable. Complete
-    # local terms should not need live confirmation; partial/stale terms
-    # deliberately return cannot-confirm above instead of silently
-    # presenting missing local rows as definitive no-offering facts.
+    # The Registrar's fixed POST workflow is the authoritative fallback for
+    # historical/offering facts when the local term has no section coverage.
+    # It can distinguish a verified no-match from transport/parse failure;
+    # the agent must not attempt to reproduce this with an ad-hoc GET URL.
+    registrar_result: Optional[dict] = None
+    try:
+        registrar_result = websoc_workflow.fetch_websoc_course_offering(
+            term=t.display(),
+            department=ref.department,
+            course_number=ref.course_number,
+        )
+    except Exception as e:
+        logger.warning(
+            "Registrar WebSoc offering lookup failed for %s %s: %s",
+            ref.display(),
+            t.display(),
+            e,
+        )
+        observability.increment("data.refresh_failures", source="registrar_websoc")
+        registrar_result = {
+            "ok": False,
+            "offering_status": "unavailable",
+            "error_code": type(e).__name__,
+            "message": str(e),
+        }
+    if registrar_result.get("ok") and registrar_result.get("authoritative"):
+        sections = list(registrar_result.get("sections") or [])
+        return {
+            "ok": True,
+            "found": bool(sections),
+            "source": "registrar_websoc",
+            "term": t.display(),
+            "course_id": ref.display(),
+            "coverage_status": coverage.get("coverage_status"),
+            "data_coverage": coverage,
+            "offering_status": registrar_result.get("offering_status"),
+            "authoritative": True,
+            "source_url": registrar_result.get("source_url"),
+            "retrieved_at": registrar_result.get("retrieved_at"),
+            "workflow_id": registrar_result.get("workflow_id"),
+            "fetches": registrar_result.get("fetches") or [],
+            "sections": sections,
+            "reason": registrar_result.get("reason"),
+        }
+
+    # Anteater is a secondary fallback only when local data and the official
+    # Registrar workflow are unavailable. Complete local terms should not need
+    # live confirmation; partial/stale terms deliberately returned above.
     try:
         sections_raw = anteater.fetch_sections(
             department=ref.department,
@@ -512,9 +559,16 @@ def get_sections(course_id: str, term: str) -> dict:
             "coverage_status": "unavailable",
             "data_coverage": coverage,
             "sections": [],
+            "registrar_websoc": {
+                "offering_status": registrar_result.get("offering_status"),
+                "error_code": registrar_result.get("error_code"),
+                "message": registrar_result.get("message"),
+                "source_url": registrar_result.get("source_url"),
+                "retrieved_at": registrar_result.get("retrieved_at"),
+            },
             "reason": (
-                f"no local catalog data for {t.display()} and live API could not "
-                f"confirm sections for {ref.display()}"
+                f"no local catalog data for {t.display()}; Registrar WebSoc and "
+                f"the secondary API could not confirm sections for {ref.display()}"
             ),
         }
 
@@ -535,6 +589,7 @@ def get_live_sections(
     term: str,
     section_codes: Optional[list[str]] = None,
     force_refresh: bool = False,
+    request_timeout_s: Optional[float] = None,
 ) -> dict:
     """
     Live availability/status for a course in a specific term.
@@ -564,7 +619,7 @@ def get_live_sections(
     coverage = get_term_coverage(t)
 
     try:
-        live = anteater.fetch_live_sections(
+        live_kwargs = dict(
             year=str(t.year),
             quarter=t.quarter,
             department=ref.department,
@@ -572,6 +627,9 @@ def get_live_sections(
             section_codes=normalized_codes or None,
             force_refresh=force_refresh,
         )
+        if request_timeout_s is not None:
+            live_kwargs["request_timeout_s"] = request_timeout_s
+        live = anteater.fetch_live_sections(**live_kwargs)
     except Exception as e:
         logger.warning("live WebSoc availability failed for %s %s: %s", ref.display(), t.display(), e)
         observability.increment("data.refresh_failures", source="anteater_live_websoc")
@@ -588,14 +646,17 @@ def get_live_sections(
 
     if live is not None:
         sections_raw = live.get("sections") or []
+        stale = bool(live.get("stale"))
         sections = [
             _api_live_section_to_dict(s, retrieved_at=live.get("retrieved_at"))
             for s in sections_raw
         ]
         return {
             "found": bool(sections),
-            "source": "live_anteater_websoc",
-            "is_live": True,
+            "source": "last_known_live" if stale else "live_anteater_websoc",
+            "is_live": not stale,
+            "stale": stale,
+            "stale_age_seconds": live.get("stale_age_seconds"),
             "term": t.display(),
             "course_id": ref.display(),
             "coverage_status": coverage.get("coverage_status"),

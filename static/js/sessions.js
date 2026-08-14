@@ -198,16 +198,24 @@ async function loadSession(sessionId) {
       // Edge case: session exists but no turns yet — keep welcome.
       resetChatToWelcome();
     } else {
-      for (const t of turns) {
-        if (t.role === 'user') {
-          appendUser(t.content || '');
-        } else if (t.role === 'assistant') {
-          appendAssistantStatic(t.content || '', {
+    let pendingQueryMeta = null;
+    for (const t of turns) {
+      if (t.role === 'user') {
+        appendUser(t.content || '');
+        pendingQueryMeta = {
+          query_terms: t.query_terms,
+          query_term_source: t.query_term_source,
+          default_term: data.default_term,
+        };
+      } else if (t.role === 'assistant') {
+        appendAssistantStatic(t.content || '', {
             cards:      t.cards,
             followups:  t.followups,
-            validation: t.validation,
-            web_fetches: t.web_fetches,
-          });
+          validation: t.validation,
+          web_fetches: t.web_fetches,
+          ...pendingQueryMeta,
+        });
+        pendingQueryMeta = null;
         }
       }
       // Scroll to bottom after rendering history
@@ -228,9 +236,8 @@ async function loadSession(sessionId) {
  * shimmer). Used when re-rendering a historical session. Mirrors the
  * structure built by finalizeAiMessage so an opened session looks
  * identical to the live one — cards, followup chips, and the
- * validation footer all reappear if they were persisted on the turn.
  * `extras` is the parsed-back JSONL extras dict ({cards, followups,
- * validation, web_fetches}); each field is optional and falsy values are skipped
+ * web_fetches}); each field is optional and falsy values are skipped
  * (legacy turns persisted before Round 4 won't have them).
  */
 function appendAssistantStatic(text, extras) {
@@ -241,6 +248,7 @@ function appendAssistantStatic(text, extras) {
     <div class="msg-ai-label">Advisor</div>
     <div class="msg-ai-body"></div>
   `;
+  renderQueryTermBadge(wrap, extras);
   wrap.querySelector('.msg-ai-body').innerHTML = formatMarkdown(text || '');
   document.getElementById('chatScroll').appendChild(wrap);
 
@@ -265,13 +273,6 @@ function appendAssistantStatic(text, extras) {
     wrap.appendChild(fuDiv);
   }
 
-  if (extras.validation
-      && Array.isArray(extras.validation.issues)
-      && extras.validation.issues.length > 0) {
-    const vDiv = document.createElement('div');
-    vDiv.innerHTML = renderValidationFooter(extras.validation);
-    wrap.appendChild(vDiv.firstElementChild);
-  }
 }
 
 async function deleteSession(sessionId) {

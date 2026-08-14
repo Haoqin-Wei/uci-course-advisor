@@ -76,6 +76,33 @@ def test_explicit_multi_term_resolution_preserves_message_order() -> None:
     assert [term.canonical_name for term in result.terms] == ["2026 Fall", "2027 Spring"]
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "25和26winter",
+        "25/26 Winter",
+        "Winter 25 and 26",
+        "2025和2026冬季",
+        "2025年与26年冬季",
+    ],
+)
+def test_shared_quarter_year_pair_expands_abbreviated_years(raw: str) -> None:
+    result = parse_term_text(raw)
+    assert result.kind == "multi"
+    assert [term.canonical_name for term in result.terms] == [
+        "2025 Winter",
+        "2026 Winter",
+    ]
+
+
+@pytest.mark.parametrize("raw", ["25winter", "Winter 25", "ECON 25 winter开吗"])
+def test_standalone_two_digit_year_with_quarter_requires_clarification(raw: str) -> None:
+    result = parse_term_text(raw)
+    assert result.kind == "error"
+    assert result.error and result.error.code == "ambiguous"
+    assert "two-digit year" in result.error.message
+
+
 @pytest.mark.parametrize("raw", ["Spring", "秋季", "2026 Summer", "not-a-term"])
 def test_invalid_or_ambiguous_term_is_structured(raw: str) -> None:
     result = parse_term_key(raw)

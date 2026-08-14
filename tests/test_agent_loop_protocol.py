@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from app.agent import loop as agent_loop
 from tests.fakes.llm import (
@@ -115,6 +116,133 @@ def test_run_agent_passes_pending_schedule_to_tool_context(monkeypatch):
 
     assert events[-1]["text"] == "Done."
     assert seen_contexts[0]["pending_schedule"] == pending_schedule
+
+
+def test_identical_term_read_tool_calls_reuse_first_result(monkeypatch):
+    dispatch_calls: list[tuple[str, dict]] = []
+
+    def fake_dispatch(name, args, *, context):
+        dispatch_calls.append((name, dict(args)))
+        return {
+            "ok": True,
+            "found": False,
+            "course_id": args["course_id"],
+            "term": args["term"],
+            "sections": [],
+        }
+
+    monkeypatch.setattr(agent_loop.agent_tools, "dispatch", fake_dispatch)
+    repeated_args = {"course_id": "ECON167", "term": "2025 Winter"}
+    client = ScriptedLLMClient(
+        tool_response(
+            tool_call(
+                "get_sections",
+                repeated_args,
+                call_id="call_sections_1",
+                index=0,
+            ),
+            tool_call(
+                "get_sections",
+                repeated_args,
+                call_id="call_sections_2",
+                index=1,
+            ),
+        ),
+        text_response("Done."),
+    )
+
+    events = asyncio.run(
+        _collect(
+            agent_loop.run_agent(
+                [{"role": "user", "content": "Check these records."}],
+                client=client,
+                model="fake-model",
+                user_id="student_001",
+                term="2025 Winter",
+                allowed_query_terms=["2025 Winter"],
+                query_term_source="explicit",
+            )
+        )
+    )
+
+    assert dispatch_calls == [
+        ("get_sections", {"course_id": "ECON167", "term": "2025 Winter"})
+    ]
+    done_events = [event for event in events if event["type"] == "tool_call_done"]
+    assert [event["reused"] for event in done_events] == [False, True]
+    assert events[-1]["text"] == "Done."
+    client.assert_exhausted()
+
+
+def test_authoritative_offering_result_blocks_redundant_web_search(monkeypatch):
+    dispatch_calls: list[str] = []
+
+    def fake_dispatch(name, args, *, context):
+        dispatch_calls.append(name)
+        assert name == "get_sections"
+        return {
+            "ok": True,
+            "found": False,
+            "source": "registrar_websoc",
+            "source_url": "https://www.reg.uci.edu/perl/WebSoc",
+            "authoritative": True,
+            "offering_status": "not_offered",
+            "course_id": "ECON 167",
+            "term": "2025 Winter",
+            "sections": [],
+        }
+
+    monkeypatch.setattr(agent_loop.agent_tools, "dispatch", fake_dispatch)
+    client = ScriptedLLMClient(
+        tool_response(
+            tool_call(
+                "get_sections",
+                {"course_id": "ECON167", "term": "2025 Winter"},
+                call_id="call_sections",
+                index=0,
+            ),
+            tool_call(
+                "web_search",
+                {
+                    "query": "UCI ECON 167 Winter 2025 schedule of classes WebSoc",
+                    "reason": "Double-check the offering.",
+                },
+                call_id="call_search",
+                index=1,
+            ),
+        ),
+        text_response("The official result is definitive."),
+    )
+    messages = [{"role": "user", "content": "Was ECON 167 offered in Winter 2025?"}]
+
+    events = asyncio.run(
+        _collect(
+            agent_loop.run_agent(
+                messages,
+                client=client,
+                model="fake-model",
+                user_id="student_001",
+                term="2025 Winter",
+                allowed_query_terms=["2025 Winter"],
+                query_term_source="explicit",
+            )
+        )
+    )
+
+    assert dispatch_calls == ["get_sections"]
+    done_events = [event for event in events if event["type"] == "tool_call_done"]
+    assert done_events[0]["offering_status"] == "not_offered"
+    assert done_events[0]["authoritative"] is True
+    assert done_events[0]["section_count"] == 0
+    assert done_events[1]["ok"] is False
+    blocked_payload = next(
+        json.loads(message["content"])
+        for message in messages
+        if message.get("role") == "tool"
+        and message.get("tool_call_id") == "call_search"
+    )
+    assert blocked_payload["error_code"] == "definitive_offering_already_resolved"
+    client.assert_exhausted()
 
 
 def test_run_agent_surfaces_llm_create_error():

@@ -31,6 +31,7 @@ let addedCourses = new Set();
 let addedSectionKeys = new Set();
 let pendingScheduleEntries = [];
 let scheduleEvents = [];
+let scheduleValidation = {valid: true, warnings: [], conflicts: [], unknowns: []};
 let scheduleOpen = false;
 let colorIndex = 0;
 const courseColors = {};
@@ -73,29 +74,126 @@ inputEl.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
 
-function setTermContext(term, source, status) {
+function setTermContext(term, source, status, mode, availableTerms) {
   if (!term) return;
-  currentTermContext = {term, source: source || null, status: status || null};
-  const fallback = source === 'code_fallback' || status === 'fallback';
-  const label = `Term: ${term}${fallback ? ' · fallback' : ''}`;
-  const display = document.getElementById('termDisplay');
-  if (display) display.textContent = label;
+  const normalizedMode = mode === 'manual' ? 'manual' : 'auto';
+  const terms = Array.from(new Set(
+    [...(availableTerms || []), term].filter(Boolean)
+  ));
+  currentTermContext = {
+    term,
+    source: source || null,
+    status: status || null,
+    mode: normalizedMode,
+    availableTerms: terms,
+  };
+  renderTermSelector();
   updateWelcomeTerm();
 }
 
 function applyTermPayload(payload) {
   if (!payload) return;
-  const term = payload.effective_term || payload.automatic_term;
+  const term = payload.default_term || payload.automatic_term;
   const source = payload.term_source || payload.source;
   const status = payload.term_status || payload.status;
-  setTermContext(term, source, status);
+  const mode = payload.term_mode || 'auto';
+  setTermContext(term, source, status, mode, payload.available_terms);
 }
 
 function useAutomaticTermContext() {
   if (automaticTermContext) applyTermPayload(automaticTermContext);
 }
 
-/* ── Boot: resolve the read-only automatic term + cache default prompt ── */
+function renderTermSelector() {
+  const select = document.getElementById('termSelect');
+  if (!select || !currentTermContext) return;
+  const automatic = automaticTermContext?.automatic_term || currentTermContext.term;
+  const choices = currentTermContext.availableTerms || [];
+  const options = [
+    `<option value="__auto__">Auto · ${escHTML(automatic)}</option>`,
+    ...choices.map(term => (
+      `<option value="${escAttr(term)}">${escHTML(term)}</option>`
+    )),
+  ];
+  select.innerHTML = options.join('');
+  select.value = currentTermContext.mode === 'manual'
+    ? currentTermContext.term
+    : '__auto__';
+  select.disabled = false;
+  const restore = document.getElementById('termRestoreAuto');
+  if (restore) restore.hidden = currentTermContext.mode !== 'manual';
+}
+
+function setTermError(message) {
+  const el = document.getElementById('termError');
+  if (!el) return;
+  el.textContent = message || '';
+  el.title = message || '';
+}
+
+async function ensureSessionForTermMutation() {
+  if (currentSessionId) return currentSessionId;
+  const response = await fetch(`${API}/api/sessions/${USER_ID}`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({title: 'New conversation'}),
+  });
+  if (!response.ok) throw new Error(`Could not create conversation (${response.status})`);
+  const data = await response.json();
+  currentSessionId = data.session_id;
+  applyTermPayload(data);
+  setActiveSessionItem(currentSessionId);
+  loadSessionList();
+  return currentSessionId;
+}
+
+async function mutateDefaultTerm(mode, term) {
+  const select = document.getElementById('termSelect');
+  if (select) select.disabled = true;
+  setTermError('');
+  try {
+    const sessionId = await ensureSessionForTermMutation();
+    const response = await fetch(`${API}/api/sessions/${sessionId}/default-term`, {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(mode === 'manual' ? {mode, term} : {mode: 'auto'}),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const detail = data.detail?.message || data.detail || `HTTP ${response.status}`;
+      throw new Error(String(detail));
+    }
+    applyTermPayload(data);
+    return true;
+  } catch (error) {
+    setTermError(`Term not changed: ${error.message}`);
+    renderTermSelector();
+    return false;
+  } finally {
+    if (select) select.disabled = false;
+  }
+}
+
+async function handleTermSelection(event) {
+  const requested = event.target.value;
+  // Keep the authoritative value visible until the API confirms the change.
+  renderTermSelector();
+  if (requested === '__auto__') {
+    await mutateDefaultTerm('auto');
+  } else {
+    await mutateDefaultTerm('manual', requested);
+  }
+}
+
+async function restoreAutoTerm() {
+  await mutateDefaultTerm('auto');
+}
+
+async function confirmSuggestedTerm(term) {
+  await mutateDefaultTerm('manual', term);
+}
+
+/* ── Boot: resolve automatic term + conversation selector context ── */
 async function loadTermState() {
   try {
     const res = await fetch(`${API}/api/term-state`);
@@ -105,8 +203,8 @@ async function loadTermState() {
     if (!currentSessionId) applyTermPayload(data);
   } catch (err) {
     console.warn('Failed to load /api/term-state', err);
-    const display = document.getElementById('termDisplay');
-    if (display) display.textContent = 'Term: Unavailable';
+    const select = document.getElementById('termSelect');
+    if (select) select.innerHTML = '<option>Term unavailable</option>';
   }
 }
 

@@ -1,22 +1,3 @@
-function renderValidationFooter(report) {
-  const ICONS = { error: '⚠', warn: '⚠', info: 'ℹ' };
-  const issues = report.issues || [];
-  let html = '<div class="validation-footer">';
-  html += `<div class="validation-footer-header">🔍 Data check  ·  ${issues.length} issue${issues.length === 1 ? '' : 's'}</div>`;
-  for (const issue of issues) {
-    const sev = (issue.severity || 'info').toLowerCase();
-    const icon = ICONS[sev] || '·';
-    html += `<div class="validation-issue validation-issue-${escAttr(sev)}">`;
-    html += `<div class="validation-issue-icon">${icon}</div>`;
-    html += `<div class="validation-issue-msg">`;
-    if (issue.code) html += `<code>${escHTML(issue.code)}</code> `;
-    html += escHTML(issue.message || '');
-    html += `</div></div>`;
-  }
-  html += '</div>';
-  return html;
-}
-
 /* Stitch-style recommendation card. Consumes the schema produced by
    the `propose_recommendation` agent tool (app/agent/tools.py):
        {course_id, title, units, category, priority, reason,
@@ -35,9 +16,15 @@ const CATEGORY_LABELS = {
 
 const SOURCE_BADGE_LABELS = {
   db_verified: 'DB Verified',
+  uci_catalog: 'UCI Catalog',
+  uci_websoc: 'UCI WebSoc',
   official_uci: 'Official UCI',
   official_web: 'Official Web',
   live_anteater_websoc: 'Live WebSoc',
+  last_known_live: 'Cached WebSoc',
+  anteater_courses: 'Anteater Courses',
+  anteater_programs: 'Anteater Programs',
+  student_declaration: 'Your profile',
   websoc_comments: 'WebSoc Comments',
   official_department_link: 'Official Department Link',
   local_not_live: 'Not Live',
@@ -84,9 +71,10 @@ function _renderCardSourceBadges(card) {
   // (`course_source`, `course_provenance`, `section_source`) so web
   // evidence never masquerades as DB verified. Section-level live
   // sources can also surface here when a card includes live sections.
-  const explicit = Array.isArray(card?.field_source_badges)
-    ? card.field_source_badges
-    : [];
+  const explicit = [
+    ...(Array.isArray(card?.field_source_badges) ? card.field_source_badges : []),
+    ...(Array.isArray(card?.source_badges) ? card.source_badges : []),
+  ];
   const sectionSources = [];
   if (card?.section_source) sectionSources.push(card.section_source);
   for (const section of (card?.sections || [])) {
@@ -676,7 +664,6 @@ function renderCard(card) {
                        ? 'Not in catalog' : '');
   const reason     = card.reason || '';
   const unitsTxt   = card.units != null ? card.units : '—';
-
   const groupCount = (card.section_groups || []).length;
   const showSectionsBtn = groupCount > 0 ? `
     <button class="cc-sg-toggle"

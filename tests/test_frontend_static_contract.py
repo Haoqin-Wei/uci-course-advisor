@@ -43,23 +43,27 @@ def test_frontend_does_not_fake_term_or_duplicate_palette_tokens() -> None:
     assert "rgba(79, 93, 128, 0.12)']" not in text
 
 
-def test_frontend_term_is_read_only_and_backend_resolved() -> None:
+def test_frontend_term_selector_is_backend_mutated_and_query_scoped() -> None:
     text = _frontend_text()
     index = (STATIC / "index.html").read_text(encoding="utf-8")
     api_client = (STATIC / "js" / "api-client.js").read_text(encoding="utf-8")
     chat = (STATIC / "js" / "chat.js").read_text(encoding="utf-8")
     sessions = (STATIC / "js" / "sessions.js").read_text(encoding="utf-8")
 
-    assert 'id="termDisplay"' in index
-    assert 'aria-label="Current academic term"' in index
-    assert "termSelect" not in text
-    assert "term-select" not in text
-    assert "loadTerms(" not in text
+    assert 'id="termSelect"' in index
+    assert 'aria-label="Conversation default term"' in index
+    assert "term-select" in text
+    assert "handleTermSelection(event)" in index
+    assert "restoreAutoTerm()" in index
+    assert "/default-term" in api_client
+    assert "mutateDefaultTerm(" in api_client
     assert "/api/terms" not in text
     assert "/api/term-state" in api_client
-    assert "· fallback" in api_client
     assert "payload.term" not in chat
     assert "applyTermPayload(event)" in chat
+    assert "renderQueryTermBadge(wrap, meta)" in chat
+    assert "本次比较：" in chat
+    assert "confirmSuggestedTerm(" in api_client
     assert "useAutomaticTermContext()" in sessions
     assert "applyTermPayload(data)" in sessions
 
@@ -91,7 +95,7 @@ def test_frontend_assets_are_split_into_roadmap_modules() -> None:
     for path in EXPECTED_FRONTEND_MODULES:
         rel = "/" + path.relative_to(ROOT).as_posix()
         assert rel in index
-        assert f'{rel}?v=20260723-2' in index
+        assert f'{rel}?v=20260814-m17' in index
 
 
 def test_key_browser_regression_flows_are_wired() -> None:
@@ -101,6 +105,7 @@ def test_key_browser_regression_flows_are_wired() -> None:
     auth = (STATIC / "js" / "auth.js").read_text(encoding="utf-8")
     onboarding = (STATIC / "js" / "onboarding.js").read_text(encoding="utf-8")
 
+    assert "developer_mode:" not in chat
     assert "/api/auth/login" in auth
     assert "/api/auth/request_code" in auth
     assert "/api/auth/verify" in auth
@@ -118,6 +123,11 @@ def test_key_browser_regression_flows_are_wired() -> None:
     assert "实际抓取 ${fetches.length} 个请求" in chat
     assert "用于最终事实" in chat
     assert "tool-chip-web-search" in chat
+    assert "is-official-no-match" in chat
+    assert "官方无匹配" in chat
+    assert "数据不可用" in chat
+    assert "event.offering_status" not in chat
+    assert "resultMeta.offering_status" in chat
     assert 'event.label || event.name, event.name' in chat
     assert "function renderContinueBanner(" in chat
     assert "/api/chat/continue" in chat
@@ -140,6 +150,7 @@ def test_key_browser_regression_flows_are_wired() -> None:
     assert "tool-chip-websoc-comments" in chat
 
     assert "/api/schedule/add" in schedule
+    assert "/api/schedule/refresh" in schedule
     assert "/api/schedule/remove" in schedule
     assert "/api/schedule/clear" in schedule
     assert "toggleScheduleBtn')?.setAttribute('aria-expanded', 'true')" in schedule
@@ -162,6 +173,7 @@ def test_cross_term_schedule_identity_and_notice_are_wired() -> None:
     assert "ev.term || ''" in schedule
     assert "requires_confirmation" not in schedule
     assert "confirm_conflicts" not in schedule
+    assert 'aria-label="Refresh schedule data"' in index
 
     assert 'id="scheduleToastRegion"' in index
     assert "function showCrossTermToast(notice)" in schedule
@@ -174,7 +186,7 @@ def test_live_and_restored_messages_share_structured_renderers() -> None:
     sessions = (STATIC / "js" / "sessions.js").read_text(encoding="utf-8")
 
     assert "renderCardsBlock(meta.cards)" in chat
-    assert "renderValidationFooter(meta.validation_report)" in chat
+    assert "formatMarkdown(fullText || '')" in chat
     assert "meta.web_fetches" in chat
     assert "web_fetches: t.web_fetches" in sessions
     assert "renderWebFetchSummary(wrap, extras.web_fetches)" in sessions
@@ -182,15 +194,43 @@ def test_live_and_restored_messages_share_structured_renderers() -> None:
     assert "sendFollowup(" in chat
 
     assert "renderCardsBlock(extras.cards)" in sessions
-    assert "renderValidationFooter(extras.validation)" in sessions
+    assert "formatMarkdown(text || '')" in sessions
     assert "sendFollowup(" in sessions
+
+
+def test_v1_frontend_has_no_check_or_developer_trace_ui() -> None:
+    cards = (STATIC / "js" / "cards.js").read_text(encoding="utf-8")
+    chat = (STATIC / "js" / "chat.js").read_text(encoding="utf-8")
+    index = (STATIC / "index.html").read_text(encoding="utf-8")
+    css = (STATIC / "styles" / "components.css").read_text(encoding="utf-8")
+
+    for source in (cards, chat, index, css):
+        assert "Data check" not in source
+        assert "Developer trace" not in source
+        assert "verification-inline-badge" not in source
+    assert "formatMarkdownWithVerification" not in cards
+    assert "verificationReportFromMeta" not in cards
+
+
+def test_schedule_frontend_renders_server_conflicts_and_live_status() -> None:
+    schedule = (STATIC / "js" / "schedule.js").read_text(encoding="utf-8")
+    api_client = (STATIC / "js" / "api-client.js").read_text(encoding="utf-8")
+    css = (STATIC / "styles" / "components.css").read_text(encoding="utf-8")
+
+    assert "scheduleValidation" in api_client
+    assert "_scheduleConflictKeys()" in schedule
+    assert "time conflict" in schedule
+    assert "materialized_section" in schedule
+    assert "sg-event.has-conflict" in css
+    assert "schedule-entry-risk-full" in css
+    assert "schedule-entry-risk-cancelled" in css
 
 
 def test_frontend_accessibility_and_mobile_contracts() -> None:
     index = (STATIC / "index.html").read_text(encoding="utf-8")
     css = (STATIC / "styles" / "components.css").read_text(encoding="utf-8")
 
-    assert 'aria-label="Current academic term"' in index
+    assert 'aria-label="Conversation default term"' in index
     assert 'aria-label="Ask ZotAdvisor a question"' in index
     assert 'role="log"' in index
     assert 'aria-live="polite"' in index

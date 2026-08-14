@@ -41,6 +41,8 @@ SECOND_HOP_ALLOWED_HOSTS = frozenset({"docs.google.com"})
 LOG_TEXT_MAX_CHARS = 1000
 AGENT_TOOL = "get_department_restrictions"
 WORKFLOW_ID = "websoc_department_restrictions"
+COURSE_AGENT_TOOL = "get_sections"
+COURSE_WORKFLOW_ID = "websoc_course_offering"
 
 _QUARTER_CODES = {
     "Winter": "03",
@@ -88,6 +90,7 @@ def build_websoc_department_params(term: str, department: str) -> dict[str, str]
         "ShowFinals": "on",
         "Breadth": "ANY",
         "Dept": dept,
+        "CourseNum": "",
         "CourseCodes": "",
         "InstrName": "",
         "CourseTitle": "",
@@ -103,6 +106,20 @@ def build_websoc_department_params(term: str, department: str) -> dict[str, str]
         "Bldg": "",
         "Room": "",
     }
+
+
+def build_websoc_course_params(
+    term: str,
+    department: str,
+    course_number: str,
+) -> dict[str, str]:
+    params = build_websoc_department_params(term, department)
+    normalized_course = (course_number or "").strip().upper()
+    if not normalized_course:
+        raise ValueError("course_number is required")
+    params["CourseNum"] = normalized_course
+    params.pop("ShowComments", None)
+    return params
 
 
 def build_websoc_department_url(term: str, department: str) -> str:
@@ -276,9 +293,178 @@ def fetch_websoc_department_restrictions(
     return result
 
 
+def fetch_websoc_course_offering(
+    *,
+    term: str,
+    department: str,
+    course_number: str,
+    session: Optional[requests.Session] = None,
+) -> dict[str, Any]:
+    """Fetch one course from the Registrar's fixed WebSoc POST workflow.
+
+    This is the authoritative historical offering path. It deliberately
+    distinguishes an explicit Registrar no-match result from transport,
+    identity-validation, or parsing failures.
+    """
+
+    params = build_websoc_course_params(term, department, course_number)
+    source_url = WEBSOC_URL
+    http = session or requests.Session()
+    retrieved_at = _utc_now()
+    form_result = fetch_websoc_form_options(
+        session=http,
+        agent_tool=COURSE_AGENT_TOOL,
+        workflow_id=COURSE_WORKFLOW_ID,
+    )
+    base = {
+        "workflow_id": COURSE_WORKFLOW_ID,
+        "term": term,
+        "department": params["Dept"],
+        "course_number": params["CourseNum"],
+        "source": "registrar_websoc",
+        "source_url": source_url,
+        "request_method": "POST",
+        "request_form": params,
+        "retrieved_at": retrieved_at,
+    }
+    if not form_result.get("ok"):
+        return {
+            **form_result,
+            **base,
+            "ok": False,
+            "found": False,
+            "offering_status": "unavailable",
+        }
+
+    requested_term_code = params["YearTerm"]
+    requested_department = params["Dept"]
+    if requested_term_code not in form_result["terms"]:
+        return _course_workflow_error(
+            base,
+            error_code="websoc_term_unavailable",
+            message=f"term {term!r} is not available in the current WebSoc form",
+            fetches=form_result.get("fetches") or [],
+            available_terms=form_result["terms"],
+        )
+    if requested_department not in form_result["departments"]:
+        return _course_workflow_error(
+            base,
+            error_code="websoc_department_unavailable",
+            message=(
+                f"department {requested_department!r} is not available in the current "
+                "WebSoc form"
+            ),
+            fetches=form_result.get("fetches") or [],
+            available_departments=form_result["departments"],
+        )
+
+    request_started = observability.now()
+    observability.log_agent_web_fetch_started(
+        logger,
+        url=source_url,
+        method="POST",
+        tool=COURSE_AGENT_TOOL,
+        workflow_id=COURSE_WORKFLOW_ID,
+        term=term,
+        department=requested_department,
+        course_number=params["CourseNum"],
+        timeout_seconds=REQUEST_TIMEOUT_S,
+    )
+    try:
+        response = http.post(WEBSOC_URL, data=params, timeout=REQUEST_TIMEOUT_S)
+        response.raise_for_status()
+        duration_ms = observability.elapsed_ms(request_started)
+        post_fetch = _fetch_record(
+            method="POST",
+            url=source_url,
+            final_url=getattr(response, "url", None) or source_url,
+            source_role="registrar_websoc_course_results",
+            status_code=getattr(response, "status_code", None),
+            content_length=len((getattr(response, "text", "") or "").encode("utf-8")),
+            duration_ms=duration_ms,
+            ok=True,
+            depth=0,
+        )
+        observability.log_agent_web_fetch_completed(
+            logger,
+            url=source_url,
+            final_url=getattr(response, "url", None) or source_url,
+            method="POST",
+            tool=COURSE_AGENT_TOOL,
+            workflow_id=COURSE_WORKFLOW_ID,
+            status_code=getattr(response, "status_code", None),
+            content_type=(getattr(response, "headers", {}) or {}).get("content-type"),
+            content_length=len((getattr(response, "text", "") or "").encode("utf-8")),
+            duration_ms=duration_ms,
+            term=term,
+            department=requested_department,
+            course_number=params["CourseNum"],
+        )
+    except requests.RequestException as exc:
+        duration_ms = observability.elapsed_ms(request_started)
+        post_fetch = _fetch_record(
+            method="POST",
+            url=source_url,
+            final_url=source_url,
+            source_role="registrar_websoc_course_results",
+            status_code=None,
+            content_length=None,
+            duration_ms=duration_ms,
+            ok=False,
+            depth=0,
+            error=f"{type(exc).__name__}: {exc}",
+        )
+        observability.log_agent_web_fetch_failed(
+            logger,
+            url=source_url,
+            method="POST",
+            tool=COURSE_AGENT_TOOL,
+            workflow_id=COURSE_WORKFLOW_ID,
+            duration_ms=duration_ms,
+            error=f"{type(exc).__name__}: {exc}",
+            term=term,
+            department=requested_department,
+            course_number=params["CourseNum"],
+        )
+        return _course_workflow_error(
+            base,
+            error_code="websoc_request_failed",
+            message=f"Registrar WebSoc request failed: {type(exc).__name__}",
+            fetches=[*(form_result.get("fetches") or []), post_fetch],
+        )
+
+    result = parse_websoc_course_html(
+        response.text,
+        term=term,
+        department=requested_department,
+        course_number=params["CourseNum"],
+        source_url=source_url,
+        retrieved_at=retrieved_at,
+    )
+    result["request_method"] = "POST"
+    result["request_form"] = params
+    result["fetches"] = [*(form_result.get("fetches") or []), post_fetch]
+    observability.log_event(
+        logger,
+        logging.INFO if result.get("ok") else logging.WARNING,
+        "agent_web_extraction_completed",
+        workflow_id=COURSE_WORKFLOW_ID,
+        tool=COURSE_AGENT_TOOL,
+        term=term,
+        department=requested_department,
+        course_number=params["CourseNum"],
+        offering_status=result.get("offering_status"),
+        section_count=len(result.get("sections") or []),
+        error_code=result.get("error_code"),
+    )
+    return result
+
+
 def fetch_websoc_form_options(
     *,
     session: Optional[requests.Session] = None,
+    agent_tool: str = AGENT_TOOL,
+    workflow_id: str = WORKFLOW_ID,
 ) -> dict[str, Any]:
     """Read the live form so submitted term and department values are validated."""
 
@@ -289,8 +475,8 @@ def fetch_websoc_form_options(
         logger,
         url=WEBSOC_URL,
         method="GET",
-        tool=AGENT_TOOL,
-        workflow_id=WORKFLOW_ID,
+        tool=agent_tool,
+        workflow_id=workflow_id,
         timeout_seconds=REQUEST_TIMEOUT_S,
     )
     try:
@@ -315,8 +501,8 @@ def fetch_websoc_form_options(
             url=WEBSOC_URL,
             final_url=getattr(response, "url", None) or WEBSOC_URL,
             method="GET",
-            tool=AGENT_TOOL,
-            workflow_id=WORKFLOW_ID,
+            tool=agent_tool,
+            workflow_id=workflow_id,
             status_code=getattr(response, "status_code", None),
             content_type=(getattr(response, "headers", {}) or {}).get("content-type"),
             content_length=len((getattr(response, "text", "") or "").encode("utf-8")),
@@ -340,8 +526,8 @@ def fetch_websoc_form_options(
             logger,
             url=WEBSOC_URL,
             method="GET",
-            tool=AGENT_TOOL,
-            workflow_id=WORKFLOW_ID,
+            tool=agent_tool,
+            workflow_id=workflow_id,
             duration_ms=duration_ms,
             error=f"{type(exc).__name__}: {exc}",
         )
@@ -392,6 +578,144 @@ def fetch_websoc_form_options(
         "departments": parsed.departments,
         "fetches": [fetch_record],
     }
+
+
+def parse_websoc_course_html(
+    html: str,
+    *,
+    term: str,
+    department: str,
+    course_number: str,
+    source_url: str,
+    retrieved_at: Optional[str] = None,
+) -> dict[str, Any]:
+    parsed = _parse_html(html)
+    text = parsed.text
+    requested_term = Term.parse(term)
+    requested_department = _normalize_department(department)
+    requested_course = (course_number or "").strip().upper()
+    response_term = _extract_result_term(text)
+    response_department = _normalize_department(
+        _search_text(r"Department:\s*([^\n]+)", text)
+    )
+    response_course = (
+        _search_text(r"Course Number Range:\s*([^\n]+)", text) or ""
+    ).strip().upper()
+    validation_errors: list[dict[str, str]] = []
+    if not re.search(r"Schedule of Classes search results", text, re.IGNORECASE):
+        validation_errors.append(
+            {
+                "error_code": "websoc_not_search_results",
+                "message": "WebSoc response is not a Schedule of Classes results page",
+            }
+        )
+    if response_department != requested_department:
+        validation_errors.append(
+            {
+                "error_code": "websoc_department_mismatch",
+                "message": (
+                    f"WebSoc returned department {response_department or 'missing'} "
+                    f"instead of {requested_department}"
+                ),
+            }
+        )
+    if requested_term is None or response_term != requested_term.display():
+        validation_errors.append(
+            {
+                "error_code": "websoc_term_mismatch",
+                "message": (
+                    f"WebSoc returned term {response_term or 'missing'} instead of "
+                    f"{requested_term.display() if requested_term else term}"
+                ),
+            }
+        )
+    if response_course != requested_course:
+        validation_errors.append(
+            {
+                "error_code": "websoc_course_mismatch",
+                "message": (
+                    f"WebSoc returned course range {response_course or 'missing'} "
+                    f"instead of {requested_course}"
+                ),
+            }
+        )
+
+    course_table = _parse_websoc_course_table(
+        html,
+        department=requested_department,
+        course_number=requested_course,
+        retrieved_at=retrieved_at or _utc_now(),
+    )
+    sections = course_table["sections"]
+    explicit_no_match = bool(
+        re.search(
+            r"No courses matched your search criteria for this term",
+            text,
+            re.IGNORECASE,
+        )
+    )
+    if explicit_no_match and sections:
+        validation_errors.append(
+            {
+                "error_code": "websoc_conflicting_course_result",
+                "message": "WebSoc response contained both sections and a no-match message",
+            }
+        )
+    if not explicit_no_match and not sections:
+        validation_errors.append(
+            {
+                "error_code": "websoc_course_result_missing",
+                "message": "WebSoc result contained neither course sections nor an explicit no-match",
+            }
+        )
+
+    validation_ok = not validation_errors
+    offering_status = (
+        "unavailable"
+        if not validation_ok
+        else "not_offered"
+        if explicit_no_match
+        else "offered"
+    )
+    result: dict[str, Any] = {
+        "ok": validation_ok,
+        "found": validation_ok and bool(sections),
+        "mode": "workflow",
+        "workflow_id": COURSE_WORKFLOW_ID,
+        "offering_status": offering_status,
+        "authoritative": validation_ok,
+        "term": term,
+        "department": requested_department,
+        "course_number": requested_course,
+        "course_id": f"{requested_department} {requested_course}",
+        "course_title": course_table.get("course_title"),
+        "source": "registrar_websoc",
+        "source_url": source_url,
+        "source_class": "official_uci",
+        "trust_level": "high",
+        "retrieved_at": retrieved_at or _utc_now(),
+        "response_term": response_term,
+        "search_criteria": {
+            "department": response_department,
+            "course_number": response_course,
+            "exclude_cancelled_courses": bool(
+                re.search(r"Exclude cancelled courses", text, re.IGNORECASE)
+            ),
+        },
+        "sections": sections if validation_ok else [],
+        "validation": {"ok": validation_ok, "errors": validation_errors},
+        "extraction_status": "complete" if validation_ok else "invalid",
+    }
+    if offering_status == "not_offered":
+        result["reason"] = (
+            f"Registrar WebSoc reported no matching sections for "
+            f"{requested_department} {requested_course} in "
+            f"{requested_term.display() if requested_term else term}"
+        )
+    if validation_errors:
+        result["error_code"] = validation_errors[0]["error_code"]
+        result["message"] = "; ".join(error["message"] for error in validation_errors)
+    return result
 
 
 def parse_websoc_department_html(
@@ -546,6 +870,144 @@ class _WebSocFormHTMLParser(HTMLParser):
             self._option_text = []
         elif tag == "select":
             self._select_name = None
+
+
+class _WebSocCourseTableHTMLParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.rows: list[list[dict[str, Any]]] = []
+        self._row: Optional[list[dict[str, Any]]] = None
+        self._cell: Optional[dict[str, Any]] = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
+        attr = {key.lower(): value or "" for key, value in attrs}
+        if tag == "tr":
+            self._row = []
+        elif tag in {"td", "th"} and self._row is not None:
+            self._cell = {"class": attr.get("class", ""), "parts": []}
+        elif tag == "br" and self._cell is not None:
+            self._cell["parts"].append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if self._cell is not None:
+            self._cell["parts"].append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"td", "th"} and self._row is not None and self._cell is not None:
+            self._row.append(self._cell)
+            self._cell = None
+        elif tag == "tr" and self._row is not None:
+            if self._row:
+                self.rows.append(self._row)
+            self._row = None
+            self._cell = None
+
+
+def _parse_websoc_course_table(
+    html: str,
+    *,
+    department: str,
+    course_number: str,
+    retrieved_at: str,
+) -> dict[str, Any]:
+    parser = _WebSocCourseTableHTMLParser()
+    parser.feed(html or "")
+    parser.close()
+    course_title: Optional[str] = None
+    sections: list[dict[str, Any]] = []
+    for row in parser.rows:
+        cells = [_websoc_cell_text(cell) for cell in row]
+        for index, cell in enumerate(row):
+            if "coursetitle" not in str(cell.get("class") or "").lower():
+                continue
+            title_text = cells[index]
+            title_match = re.match(
+                rf"^\s*{re.escape(department)}\s+{re.escape(course_number)}\s+"
+                r"(.+?)(?:\s*\(Prerequisites\))?\s*$",
+                title_text,
+                flags=re.IGNORECASE,
+            )
+            if title_match:
+                course_title = _collapse_ws(title_match.group(1))
+
+        if len(cells) < 15 or not re.fullmatch(r"\d{5}", cells[0]):
+            continue
+        max_capacity = _websoc_int(cells[8])
+        enrolled = _websoc_int(cells[9])
+        seats_open = (
+            max(0, max_capacity - enrolled)
+            if max_capacity is not None and enrolled is not None
+            else None
+        )
+        days, start_time, end_time, time_display = _split_websoc_time(cells[6])
+        status = _collapse_ws(cells[14]).upper() or None
+        sections.append(
+            {
+                "section_code": cells[0],
+                "section_num": cells[2] or None,
+                "section_type": cells[1] or None,
+                "units": cells[3] or None,
+                "days": days,
+                "start_time": start_time,
+                "end_time": end_time,
+                "time_display": time_display,
+                "location": cells[7] or None,
+                "instructors": _websoc_cell_lines(row[4]),
+                "modality": cells[5] or None,
+                "max_capacity": max_capacity,
+                "enrolled": enrolled,
+                "seats_open": seats_open,
+                "waitlisted": None,
+                "requests": _websoc_int(cells[10]),
+                "status": status,
+                "is_cancelled": status in {"CANCELLED", "CANCELED"},
+                "ge_categories": [],
+                "restrictions": cells[11] or None,
+                "final_exam": None,
+                "source": "registrar_websoc",
+                "is_live": False,
+                "retrieved_at": retrieved_at,
+            }
+        )
+    return {"course_title": course_title, "sections": sections}
+
+
+def _websoc_cell_text(cell: dict[str, Any]) -> str:
+    return _collapse_ws(" ".join(str(part) for part in cell.get("parts") or []))
+
+
+def _websoc_cell_lines(cell: dict[str, Any]) -> list[str]:
+    raw = "".join(str(part) for part in cell.get("parts") or [])
+    return [line for line in (_collapse_ws(part) for part in raw.splitlines()) if line]
+
+
+def _websoc_int(value: str) -> Optional[int]:
+    try:
+        return int((value or "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _split_websoc_time(
+    value: str,
+) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    display = _collapse_ws(value)
+    if not display or display.upper() in {"TBA", "ARR"}:
+        return None, None, None, display or None
+    match = re.match(
+        r"^(?P<days>.*?)\s+(?P<start>\d{1,2}:\d{2}[ap]?)\s*-\s*"
+        r"(?P<end>\d{1,2}:\d{2}[ap]?)$",
+        display,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None, None, None, display
+    return (
+        _collapse_ws(match.group("days")) or None,
+        match.group("start"),
+        match.group("end"),
+        display,
+    )
 
 
 def _parse_html(html: str) -> ParsedHTML:
@@ -1460,6 +1922,37 @@ def _workflow_error(
         "request_method": "POST",
         "request_form": request_form,
         "retrieved_at": retrieved_at,
+        **extra,
+    }
+
+
+def _course_workflow_error(
+    base: dict[str, Any],
+    *,
+    error_code: str,
+    message: str,
+    **extra: Any,
+) -> dict[str, Any]:
+    observability.log_event(
+        logger,
+        logging.WARNING,
+        "websoc_search_rejected",
+        workflow_id=COURSE_WORKFLOW_ID,
+        web_search_url=WEBSOC_URL,
+        request_method="POST",
+        request_form=base.get("request_form"),
+        error_code=error_code,
+        message=message,
+    )
+    return {
+        **base,
+        "ok": False,
+        "found": False,
+        "offering_status": "unavailable",
+        "authoritative": False,
+        "error_code": error_code,
+        "message": message,
+        "sections": [],
         **extra,
     }
 

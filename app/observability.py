@@ -9,6 +9,7 @@ small API.
 from __future__ import annotations
 
 import contextvars
+import json
 import logging
 import math
 import os
@@ -81,6 +82,9 @@ def snapshot_metrics() -> dict:
                 "min_ms": min(values) if values else None,
                 "max_ms": max(values) if values else None,
                 "avg_ms": round(sum(values) / len(values), 2) if values else None,
+                "p50_ms": _percentile(values, 0.50),
+                "p95_ms": _percentile(values, 0.95),
+                "p99_ms": _percentile(values, 0.99),
             }
             for key, values in _timings.items()
         },
@@ -90,6 +94,14 @@ def snapshot_metrics() -> dict:
 def clear_metrics() -> None:
     _counters.clear()
     _timings.clear()
+
+
+def _percentile(values: list[float], fraction: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = max(0, math.ceil(len(ordered) * fraction) - 1)
+    return round(ordered[index], 2)
 
 
 def log_event(logger: logging.Logger, level: int, event: str, **fields: Any) -> None:
@@ -201,6 +213,69 @@ def estimate_tokens(text: str | None) -> int:
     if not text:
         return 0
     return max(1, math.ceil(len(text) / 4))
+
+
+def estimate_prompt_layers(
+    messages: list[dict],
+    *,
+    tool_schemas: list[dict] | None = None,
+) -> dict[str, int]:
+    """Conservatively estimate the actual layered input sent to a model."""
+    layers = {
+        "base_system": 0,
+        "runtime_context": 0,
+        "memory_summary": 0,
+        "recent_turns": 0,
+        "tool_schemas": 0,
+        "tool_calls_results": 0,
+        "current_user": 0,
+    }
+    last_user_index = max(
+        (
+            index
+            for index, message in enumerate(messages)
+            if message.get("role") == "user"
+        ),
+        default=-1,
+    )
+    for index, message in enumerate(messages):
+        role = message.get("role")
+        content = str(message.get("content") or "")
+        if role == "system":
+            for block in content.split("\n\n"):
+                if block.startswith("<runtime_context") or block.startswith(
+                    "<runtime_rules"
+                ):
+                    layers["runtime_context"] += estimate_tokens(block)
+                elif block.startswith(
+                    (
+                        "# Persistent student profile",
+                        "# Decisions made earlier",
+                        "# Earlier conversation summary",
+                    )
+                ):
+                    layers["memory_summary"] += estimate_tokens(block)
+                else:
+                    layers["base_system"] += estimate_tokens(block)
+        elif role == "tool" or message.get("tool_calls"):
+            layers["tool_calls_results"] += estimate_tokens(
+                content
+                + json.dumps(
+                    message.get("tool_calls") or [],
+                    ensure_ascii=False,
+                    default=str,
+                )
+            )
+        elif role == "user" and index == last_user_index:
+            layers["current_user"] += estimate_tokens(content)
+        else:
+            layers["recent_turns"] += estimate_tokens(content)
+    if tool_schemas:
+        layers["tool_schemas"] = estimate_tokens(
+            json.dumps(tool_schemas, ensure_ascii=False, default=str)
+        )
+    layers["total_input"] = sum(layers.values())
+    return layers
 
 
 def record_llm_usage_estimate(

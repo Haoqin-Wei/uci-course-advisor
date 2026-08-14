@@ -78,3 +78,15 @@ def test_health_metrics_exposes_in_process_counters(app_client):
     ]["counters"]
     assert body["term_state"]["automatic_term"] == "2025 Spring"
     assert body["term_state"]["availability"]["section_count"] == 1
+
+
+def test_timing_metrics_include_percentiles():
+    observability.clear_metrics()
+    for value in (10, 20, 30, 40, 100):
+        observability.observe_ms("agent.total_ms", value)
+
+    timing = observability.snapshot_metrics()["timings"]["agent.total_ms"]
+
+    assert timing["p50_ms"] == 30
+    assert timing["p95_ms"] == 100
+    assert timing["p99_ms"] == 100

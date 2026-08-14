@@ -116,6 +116,7 @@ def _get_json(
     params: Optional[dict] = None,
     *,
     audit_tool: Optional[str] = None,
+    timeout_s: Optional[float] = None,
 ) -> Optional[dict]:
     """GET → parsed JSON body. Returns None on any failure path; the
     caller never sees an exception. The Anteater envelope is
@@ -132,8 +133,12 @@ def _get_json(
             request_params=params,
         )
     try:
-        r = requests.get(url, params=params, headers=_headers(),
-                         timeout=REQUEST_TIMEOUT_S)
+        r = requests.get(
+            url,
+            params=params,
+            headers=_headers(),
+            timeout=timeout_s if timeout_s is not None else REQUEST_TIMEOUT_S,
+        )
     except requests.RequestException as e:
         if audit_tool:
             observability.log_agent_web_fetch_failed(
@@ -480,7 +485,11 @@ def check_term_data_availability(term: TermKey) -> TermAvailabilityResult:
 
 # ── Courses ──────────────────────────────────────────────
 
-def fetch_course(course_id: str) -> Optional[dict]:
+def fetch_course(
+    course_id: str,
+    *,
+    request_timeout_s: Optional[float] = None,
+) -> Optional[dict]:
     """Single course metadata from /v2/rest/courses/{id}. The id form
     is the Anteater concatenation (`COMPSCI122A`), no underscore."""
     key = course_id.upper().replace(" ", "").replace("_", "")
@@ -489,6 +498,7 @@ def fetch_course(course_id: str) -> Optional[dict]:
     body = _get_json(
         f"{ANTEATER_BASE_URL}/courses/{key}",
         audit_tool="get_course",
+        timeout_s=request_timeout_s,
     )
     data = body.get("data") if body else None
     _course_cache[key] = data
@@ -542,6 +552,7 @@ def fetch_live_sections(
     course_number: Optional[str] = None,
     section_codes: Optional[list[str]] = None,
     force_refresh: bool = False,
+    request_timeout_s: Optional[float] = None,
 ) -> Optional[dict]:
     """
     Live WebSoc data via Anteater, with AntAlmanac-style 5 minute
@@ -591,6 +602,7 @@ def fetch_live_sections(
         f"{ANTEATER_BASE_URL}/websoc",
         params=params,
         audit_tool="get_live_sections",
+        timeout_s=request_timeout_s,
     )
     observability.observe_ms(
         "live_websoc.api_latency",
@@ -601,6 +613,18 @@ def fetch_live_sections(
     if not body:
         observability.increment("live_websoc.api_result", result="unavailable")
         _live_sections_cache[key] = (now, None)
+        last_success = _live_sections_cache.get(("last_success", *key))
+        if last_success:
+            succeeded_at, succeeded = last_success
+            age_seconds = max(0.0, now - succeeded_at)
+            if age_seconds <= LIVE_WEBSOC_TTL_SECONDS:
+                observability.increment("live_websoc.fallback", result="last_known")
+                return {
+                    **succeeded,
+                    "cache_hit": True,
+                    "stale": True,
+                    "stale_age_seconds": round(age_seconds, 2),
+                }
         return None
 
     data = body.get("data") or {}
@@ -609,9 +633,11 @@ def fetch_live_sections(
         "source": "live_anteater_websoc",
         "retrieved_at": retrieved_at,
         "cache_hit": False,
+        "stale": False,
         "sections": _flatten_websoc_sections(data),
     }
     _live_sections_cache[key] = (now, result)
+    _live_sections_cache[("last_success", *key)] = (now, result)
     return result
 
 

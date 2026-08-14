@@ -20,6 +20,7 @@ const wizardState = {
   school: null,        // {slug, name}
   year:   null,        // 'Freshman' | ... | 'Graduate'
   major:  null,        // {id, name}
+  catalog_year: null,  // e.g. '2024-2025'
   completed_courses: new Set(),   // course IDs
   // Caches so Back navigation doesn't refetch
   _schools: null,
@@ -69,6 +70,7 @@ function openWizard() {
   wizardState.school = null;
   wizardState.year = null;
   wizardState.major = null;
+  wizardState.catalog_year = null;
   wizardState.completed_courses.clear();
   document.getElementById('wizardOverlay').classList.add('open');
   // Restart entrance animations every time the intro opens. Without
@@ -216,6 +218,7 @@ async function reopenWizardFromProfile() {
   wizardState.school = null;
   wizardState.year = profile.year || null;
   wizardState.major = null;
+  wizardState.catalog_year = profile.catalog_year || null;
   wizardState.completed_courses.clear();
   for (const cid of (profile.completed_courses || [])) {
     wizardState.completed_courses.add(cid);
@@ -257,6 +260,12 @@ function wizardRenderStep() {
   for (let i = 0; i <= 4; i++) {
     const el = document.getElementById(`wizardStep${i}`);
     if (el) el.style.display = (i === wizardState.step) ? '' : 'none';
+  }
+  if (wizardState.step === 4) {
+    const catalogYearInput = document.getElementById('wizardCatalogYear');
+    if (catalogYearInput && document.activeElement !== catalogYearInput) {
+      catalogYearInput.value = wizardState.catalog_year || '';
+    }
   }
 
   // Intro page uses its own layout — hide the standard header row.
@@ -331,6 +340,11 @@ async function wizardSavePartial() {
     payload.major = wizardState.major.name?.replace(/^Major in\s+/i, '') || wizardState.major.id;
     payload.program_id = wizardState.major.id;
   }
+  const catalogYearInput = document.getElementById('wizardCatalogYear');
+  if (catalogYearInput?.value.trim()) {
+    wizardState.catalog_year = catalogYearInput.value.trim();
+  }
+  if (wizardState.catalog_year) payload.catalog_year = wizardState.catalog_year;
   if (wizardState.completed_courses.size > 0) {
     payload.completed_courses = Array.from(wizardState.completed_courses);
   }
@@ -529,8 +543,8 @@ function wizardRenderMajors(majors) {
 
 // ── Step 4: full UCI catalog, single column + A-Z nav ────
 //
-// Backed by GET /api/onboarding/courses/all (~9000 rows, server-side
-// cached + warmed at startup). Cards are grouped by the first letter
+// Backed by GET /api/onboarding/courses/all (local catalogue first,
+// restart-safe cache second, network only as a last resort). Cards are grouped by the first letter
 // of the course ID with a sticky A-Z navigation strip on the right.
 // Search filters in place via a class toggle so 9000 cards × keystrokes
 // stays smooth.
@@ -554,7 +568,8 @@ async function wizardLoadCourses() {
   }
   const grid = document.getElementById('wizardCourseGrid');
   try {
-    // Parallel fetch — both endpoints are cheap once warm
+    // Parallel fetch. The course endpoint does not perform a cold-start
+    // whole-catalogue API crawl when the checked-in local data is present.
     const [coursesRes, deptsRes] = await Promise.all([
       fetch(`${API}/api/onboarding/courses/all`),
       fetch(`${API}/api/onboarding/departments`),
@@ -851,6 +866,7 @@ async function wizardSave() {
     college: wizardState.school?.name || null,
     school_slug: wizardState.school?.slug || null,
     program_id: wizardState.major?.id || null,
+    catalog_year: (document.getElementById('wizardCatalogYear')?.value || wizardState.catalog_year || '').trim() || null,
     completed_courses: Array.from(wizardState.completed_courses),
   };
   // Strip nulls so the merge endpoint doesn't get partial garbage

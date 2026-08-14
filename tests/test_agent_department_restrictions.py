@@ -108,7 +108,7 @@ def test_department_restrictions_dispatcher_fetches_websoc_and_linked_pages(
             "department": "ART",
             "restriction_type": "major_restriction",
         },
-        context={},
+        context={"allowed_query_terms": ["Fall 2026"]},
     )
 
     assert result["ok"] is True
@@ -160,7 +160,7 @@ def test_department_restrictions_dispatcher_resolves_department_from_course_id(
             "restriction_type": "major_restriction",
             "follow_links": False,
         },
-        context={},
+        context={"allowed_query_terms": ["Fall 2026"]},
     )
 
     assert result["ok"] is True
@@ -174,7 +174,7 @@ def test_department_restrictions_dispatcher_rejects_missing_department() -> None
     result = agent_tools.dispatch(
         "get_department_restrictions",
         {"term": "Fall 2026", "course_id": "not a course", "follow_links": False},
-        context={},
+        context={"allowed_query_terms": ["Fall 2026"]},
     )
 
     assert result["ok"] is False

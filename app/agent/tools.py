@@ -82,6 +82,11 @@ TOOL_SCHEMAS: list[dict] = [
                 "List sections of a course in a SPECIFIC term: section "
                 "code, lecture/discussion type, days, time, location, "
                 "instructors, capacity, enrolled count, seats_open. "
+                "When local coverage is unavailable, this tool uses the fixed "
+                "official Registrar WebSoc POST workflow for historical offering "
+                "facts. `offering_status=not_offered` with `authoritative=true` "
+                "is a definitive official no-match; do not follow it with "
+                "web_search or a model-built WebSoc URL. "
                 "ALWAYS pass `term` — never assume the term from "
                 "context. Returns sections=[] with found=false if the "
                 "course isn't offered that term."
@@ -2016,22 +2021,88 @@ TERM_SCOPED_TOOLS = {
 }
 
 
-def resolve_tool_arguments(name: str, args: dict, *, context: dict) -> tuple[dict, str | None]:
-    """Inject and canonicalize the deterministic term before dispatch."""
+def enforce_query_term_scope(
+    name: str,
+    args: dict,
+    *,
+    context: dict,
+) -> tuple[dict, str | None]:
+    """Enforce the backend-resolved immutable term allowlist."""
     resolved = dict(args or {})
     if name not in TERM_SCOPED_TOOLS:
         return resolved, None
-    raw_term = resolved.get("term") or context.get("term")
-    parsed = parse_term_key(str(raw_term or ""))
-    if parsed.kind != "single":
-        message = (
-            parsed.error.message
-            if parsed.error is not None
-            else "term is required for this tool"
+
+    allowed: list[str] = []
+    for raw in context.get("allowed_query_terms") or []:
+        parsed = parse_term_key(str(raw))
+        if parsed.kind != "single":
+            return resolved, "backend query-term scope is invalid"
+        canonical = parsed.terms[0].canonical_name
+        if canonical not in allowed:
+            allowed.append(canonical)
+    if not allowed:
+        observability.increment("term.guard_reject", tool=name)
+        return resolved, "no query term is authorized for this tool call"
+
+    model_term = resolved.get("term")
+    if len(allowed) == 1:
+        executed = allowed[0]
+        if not model_term:
+            resolved["term"] = executed
+            return resolved, None
+        parsed_model = parse_term_key(str(model_term))
+        if parsed_model.kind != "single":
+            observability.increment("term.guard_reject", tool=name)
+            return resolved, (
+                parsed_model.error.message
+                if parsed_model.error is not None
+                else "term must resolve to one canonical UCI term"
+            )
+        model_canonical = parsed_model.terms[0].canonical_name
+        if model_canonical != executed:
+            observability.increment("term.guard_reject", tool=name)
+            observability.log_event(
+                logger,
+                logging.WARNING,
+                "term_guard_reject",
+                tool=name,
+                model_term=model_canonical,
+                allowed_query_terms=allowed,
+            )
+            return resolved, f"{model_canonical} is outside the allowed query-term scope"
+        resolved["term"] = model_canonical
+        return resolved, None
+
+    if not model_term:
+        observability.increment("term.guard_reject", tool=name)
+        return resolved, "term is required for a multi-term query"
+    parsed_model = parse_term_key(str(model_term))
+    if parsed_model.kind != "single":
+        observability.increment("term.guard_reject", tool=name)
+        return resolved, (
+            parsed_model.error.message
+            if parsed_model.error is not None
+            else "term must resolve to one canonical UCI term"
         )
-        return resolved, message
-    resolved["term"] = parsed.terms[0].canonical_name
+    executed = parsed_model.terms[0].canonical_name
+    if executed not in allowed:
+        observability.increment("term.guard_reject", tool=name)
+        observability.log_event(
+            logger,
+            logging.WARNING,
+            "term_guard_reject",
+            tool=name,
+            model_term=executed,
+            allowed_query_terms=allowed,
+        )
+        return resolved, f"{executed} is outside the allowed query-term scope"
+    resolved["term"] = executed
     return resolved, None
+
+
+def resolve_tool_arguments(name: str, args: dict, *, context: dict) -> tuple[dict, str | None]:
+    """Compatibility entry point for the single authoritative term guard."""
+    return enforce_query_term_scope(name, args, context=context)
 
 def dispatch(name: str, args: dict, *, context: dict):
     """Run a tool by name.

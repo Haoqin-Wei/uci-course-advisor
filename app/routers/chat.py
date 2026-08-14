@@ -7,14 +7,14 @@ removed. This router now handles:
 
   • deterministic hard-fact capture for explicit user statements
   • Agent-loop SSE streaming and continuation
-  • validation of final text/cards before persistence
+  • direct Agent-loop answer streaming
   • session-backed schedule mutations
 """
 
 import asyncio
 import logging
 import re
-from dataclasses import replace
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -39,23 +39,15 @@ from app.data import sessions as sessions_data
 from app.modules import decision_detector
 # ─────────────────────────────────────────────────────────────
 
-# ── Validation ───────────────────────────────────────────
+# ── Catalog + term resolution ───────────────────────────
 from app.catalog.term import Term
 from app.catalog.cache import get_catalog
 from app.catalog.coverage import get_term_coverage
 from app.catalog.departments import colloquial_course_id
 from app.catalog.normalization import iter_course_mentions, parse_course_mention
-from app.validation import (
-    SuggestedAction,
-    ValidationContext,
-    apply_report,
-    decide_action,
-    validate,
-    write_log,
-)
-from app.terms import parse_term_key
-from app.terms.conversation import commit_conversation_resolution
-from app.terms.service import QueryTermResolution, get_term_resolution_service
+from app.terms import next_recent_focus_terms, parse_term_key, resolve_query_scope
+from app.terms.conversation import sync_automatic_default
+from app.terms.service import get_term_resolution_service
 # ─────────────────────────────────────────────────────────
 
 logger = logging.getLogger(__name__)
@@ -67,11 +59,14 @@ CHAT_STREAM_LIMIT = RateLimit("chat.stream", limit=30, window_seconds=60)
 CHAT_CONTINUE_LIMIT = RateLimit("chat.continue", limit=20, window_seconds=60)
 SCHEDULE_WRITE_LIMIT = RateLimit("schedule.write", limit=120, window_seconds=60)
 
+
 class ChatRequest(BaseModel):
     message: str
     session_id: str = ""
-    term: Optional[str] = None                          # 新增
-    system_prompt: Optional[str] = None                 # 新增：前端自定义 LLM system prompt
+    # Compatibility-only request field. The backend never trusts it for
+    # conversation default or per-turn query scope.
+    term: Optional[str] = None
+    system_prompt: Optional[str] = None
 
 
 # ── Session ID resolution ─────────────────────────────────
@@ -93,7 +88,7 @@ def _resolve_session_id(
         new_sid = sessions_data.create_session(
             user_id,
             title="New conversation",
-            term_scope=term_str,
+            default_term=term_str,
         )
         logger.info("[stream] new session %s created (frontend signalled new)", new_sid)
         return new_sid
@@ -157,8 +152,10 @@ def _persist_turn(
     *,
     cards: Optional[list] = None,
     followups: Optional[list] = None,
-    validation: Optional[dict] = None,
     web_fetches: Optional[list] = None,
+    query_terms: Optional[list[str]] = None,
+    query_term_source: Optional[str] = None,
+    course_ids: Optional[list[str]] = None,
 ) -> tuple[int, bool]:
     """
     Append user + assistant turns to sessions/{sid}/turns.jsonl.
@@ -182,12 +179,19 @@ def _persist_turn(
     """
     did_auto_title = False
     try:
-        sessions_data.append_turn(user_id, persistent_sid, "user", user_msg)
+        sessions_data.append_turn(
+            user_id,
+            persistent_sid,
+            "user",
+            user_msg,
+            query_terms=query_terms,
+            query_term_source=query_term_source,
+            course_ids=course_ids,
+        )
         idx = sessions_data.append_turn(
             user_id, persistent_sid, "assistant", assistant_reply,
             cards=cards,
             followups=followups,
-            validation=validation,
             web_fetches=web_fetches,
         )
 
@@ -452,116 +456,8 @@ def _maybe_schedule_reflection(
         )
 
 
-def _retrieved_from_cards(cards: list[dict]) -> dict:
-    primary: list[dict] = []
-    flagged: list[dict] = []
-    for card in cards or []:
-        course_id = card.get("course_id")
-        if not course_id:
-            continue
-        item = {"course": {"course_id": course_id}}
-        if card.get("prereq_status") in {"not_met", "unknown"} or card.get("prereq_met") is False:
-            flagged.append(item)
-        else:
-            primary.append(item)
-    return {
-        "primary": primary,
-        "flagged": flagged,
-        "total_found": len(primary) + len(flagged),
-    }
-
-
-def _validate_response(
-    *,
-    answer: str,
-    cards: list[dict],
-    retrieved: Optional[dict],
-    state: dict,
-    user_message: str,
-    term_str: Optional[str],
-    session_id: Optional[str],
-    retrieval_performed: bool = False,
-    query_terms: Optional[list[str]] = None,
-    tool_terms: Optional[list[str]] = None,
-    restriction_evidence: Optional[dict] = None,
-    restriction_verified_facts: Optional[dict] = None,
-) -> tuple[str, list[dict], Optional[dict]]:
-    target_term = (
-        Term.parse(term_str or "")
-        or Term.parse(state.get("term", ""))
-    )
-    if not target_term:
-        logger.info("[validation] skipped (no target term)")
-        return answer, cards, None
-
-    catalog = get_catalog(target_term)
-    if not catalog:
-        logger.info("[validation] skipped (no catalog for %s)", target_term.term_id)
-        return answer, cards, None
-
-    ctx = ValidationContext(
-        llm_answer=answer,
-        retrieved=retrieved or _retrieved_from_cards(cards),
-        catalog=catalog,
-        session_state=state,
-        cards=cards,
-        user_message=user_message,
-        retrieval_performed=retrieval_performed,
-        query_terms=query_terms or [],
-        tool_terms=tool_terms or [],
-        validation_term=term_str,
-        restriction_evidence=restriction_evidence,
-        restriction_verified_facts=restriction_verified_facts,
-    )
-    report = validate(ctx)
-    action = decide_action(report)
-    if (
-        action == SuggestedAction.BLOCK
-        and restriction_evidence
-        and restriction_verified_facts
-    ):
-        final_answer = (
-            restriction_verified_facts.get("summary_markdown")
-            or "已抓取官方来源，但无法可靠验证该限制事实。"
-        )
-        final_cards = []
-        changed = final_answer != answer or bool(cards)
-    else:
-        final_answer, final_cards, changed = apply_report(
-            answer,
-            cards,
-            report,
-            action,
-        )
-    write_log(ctx, report, action, changed, session_id=session_id)
-    validation_dict = report.to_dict()
-    validation_dict["applied_action"] = action.value
-    validation_dict["query_terms"] = query_terms or []
-    validation_dict["tool_terms"] = tool_terms or []
-    validation_dict["validation_term"] = term_str
-    logger.info(
-        "[validation] target_term=%s overall=%s errors=%d warnings=%d action=%s",
-        target_term.display(), report.overall,
-        len(report.errors), len(report.warnings), action.value,
-    )
-    return final_answer, final_cards, validation_dict
-
-
-def _validation_term_from_agent_meta(
-    agent_meta: dict,
-    fallback_term: Optional[str],
-) -> Optional[str]:
-    """Prefer the term used by the successful grounding tool.
-
-    The selected UI term can differ from a term explicitly supplied in a
-    follow-up message. Validation must check the same term the tool queried.
-    """
-
-    terms = _validation_terms_from_agent_meta(agent_meta)
-    return terms[-1] if terms else fallback_term
-
-
-def _validation_terms_from_agent_meta(agent_meta: dict) -> list[str]:
+def _tool_terms_from_agent_meta(agent_meta: dict) -> list[str]:
+    """Return canonical terms used by successful Agent tool calls."""
     terms: list[str] = []
     for call in agent_meta.get("successful_tool_calls") or []:
         args = call.get("args") if isinstance(call, dict) else None
@@ -573,11 +469,25 @@ def _validation_terms_from_agent_meta(agent_meta: dict) -> list[str]:
     return terms
 
 
+def _suggest_term_change(message: str, query_terms: list[str]) -> Optional[dict]:
+    """Translate durable-language intent into a confirmable UI suggestion."""
+    if len(query_terms) != 1:
+        return None
+    pattern = re.compile(
+        r"以后(?:都|默认)?(?:看|查|用)|设为默认|默认学期|"
+        r"from\s+now\s+on|make\s+.+\s+the\s+default|default\s+term",
+        re.I,
+    )
+    if not pattern.search(message or ""):
+        return None
+    return {"term": query_terms[0], "requires_confirmation": True}
+
+
 # ══════════════════════════════════════════════════════════
 #  Streaming endpoint  /api/chat/stream
 # ══════════════════════════════════════════════════════════
 #
-# cards/followups/validation are sent as one final `meta` event.
+# cards/followups are sent as one final `meta` event.
 #
 # Wire format:
 #   data: {"type": "token", "text": "<chunk>"}
@@ -589,28 +499,63 @@ def _validation_terms_from_agent_meta(agent_meta: dict) -> list[str]:
 
 # ── Agent-loop handler ───────────────────────────────────
 
+def _response_language(
+    user_message: str,
+    recent_turns: Optional[list[dict]] = None,
+) -> str:
+    """Choose the language used by non-LLM fallback templates."""
+
+    message = (user_message or "").strip()
+    if re.search(r"[\u3400-\u9fff]", message):
+        return "zh"
+    words = re.findall(r"[A-Za-z]+", message)
+    ambiguous = len(words) <= 2 or bool(
+        re.fullmatch(r"[\s\W]*(?:[A-Za-z&]+\s*)?\d+[A-Za-z]*[\s\W]*", message)
+    )
+    if ambiguous:
+        for turn in reversed(recent_turns or []):
+            if turn.get("role") != "user":
+                continue
+            content = str(turn.get("content") or "")
+            if re.search(r"[\u3400-\u9fff]", content):
+                return "zh"
+            if re.search(r"[A-Za-z]{3,}", content):
+                return "en"
+    return "en"
+
+
 def _grounded_agent_fallback_reply(
     user_message: str,
     state: dict,
     *,
     term: Optional[str],
     reason: Optional[str] = None,
+    recent_turns: Optional[list[dict]] = None,
 ) -> str:
+    language = _response_language(user_message, recent_turns)
     course_reply = _deterministic_single_course_fallback_reply(
         user_message,
         state,
         term=term,
         reason=reason,
+        language=language,
     )
     if course_reply:
         return course_reply
+
+    if language == "zh":
+        details = f"（{reason}）" if reason else ""
+        return (
+            f"目前无法连接回答服务{details}。我不会凭空编造课程建议或班次信息。"
+            "你可以稍后重试，或先询问一门具体课程；服务恢复后我会调用课程数据进行查询。"
+        )
 
     details = f" ({reason})" if reason else ""
     return (
         f"I can’t reach the agent right now{details}, so I won’t invent "
         "course recommendations or section details. Please try again, or ask "
         "about a specific course "
-        f"and I’ll verify it against the local catalog when the agent is available."
+        "and I’ll query the course data when the agent is available."
     )
 
 
@@ -637,6 +582,7 @@ def _deterministic_single_course_fallback_reply(
     *,
     term: Optional[str],
     reason: Optional[str] = None,
+    language: str = "en",
 ) -> Optional[str]:
     """Local-only fallback for explicit single-course questions."""
     refs = []
@@ -682,6 +628,12 @@ def _deterministic_single_course_fallback_reply(
             updated_at=source_updated_at,
         )
     if not catalog:
+        if language == "zh":
+            return (
+                f"目前无法连接回答服务。课程已识别为 {ref.display()}，"
+                f"但 {term_label} 的本地课程目录暂不可用，因此目前无法确认课程名称、"
+                "学分、班次或先修要求。"
+            )
         return (
             f"{prefix}\n\n"
             f"I parsed the course as {ref.display()}, but local catalog data for "
@@ -691,6 +643,17 @@ def _deterministic_single_course_fallback_reply(
 
     record = catalog.get_course(ref)
     if not record:
+        if language == "zh":
+            coverage_note = (
+                f"{term_label} 的本地数据状态为 {coverage_status}，"
+                if coverage_status in {"partial", "stale"}
+                else ""
+            )
+            return (
+                f"目前无法连接回答服务。{coverage_note}"
+                f"本地课程目录中未找到 {ref.display()}。"
+                f"数据更新时间：{source_updated_at}。"
+            )
         if coverage_status in {"partial", "stale"}:
             status_line = (
                 f"Local data for {term_label} is {coverage_status}, so I cannot "
@@ -705,6 +668,30 @@ def _deterministic_single_course_fallback_reply(
 
     sections = catalog.get_sections(ref)
     units = _format_course_units_for_fallback(record)
+    if language == "zh":
+        lines = [
+            "目前无法连接回答服务。以下内容直接来自本地课程目录。",
+            "",
+            f"**{record.ref.display()} · {record.title or '课程名称未知'}**",
+            f"学分：{units}",
+        ]
+        if record.description:
+            lines.append(record.description)
+        if record.prerequisite_text:
+            lines.append(f"先修要求：{record.prerequisite_text}")
+        if record.restriction:
+            lines.append(f"选课限制：{record.restriction}")
+        if sections:
+            lines.append(f"{term_label}：本地数据找到 {len(sections)} 个班次。")
+        elif coverage_status == "complete":
+            lines.append(f"{term_label}：本地数据中没有找到班次。")
+        else:
+            lines.append(
+                f"{term_label}：数据状态为 {coverage_status}，暂时无法确认是否开课。"
+            )
+        lines.append(f"数据更新时间：{source_updated_at}。")
+        return "\n".join(lines)
+
     title = record.title or "Untitled course"
     lines = [
         prefix,
@@ -812,6 +799,7 @@ async def _handle_agent(
                         state,
                         term=term,
                         reason=event.get("message"),
+                        recent_turns=recent_turns,
                     )
                     await queue.put({"type": "token", "text": fallback})
                     return (fallback, [], [], None)
@@ -963,6 +951,7 @@ async def _handle_agent(
                 state,
                 term=term,
                 reason=str(e),
+                recent_turns=recent_turns,
             )
             await queue.put({"type": "token", "text": fallback})
             return (fallback, [], [], None)
@@ -976,6 +965,7 @@ async def _handle_agent(
             state,
             term=term,
             reason="agent produced no output",
+            recent_turns=recent_turns,
         )
         await queue.put({"type": "token", "text": fallback})
         return (fallback, [], [], None)
@@ -999,7 +989,12 @@ async def chat_stream_endpoint(
     check_rate_limit(request, CHAT_STREAM_LIMIT, user["id"])
     trace_id = observability.get_trace_id()
     return StreamingResponse(
-        _stream_chat(req, background_tasks, user["id"], trace_id=trace_id),
+        _stream_chat(
+            req,
+            background_tasks,
+            user["id"],
+            trace_id=trace_id,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -1031,6 +1026,7 @@ async def _stream_chat(
     saw_limit_reached = False
     status = "ok"
     final_session_id = req.session_id
+    llm_input_parts: list[str] = [req.message]
 
     def track_sse_event(event: dict) -> None:
         nonlocal first_token_ms, tool_failures, saw_limit_reached, status, final_session_id
@@ -1108,29 +1104,47 @@ async def _stream_chat(
                 recent_turns = []
                 decisions    = []
                 summary      = None
+            llm_input_parts.extend(
+                str(part)
+                for part in (
+                    memory_context.get("system_prompt_block"),
+                    summary,
+                    decisions,
+                    [
+                        {
+                            "role": turn.get("role"),
+                            "content": turn.get("content"),
+                        }
+                        for turn in recent_turns[-10:]
+                    ],
+                )
+                if part
+            )
 
             term_service = get_term_resolution_service()
-            query_resolution = term_service.resolve_message(req.message)
-            conversation_term = term_service.effective_for_conversation(session_meta)
-            query_terms = [term.canonical_name for term in query_resolution.terms]
-            query_term = conversation_term.canonical_name
-            term_resolution_reply: Optional[str] = None
-            if query_resolution.error is not None:
-                term_resolution_reply = (
-                    "I couldn't map that term unambiguously: "
-                    f"{query_resolution.error.message}. Please specify one canonical "
-                    "term such as 2026 Fall."
-                )
-            elif query_resolution.kind == "single":
-                requested_term = query_resolution.terms[0]
-                if requested_term.status == "unavailable":
-                    term_resolution_reply = (
-                        f"Data for {requested_term.canonical_name} has not been published "
-                        "with at least one course and section yet, so this conversation "
-                        "will stay on its current term."
-                    )
-                else:
-                    query_term = requested_term.canonical_name
+            automatic_term = term_service.automatic_term()
+            session_meta = sync_automatic_default(
+                user_id,
+                persistent_sid,
+                automatic_term,
+            )
+            default_term = term_service.effective_for_conversation(session_meta)
+            query_scope = resolve_query_scope(
+                req.message,
+                default_term.canonical_name,
+                automatic_term.canonical_name,
+                session_meta.get("recent_query_focus"),
+                term_service.clock.now(),
+            )
+            query_terms = list(query_scope.canonical_terms)
+            # Legacy Agent helpers still accept one representative term. The
+            # authoritative full allowlist travels separately in state.
+            query_term = (
+                query_terms[0]
+                if len(query_terms) == 1
+                else default_term.canonical_name
+            )
+            response_language = _response_language(req.message, recent_turns)
 
             if req.term:
                 observability.log_event(
@@ -1149,148 +1163,59 @@ async def _stream_chat(
             # templates for valid continuations like "继续" / "yes".
 
             state = get_known_fields(active_session_id, user_id=user_id)
+            profile = mem.get_profile(user_id) or {}
+            state["program_id"] = profile.get("program_id")
+            state["catalog_year"] = profile.get("catalog_year")
             state["term"] = query_term
-            state["effective_term"] = conversation_term.canonical_name
+            state["default_term"] = default_term.canonical_name
             state["query_terms"] = query_terms
+            state["query_term_source"] = query_scope.source
+            state["query_scope_error"] = (
+                query_scope.error.message if query_scope.error else None
+            )
+            state["response_language"] = response_language
+            state["uci_now"] = term_service.clock.now()
             state["term_mode"] = session_meta.get("term_mode", "auto")
-            state["term_source"] = conversation_term.source
+            state["term_source"] = session_meta.get(
+                "term_source",
+                default_term.source,
+            )
             state["pending_schedule"] = session.get("pending_schedule", [])
 
-            # ── Stream the LLM answer through on_token ──
-            async def on_token(text: str):
-                await queue.put({"type": "token", "text": text})
-
-            validation_dict = None
             # Agent loop is the only chat chain. Pre-flight failures
             # return a deterministic grounded fallback from _handle_agent;
             # no legacy LLM recommendation path is started.
             agent_meta: dict = {}
-            if term_resolution_reply is not None:
-                reply, cards, followups = term_resolution_reply, [], []
-                agent_meta["term_resolution_blocked"] = True
-                await queue.put({"type": "token", "text": reply})
-            else:
-                agent_result = await _handle_agent(
-                    req.message, state, memory_context,
-                    user_id=user_id,
-                    term=query_term,
-                    system_prompt=(
-                        req.system_prompt
-                        if config.allow_custom_system_prompt()
-                        else None
-                    ),
-                    queue=queue,
-                    recent_turns=recent_turns,
-                    decisions=decisions,
-                    summary=summary,
-                    execution_meta=agent_meta,
-                )
-                reply, cards, followups, validation_dict = agent_result
-            retrieval_performed = bool(agent_meta.get("successful_tools"))
-            tool_terms = _validation_terms_from_agent_meta(agent_meta)
-            validation_term = _validation_term_from_agent_meta(
-                agent_meta,
-                query_term,
-            )
-            if validation_term and validation_term != query_term:
-                observability.log_event(
-                    logger,
-                    logging.INFO,
-                    "validation_term_overridden",
-                    selected_term=query_term,
-                    validation_term=validation_term,
-                    reason="successful_tool_call",
-                )
-
-            if validation_dict is None and reply:
-                reply, cards, validation_dict = _validate_response(
-                    answer=reply,
-                    cards=cards,
-                    retrieved=None,
-                    state=state,
-                    user_message=req.message,
-                    term_str=validation_term,
-                    session_id=active_session_id,
-                    retrieval_performed=retrieval_performed,
-                    query_terms=query_terms,
-                    tool_terms=tool_terms,
-                    restriction_evidence=agent_meta.get(
-                        "restriction_evidence"
-                    ),
-                    restriction_verified_facts=agent_meta.get(
-                        "restriction_verified_facts"
-                    ),
-                )
-
-            validation_blocked = bool(
-                validation_dict
-                and validation_dict.get("applied_action") == "block"
-            )
-            committed_resolution = query_resolution
-            if query_resolution.kind == "single" and not query_resolution.all_available:
-                requested_name = query_resolution.terms[0].canonical_name
-                grounded_available = False
-                for call in agent_meta.get("successful_tool_calls") or []:
-                    parsed_call_term = parse_term_key(
-                        str((call.get("args") or {}).get("term") or "")
-                    )
-                    if (
-                        call.get("term_data_available")
-                        and parsed_call_term.kind == "single"
-                        and parsed_call_term.terms[0].canonical_name == requested_name
-                    ):
-                        grounded_available = True
-                        break
-                if grounded_available:
-                    grounded_term = replace(
-                        query_resolution.terms[0],
-                        data_available=True,
-                        status="available",
-                    )
-                    committed_resolution = QueryTermResolution(
-                        query_resolution.automatic,
-                        query_resolution.parsed,
-                        (grounded_term,),
-                    )
-            original_term_mode = session_meta.get("term_mode", "auto")
-            original_term_scope = session_meta.get("term_scope")
-            final_session_meta = commit_conversation_resolution(
-                user_id,
-                persistent_sid,
-                committed_resolution,
-                answer_succeeded=bool(reply) and not agent_meta.get("error", False),
-                validation_blocked=validation_blocked,
-            )
-            final_effective_term = term_service.effective_for_conversation(final_session_meta)
-            persisted_state = update_session(
-                active_session_id,
-                {"term": final_effective_term.canonical_name},
+            agent_result = await _handle_agent(
+                req.message, state, memory_context,
                 user_id=user_id,
+                term=query_term,
+                system_prompt=(
+                    req.system_prompt
+                    if config.allow_custom_system_prompt()
+                    else None
+                ),
+                queue=queue,
+                recent_turns=recent_turns,
+                decisions=decisions,
+                summary=summary,
+                execution_meta=agent_meta,
             )
-            state.update(persisted_state)
-            state["term"] = final_effective_term.canonical_name
-            state["effective_term"] = final_effective_term.canonical_name
-            state["query_terms"] = query_terms
-            state["term_mode"] = final_session_meta.get("term_mode", "auto")
-            state["term_source"] = final_effective_term.source
-            state["pending_schedule"] = session.get("pending_schedule", [])
-            term_changed = (
-                original_term_mode != final_session_meta.get("term_mode")
-                or original_term_scope != final_session_meta.get("term_scope")
-            )
+            reply, cards, followups, _reserved = agent_result
+            tool_terms = _tool_terms_from_agent_meta(agent_meta)
 
             observability.log_event(
                 logger,
                 logging.INFO,
                 "term_resolution",
                 session_id=persistent_sid,
-                resolved_term=final_effective_term.canonical_name,
-                mode=final_session_meta.get("term_mode", "auto"),
-                source=final_effective_term.source,
-                explicit_terms=query_terms,
+                automatic_term=automatic_term.canonical_name,
+                default_term=default_term.canonical_name,
+                term_mode=session_meta.get("term_mode", "auto"),
+                query_terms=query_terms,
+                query_term_source=query_scope.source,
                 tool_terms=tool_terms,
-                validation_term=validation_term,
-                persisted=term_changed,
+                default_term_changed=False,
             )
 
             mem.sync_turn(user_id, req.message, reply, active_session_id)
@@ -1299,9 +1224,34 @@ async def _stream_chat(
             #    then detect decisions ──
             new_turn_index, did_auto_title = _persist_turn(
                 user_id, persistent_sid, req.message, reply,
-                cards=cards, followups=followups, validation=validation_dict,
+                cards=cards, followups=followups,
                 web_fetches=agent_meta.get("web_fetches"),
+                query_terms=query_terms,
+                query_term_source=query_scope.source,
+                course_ids=list(query_scope.course_ids),
             )
+            if reply and query_terms and query_scope.error is None:
+                previous_focus = session_meta.get("recent_query_focus") or {}
+                focus_course_ids = (
+                    list(query_scope.course_ids)
+                    or list(previous_focus.get("course_ids") or [])
+                )
+                focus_terms = next_recent_focus_terms(
+                    req.message,
+                    query_scope,
+                    previous_focus,
+                )
+                sessions_data.update_session_meta(
+                    user_id,
+                    persistent_sid,
+                    recent_query_focus={
+                        "course_ids": focus_course_ids[:8],
+                        "terms": list(focus_terms),
+                        "updated_at": datetime.now(timezone.utc).isoformat(
+                            timespec="seconds"
+                        ),
+                    },
+                )
             _maybe_schedule_auto_title(
                 background_tasks, did_auto_title,
                 user_id, persistent_sid, req.message, reply,
@@ -1315,12 +1265,23 @@ async def _stream_chat(
                 "session_id": persistent_sid,
                 "cards": cards,
                 "followups": followups,
-                "validation_report": validation_dict,
                 "final_answer": reply,
-                "effective_term": final_effective_term.canonical_name,
-                "term_source": final_effective_term.source,
-                "term_status": final_effective_term.status,
+                "default_term": default_term.canonical_name,
+                "term_mode": session_meta.get("term_mode", "auto"),
+                "term_source": session_meta.get(
+                    "term_source",
+                    default_term.source,
+                ),
+                "query_terms": query_terms,
+                "query_term_source": query_scope.source,
+                "default_term_changed": False,
+                "available_terms": term_service.available_terms(
+                    include=default_term.canonical_name,
+                ),
             }
+            suggestion = _suggest_term_change(req.message, query_terms)
+            if suggestion:
+                meta_event["suggest_term_change"] = suggestion
             if agent_meta.get("web_fetches"):
                 meta_event["web_fetches"] = agent_meta["web_fetches"]
             await queue.put(meta_event)
@@ -1361,7 +1322,7 @@ async def _stream_chat(
             observability.increment("sse.streams", status=status)
             usage = observability.record_llm_usage_estimate(
                 model="agent",
-                input_text=req.message,
+                input_text="\n".join(llm_input_parts),
                 output_text="".join(output_parts),
             )
             observability.log_event(
@@ -1411,7 +1372,11 @@ async def chat_continue_endpoint(
     check_rate_limit(request, CHAT_CONTINUE_LIMIT, user["id"])
     trace_id = observability.get_trace_id()
     return StreamingResponse(
-        _stream_continue(req, user["id"], trace_id=trace_id),
+        _stream_continue(
+            req,
+            user["id"],
+            trace_id=trace_id,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -1464,6 +1429,8 @@ async def _stream_continue(
 
     # user_id is resolved from the signed session cookie by the caller.
     accumulated = ""
+    final_text = ""
+    final_event: Optional[dict] = None
     saw_limit_again = False
     status = "ok"
     try:
@@ -1475,21 +1442,38 @@ async def _stream_continue(
             t = event.get("type")
             if t == "token":
                 accumulated += event.get("text", "")
+                yield sse(event)
+            elif t == "final":
+                final_event = dict(event)
             elif t == "limit_reached":
                 saw_limit_again = True
                 observability.increment("sse.continue_limit_reached")
-            yield sse(event)
+                yield sse(event)
+            elif t != "token":
+                yield sse(event)
+
+        final_text = accumulated or str((final_event or {}).get("text") or "")
+        if final_text:
+            if not accumulated:
+                yield sse({"type": "token", "text": final_text})
+            completed = dict(final_event or {})
+            completed.update({"type": "final", "text": final_text})
+            yield sse(completed)
+            yield sse({
+                "type": "meta",
+                "final_answer": final_text,
+            })
 
         # Persist the resumed reply to the session log so refresh /
         # session reload doesn't lose it. We don't run the full memory
         # pipeline here (no new user message); just append the text.
-        if accumulated:
+        if final_text:
             try:
                 sessions_data.append_turn(
                     user_id,
                     req.session_id,
                     "assistant",
-                    accumulated,
+                    final_text,
                 )
             except Exception as e:
                 logger.warning("[continue] append resumed turn failed: %s", e)
@@ -1516,7 +1500,7 @@ async def _stream_continue(
             usage = observability.record_llm_usage_estimate(
                 model="agent_continue",
                 input_text=req.continuation_id,
-                output_text=accumulated,
+                output_text=final_text or accumulated,
             )
             observability.log_event(
                 logger,
@@ -1578,7 +1562,11 @@ def _schedule_effective_term(
 
 def _legacy_schedule_term(session: dict, meta: dict) -> Optional[str]:
     candidates: set[str] = set()
-    for value in (session.get("term"), meta.get("term_scope")):
+    for value in (
+        session.get("term"),
+        meta.get("default_term"),
+        meta.get("term_scope"),
+    ):
         parsed = parse_term_key(str(value or ""))
         if parsed.kind == "single":
             candidates.add(parsed.terms[0].canonical_name)
@@ -1611,6 +1599,20 @@ def _migrate_schedule_entries(
         if entry.get("term") != term:
             entry["term"] = term
             changed = True
+        legacy_notices = entry.pop("verification_notices", None)
+        if legacy_notices is not None:
+            changed = True
+        if legacy_notices and not entry.get("notices"):
+            entry["notices"] = list(legacy_notices)
+        for legacy_key in (
+            "verification_status",
+            "verified_at",
+            "source_badges",
+            "corrections_applied",
+        ):
+            if legacy_key in entry:
+                entry.pop(legacy_key, None)
+                changed = True
         migrated.append(entry)
 
     if changed:
@@ -1674,6 +1676,12 @@ def _empty_schedule_validation() -> dict:
         "conflicts": [],
         "unknowns": [],
     }
+
+
+def _append_schedule_notice(entry: dict, message: str) -> None:
+    notices = entry.setdefault("notices", [])
+    if message not in notices:
+        notices.append(message)
 
 
 def _validate_pending_schedule(pending_schedule: list[dict]) -> dict:
@@ -1832,6 +1840,204 @@ class ScheduleClearRequest(BaseModel):
     term: Optional[str] = None
 
 
+class ScheduleRefreshRequest(BaseModel):
+    session_id: str = ""
+
+
+_SCHEDULE_REFRESH_NOTICE_PREFIXES = (
+    "Section could not be resolved",
+    "Meeting time is TBA",
+    "This section is marked cancelled",
+    "This section is currently full",
+    "Live schedule refresh",
+)
+
+
+def _refreshable_schedule_notices(entry: dict) -> list[str]:
+    return [
+        str(item)
+        for item in entry.get("notices") or []
+        if not str(item).startswith(_SCHEDULE_REFRESH_NOTICE_PREFIXES)
+    ]
+
+
+def _apply_live_schedule_result(entry: dict, result: Optional[dict]) -> dict:
+    """Refresh one entry without deleting the user's planning intent."""
+
+    refreshed = dict(entry)
+    refreshed["notices"] = _refreshable_schedule_notices(entry)
+    if not isinstance(result, dict) or not result.get("sections"):
+        _append_schedule_notice(
+            refreshed,
+            "Live schedule refresh was unavailable; the planning item was kept.",
+        )
+        return refreshed
+
+    section_key = str(entry.get("section") or "")
+    matched = next(
+        (
+            section
+            for section in result.get("sections") or []
+            if str(section.get("section_num") or "") == section_key
+            or str(section.get("section_code") or "") == section_key
+        ),
+        None,
+    )
+    if matched is None:
+        refreshed["materialization_status"] = "unresolved"
+        _append_schedule_notice(
+            refreshed,
+            "Live schedule refresh could not resolve this exact section; no calendar block was created.",
+        )
+        return refreshed
+
+    snapshot_fields = (
+        "section_code",
+        "section_num",
+        "section_type",
+        "days",
+        "start_time",
+        "end_time",
+        "location",
+        "instructors",
+        "status",
+        "is_cancelled",
+        "seats_open",
+    )
+    snapshot = {
+        field: matched.get(field)
+        for field in snapshot_fields
+    }
+    snapshot["source"] = result.get("source")
+    snapshot["retrieved_at"] = result.get("retrieved_at")
+    refreshed["materialized_section"] = snapshot
+    refreshed["materialization_status"] = (
+        "resolved"
+        if matched.get("days")
+        and matched.get("start_time")
+        and matched.get("end_time")
+        else "tba"
+    )
+    stale = bool(result.get("stale")) or result.get("source") == "last_known_live"
+    refreshed["data_status"] = "cached" if stale else "current"
+    refreshed["refreshed_at"] = result.get("retrieved_at")
+    sources = list(refreshed.get("sources") or [])
+    source = result.get("source")
+    if source and source not in sources:
+        sources.append(source)
+    refreshed["sources"] = sources
+    if stale:
+        _append_schedule_notice(
+            refreshed,
+            "Live schedule refresh used the latest cached result; confirm current status in WebReg.",
+        )
+    else:
+        _append_schedule_notice(
+            refreshed,
+            "Live schedule refresh confirmed the section; recheck eligibility in official UCI systems.",
+        )
+    status = str(matched.get("status") or "").upper()
+    if matched.get("is_cancelled") or status == "CANCELLED":
+        _append_schedule_notice(refreshed, "This section is marked cancelled.")
+    if status == "FULL":
+        _append_schedule_notice(refreshed, "This section is currently full.")
+    if refreshed["materialization_status"] == "tba":
+        _append_schedule_notice(
+            refreshed,
+            "Meeting time is TBA; the planning item remains in Schedule.",
+        )
+    return refreshed
+
+
+@router.post("/schedule/refresh")
+async def refresh_schedule(
+    req: ScheduleRefreshRequest,
+    request: Request,
+    user: dict = Depends(current_user_optional),
+):
+    """Explicitly refresh live section state without deleting any entry."""
+
+    from app.data.db import get_live_sections
+
+    check_rate_limit(request, SCHEDULE_WRITE_LIMIT, user["id"])
+    user_id = user["id"]
+    active_session_id = _resolve_session_id(req.session_id, user_id, None)
+    session = get_or_create_session(active_session_id, user_id=user_id)
+    session, _ = _migrate_schedule_entries(user_id, active_session_id, session)
+    entries = [
+        dict(entry)
+        for entry in session.get("pending_schedule", [])
+        if isinstance(entry, dict)
+    ]
+    unique_keys = {
+        (str(entry.get("course_id") or ""), str(entry.get("term") or ""))
+        for entry in entries
+        if entry.get("course_id")
+        and entry.get("term")
+        and entry.get("term") != "unknown"
+    }
+    task_by_key = {
+        key: asyncio.create_task(
+            asyncio.to_thread(
+                get_live_sections,
+                key[0],
+                key[1],
+                force_refresh=True,
+                request_timeout_s=2.5,
+            )
+        )
+        for key in unique_keys
+    }
+    done, pending = await asyncio.wait(
+        task_by_key.values(),
+        timeout=3.0,
+    ) if task_by_key else (set(), set())
+    for task in pending:
+        task.cancel()
+    result_by_key: dict[tuple[str, str], Optional[dict]] = {}
+    for key, task in task_by_key.items():
+        if task not in done:
+            result_by_key[key] = None
+            continue
+        try:
+            result_by_key[key] = task.result()
+        except Exception as exc:
+            logger.warning(
+                "[schedule] live refresh degraded for %s %s: %s",
+                key[0],
+                key[1],
+                exc,
+            )
+            result_by_key[key] = None
+
+    refreshed_entries = [
+        _apply_live_schedule_result(
+            entry,
+            result_by_key.get(
+                (
+                    str(entry.get("course_id") or ""),
+                    str(entry.get("term") or ""),
+                )
+            ),
+        )
+        for entry in entries
+    ]
+    session = update_session(
+        active_session_id,
+        {"pending_schedule": refreshed_entries},
+        user_id=user_id,
+    )
+    return {
+        "ok": True,
+        "pending_schedule": session.get("pending_schedule", []),
+        "events": _build_schedule_events(session),
+        "schedule_validation": _validate_pending_schedule(
+            session.get("pending_schedule", [])
+        ),
+        "timed_out": bool(pending),
+    }
+
+
 @router.post("/schedule/clear")
 async def clear_schedule(
     req: ScheduleClearRequest,
@@ -1918,8 +2124,6 @@ def _build_schedule_events(session):
 
         sec_env = get_sections(cid, entry_term)
         sections = sec_env.get("sections", []) if sec_env.get("found") else []
-        if not sections:
-            continue
 
         # Match by section_num (what the frontend picker sends: "A" /
         # "A1") — NOT section_code (the 5-digit registrar number).
@@ -1927,15 +2131,19 @@ def _build_schedule_events(session):
         # the frontend has always passed section_num here.
         sec = next((s for s in sections if (s.get("section_num") or "") == sid), None)
         if sec is None:
-            # Fall back to section_code match for old callers that
-            # somehow stored a code, then to first Lec/Sem.
+            # Fall back to section_code for old callers. Never fall back to
+            # an unrelated first section: unresolved planning intent stays
+            # visible in the list without a fabricated calendar block.
             sec = next((s for s in sections if s.get("section_code") == sid), None)
         if sec is None:
-            lec_order = {"Lec": 0, "Sem": 1, "Stu": 2}
-            sec = sorted(
-                sections,
-                key=lambda s: lec_order.get(s.get("section_type") or "", 99),
-            )[0]
+            snapshot = entry.get("materialized_section")
+            if isinstance(snapshot, dict) and (
+                str(snapshot.get("section_num") or "") == sid
+                or str(snapshot.get("section_code") or "") == sid
+            ):
+                sec = snapshot
+        if sec is None:
+            continue
 
         start, end = sec.get("start_time"), sec.get("end_time")
         days_str = sec.get("days")

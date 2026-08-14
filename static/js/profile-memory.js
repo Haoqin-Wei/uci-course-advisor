@@ -111,6 +111,8 @@ function renderProfile(data) {
   if (p.major)
     html += `<div class="memory-about-line"><strong>${escHTML(p.major)}</strong>` +
             (p.year ? ` · ${escHTML(p.year)}` : '') + `</div>`;
+  if (p.catalog_year)
+    html += `<div class="memory-about-line">Catalog year: <strong>${escHTML(p.catalog_year)}</strong></div>`;
   if (p.target_gpa)
     html += `<div class="memory-about-line">Target GPA: <strong>${p.target_gpa}</strong></div>`;
   const grad = p.graduating_class || _inferGradClass(p.year);

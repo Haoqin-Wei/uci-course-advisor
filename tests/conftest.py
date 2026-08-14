@@ -184,7 +184,6 @@ def isolated_test_environment(
     from app.auth import rate_limit, security, store
     from app.data import deep_search_history, grades, professor_summary, sessions
     from app.terms.store import JsonFileTermStateStore, TermStateSnapshot
-    from app.validation import log as validation_log
 
     monkeypatch.setattr(store, "DB_PATH", runtime_paths.auth_db)
     monkeypatch.setattr(security, "_SECRET_FILE", runtime_paths.auth_secret)
@@ -197,12 +196,6 @@ def isolated_test_environment(
         professor_summary,
         "CACHE_DIR",
         runtime_paths.professor_summaries,
-    )
-    monkeypatch.setattr(validation_log, "LOG_DIR", runtime_paths.logs)
-    monkeypatch.setattr(
-        validation_log,
-        "LOG_FILE",
-        runtime_paths.logs / "validation.jsonl",
     )
     monkeypatch.setattr(
         deep_search_history,
@@ -269,6 +262,7 @@ def isolated_test_environment(
     anteater_programs._ext_req_cache.clear()
     anteater_programs._courses_cache.clear()
     anteater_programs._all_courses_cache = None
+    anteater_programs._all_courses_source = None
     web_search.clear_web_search_state()
     deep_search.clear_deep_search_state()
 

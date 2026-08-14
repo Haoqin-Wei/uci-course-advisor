@@ -10,7 +10,12 @@ from app.terms.models import (
     TermParseError,
     TermParseResult,
 )
-from app.terms.parser import parse_term_key, parse_term_text
+from app.terms.parser import extract_explicit_term_keys, parse_term_key, parse_term_text
+from app.terms.query_scope import (
+    QueryScope,
+    next_recent_focus_terms,
+    resolve_query_scope,
+)
 from app.terms.store import (
     InMemoryTermStateStore,
     JsonFileTermStateStore,
@@ -25,6 +30,7 @@ __all__ = [
     "JsonFileTermStateStore",
     "LOS_ANGELES",
     "REGULAR_QUARTERS",
+    "QueryScope",
     "ResolvedTerm",
     "SUPPORTED_QUARTERS",
     "SystemClock",
@@ -35,6 +41,9 @@ __all__ = [
     "TermStateSnapshot",
     "TermStateStore",
     "calculate_week2_friday_cutoff",
+    "extract_explicit_term_keys",
+    "next_recent_focus_terms",
     "parse_term_key",
     "parse_term_text",
+    "resolve_query_scope",
 ]

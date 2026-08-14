@@ -66,13 +66,6 @@ FOLLOWUPS = [
     "Rank these by easiest grading",
 ]
 
-VALIDATION_REPORT = {
-    "overall": "ok",
-    "issues": [],
-    "checked_courses": ["COMPSCI161", "IN4MATX43"],
-}
-
-
 async def _collect_stream_events(req: ChatRequest, user_id: str) -> list[dict]:
     events: list[dict] = []
     async for raw in chat_router._stream_chat(
@@ -101,7 +94,7 @@ def recommendation_cards_pipeline(monkeypatch):
     ):
         reply = "Here are two offline recommendation cards."
         await queue.put({"type": "token", "text": reply})
-        return reply, RECOMMENDATION_CARDS, FOLLOWUPS, VALIDATION_REPORT
+        return reply, RECOMMENDATION_CARDS, FOLLOWUPS, None
 
     monkeypatch.setattr(chat_router, "_handle_agent", fake_handle_agent)
 
@@ -131,9 +124,13 @@ def test_recommendation_cards_in_sse_meta_are_persisted_and_restored(
     assert [event["type"] for event in events] == ["token", "meta", "done"]
     assert events[0]["text"] == "Here are two offline recommendation cards."
     assert meta["session_id"] == session_id
-    assert meta["cards"] == RECOMMENDATION_CARDS
+    assert [card["course_id"] for card in meta["cards"]] == [
+        "COMPSCI161",
+        "IN4MATX43",
+    ]
     assert meta["followups"] == FOLLOWUPS
-    assert meta["validation_report"] == VALIDATION_REPORT
+    assert "verification_report" not in meta
+    assert "validation_report" not in meta
     assert meta["final_answer"] == "Here are two offline recommendation cards."
 
     turns = sessions_data.read_turns("demo_001", session_id)
@@ -143,9 +140,9 @@ def test_recommendation_cards_in_sse_meta_are_persisted_and_restored(
     assert "followups" not in turns[0]
     assert "validation" not in turns[0]
     assert turns[1]["content"] == "Here are two offline recommendation cards."
-    assert turns[1]["cards"] == RECOMMENDATION_CARDS
+    assert turns[1]["cards"] == meta["cards"]
     assert turns[1]["followups"] == FOLLOWUPS
-    assert turns[1]["validation"] == VALIDATION_REPORT
+    assert "validation" not in turns[1]
 
     response = app_client.get(f"/api/sessions/demo_001/{session_id}")
 
@@ -153,12 +150,12 @@ def test_recommendation_cards_in_sse_meta_are_persisted_and_restored(
     payload = response.json()
     assert payload["session_id"] == session_id
     assert payload["turn_count"] == 2
-    assert payload["turns"][1]["cards"] == RECOMMENDATION_CARDS
+    assert payload["turns"][1]["cards"] == meta["cards"]
     assert payload["turns"][1]["followups"] == FOLLOWUPS
-    assert payload["turns"][1]["validation"] == VALIDATION_REPORT
+    assert "validation" not in payload["turns"][1]
 
 
-def test_agent_path_validates_cards_before_meta_and_persistence(
+def test_agent_path_does_not_rewrite_cards_before_meta_or_persistence(
     app_client,
     monkeypatch,
 ):
@@ -187,7 +184,7 @@ def test_agent_path_validates_cards_before_meta_and_persistence(
 
     session_id = sessions_data.create_session(
         "demo_001",
-        title="Card validation fixture",
+        title="Direct card fixture",
         term_scope="Spring 2025",
     )
 
@@ -203,19 +200,20 @@ def test_agent_path_validates_cards_before_meta_and_persistence(
     )
     meta = _meta_event(events)
 
-    assert meta["cards"] == []
+    assert len(meta["cards"]) == 1
+    assert meta["cards"][0]["course_id"] == "COMPSCI161"
+    assert meta["cards"][0]["primary_code"] == "99999"
+    assert "verification_status" not in meta["cards"][0]
+    assert "schedule_materialization_status" not in meta["cards"][0]
     assert meta["final_answer"] == sessions_data.read_turns(
         "demo_001", session_id
     )[1]["content"]
-    assert meta["validation_report"]["applied_action"] == "remove"
-    assert any(
-        issue["code"] == "CARD_INVALID_SECTION_CODE"
-        for issue in meta["validation_report"]["issues"]
-    )
+    assert "verification_report" not in meta
+    assert "validation_report" not in meta
 
     turns = sessions_data.read_turns("demo_001", session_id)
-    assert turns[1].get("cards", []) == []
-    assert turns[1]["validation"]["applied_action"] == "remove"
+    assert turns[1].get("cards", []) == meta["cards"]
+    assert "validation" not in turns[1]
 
 
 def test_recommendation_cards_can_be_restored_with_since_turn(
@@ -248,4 +246,9 @@ def test_recommendation_cards_can_be_restored_with_since_turn(
     payload = response.json()
     assert [turn["turn_index"] for turn in payload["turns"]] == [2]
     assert payload["turns"][0]["role"] == "assistant"
-    assert payload["turns"][0]["cards"] == RECOMMENDATION_CARDS
+    restored_cards = payload["turns"][0]["cards"]
+    assert [card["course_id"] for card in restored_cards] == [
+        "COMPSCI161",
+        "IN4MATX43",
+    ]
+    assert all("verification_status" not in card for card in restored_cards)

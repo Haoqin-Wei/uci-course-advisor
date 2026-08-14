@@ -1,6 +1,6 @@
 # UCI Course Advisor
 
-Private-beta course planning assistant for UCI students. It combines a FastAPI backend, a streaming tool-using agent, local UCI catalog data, persistent sessions/memory, validation, and a native HTML/CSS/JS frontend.
+Private-beta course planning assistant for UCI students. It combines a FastAPI backend, a streaming tool-using agent, local UCI catalog data, persistent sessions/memory, and a native HTML/CSS/JS frontend.
 
 This project is not an official UCI advisor, degree audit, or enrollment system. It can help explore course options, but students must verify requirements, prerequisites, deadlines, and enrollment decisions with official UCI sources and academic advisors.
 
@@ -9,12 +9,15 @@ This project is not an official UCI advisor, degree audit, or enrollment system.
 - Streaming chat through `/api/chat/stream` with SSE events, tool chips, limit-reached continuation, and persisted history.
 - Tool-backed course, section, professor, grade, prerequisite, policy, and schedule-conflict lookups.
 - Controlled `web_search` agent tool with source classification, default-off safety, fake-provider tests, and markdown citations for web-sourced facts.
-- Fixed WebSoc restriction evidence pipeline: the backend follows query-relevant official links, parses cross-row timelines, selects dates/scopes/exceptions deterministically, and validates every restriction claim before display.
+- Fixed WebSoc restriction evidence pipeline: the backend follows query-relevant official links, parses cross-row timelines, and selects dates/scopes/exceptions deterministically.
 - Expandable fetch audit under restriction tool chips showing each real GET/POST request, response status, byte count, source role, depth, and whether it supplied the final facts.
-- Structured recommendation cards with validation before they can be added to the weekly schedule.
-- Backend-owned automatic term resolution with conversation-level auto/pinned memory, a read-only term display, and canonical `YYYY Quarter` values.
+- Direct answer streaming with no post-generation Check or hidden rewrite step; evidence and uncertainty rules live in the Agent answer contract.
+- Structured recommendation cards remain available for planning; unresolved sections can be kept in Schedule without creating a fabricated calendar block.
+- Backend-owned automatic term resolution with conversation-level `auto/manual` defaults, an explicit selector, per-turn query scopes, and canonical `YYYY Quarter` values.
+- Structured XML runtime context plus a backend tool guard keeps the conversation default separate from the term(s) each tool is allowed to query.
 - Cross-term schedules: every entry keeps its own term, overlaps are non-blocking, and the same course/section can coexist across terms.
 - Authenticated sessions, isolated guest identities, onboarding, profile memory, preferences, and cross-session restoration.
+- Profile course selection reads the checked-in local UCI catalog first, then a restart-safe runtime snapshot; a full paginated Anteater crawl is only a last resort.
 - Local catalog coverage manifest that distinguishes `complete`, `partial`, `stale`, and `unavailable` data.
 - Private-beta hardening: rate limits, production cookie/CSRF defaults, no shared writable demo user in production, and traceable logs.
 - Health and observability endpoints: `/health/live`, `/health/ready`, `/health/metrics`.
@@ -29,8 +32,8 @@ flowchart LR
   Tools["Agent tools<br/>course, sections, grades, professors, prereqs, schedule, web_search"]
   Data["Data layer<br/>local CSV/SQLite + optional Anteater fallback"]
   Memory["Persistent state<br/>sessions, profile, facts, preferences, schedule"]
-  Validation["Validation<br/>grounding, term/source checks, card blocking"]
-  Terms["Term resolution<br/>LA clock + UCI calendar + WebSoc publication gate"]
+  Validation["Data Check v2<br/>claims, evidence, deterministic correction, risk notices"]
+  Terms["Term context<br/>automatic/default/query + selector + tool guard"]
   Restrictions["Restriction evidence<br/>WebSoc entry + official linked page + timeline parser"]
 
   Browser --> API
@@ -65,7 +68,7 @@ flowchart LR
 │   ├── memory/                     # Profile, facts, preferences, and session memory
 │   ├── routers/                    # API routers including health endpoints
 │   ├── scheduling/                 # Schedule conflict and bundle validation service
-│   ├── terms/                      # Canonical parsing, automatic state, sync, and conversation terms
+│   ├── terms/                      # Automatic/default/query state, parsing, sync, and tool scope
 │   └── validation/                 # Grounding validators and validation log
 ├── data/
 │   ├── uci/                        # Versioned local catalog CSVs
@@ -146,6 +149,22 @@ Successful state is refreshed after 30 days and remains usable as last-known-goo
 
 The browser-facing `/api/term-state` response intentionally contains only `automatic_term`, `source`, and `status`; detailed timestamps, cache age, availability evidence, fallback state, and transitions remain available through the health endpoints. Static asset URLs are versioned and revalidated so a new HTML shell cannot run against an older JavaScript bundle.
 
+Each conversation persists one stable `default_term` and a `term_mode`:
+
+- `auto` conversations refresh to the current automatic term when opened or when a new turn starts.
+- Selecting a published term calls `PUT /api/sessions/{session_id}/default-term` and changes only that conversation to `manual`.
+- “Restore Auto” immediately returns the conversation to the current automatic term.
+- A question that names another term does not touch the selector. It creates temporary `query_terms`; cross-default and comparison answers show a query badge.
+- Follow-ups such as “那 2025 Fall 呢？” and “对比一下这两个学期” use compact structured focus rather than rescanning assistant prose.
+
+The LLM receives one backend-built XML runtime block with UCI time, default term, query allowlist, source, and response language. This markup is a compact context boundary, not a security mechanism. Every term-scoped tool call is independently overridden or rejected by the backend guard, so model-proposed terms cannot escape the current query scope.
+
+Selector choices and mutations use the same publication contract: a canonical term present in WebSoc’s published list can be selected even when it was not one of the small set of department probes used to advance the automatic term. Unknown future terms remain rejected.
+
+### Profile course catalog loading
+
+`GET /api/onboarding/courses/all` no longer performs a cold, sequential whole-catalog API crawl after every process restart. It builds the slim picker payload from `data/uci/courses.csv`, keeps it in process memory, and uses `data/runtime/onboarding_courses.json` as a restart-safe fallback when a deployment has no versioned CSV. Anteater cursor pagination runs only when both local sources are missing; a successful fallback fetch is persisted atomically.
+
 Whole-catalog course data is loaded only when the onboarding course picker needs it. The default system prompt is likewise loaded only when Settings opens. Agent web activity is recorded as compact audit events: each real request logs its URL, method, status or error, byte count, duration, `cache_hit=false`, and trigger, followed by a deduplicated fetched-URL summary. Page bodies, extracted passages, restriction fields, and complete tool results are not written to logs.
 
 Run the read-only live source check manually (it is excluded from default CI):
@@ -161,9 +180,22 @@ Questions about major/school restrictions, New Only restrictions, course-specifi
 
 Fetched HTML is cleaned into ordered headings, paragraphs, lists, tables, and links. A sequential parser binds department, date, time, action, audience, course scope, and exceptions into typed events using the `America/Los_Angeles` timezone. A completeness gate then marks the evidence `verified`, `partial`, `conflicting`, or `unavailable`; missing or conflicting data is never converted into a guessed date.
 
-The backend—not the LLM—renders the primary restriction type, effective time, related-but-different restrictions, eligibility, exceptions, and source URLs. The LLM may add at most a short explanation or next-step question. `RestrictionClaimValidator` checks its text against the evidence bundle and replaces unsupported dates, type substitutions, eligibility claims, omitted exceptions, or unfetched URLs with the deterministic fact block.
+The backend renders the primary restriction type, effective time, related-but-different restrictions, eligibility, exceptions, and source URLs as structured evidence. The LLM receives that compact evidence and may add only a short explanation or next-step question.
 
 The frontend’s restriction tool chip expands to the exact requests made during that turn. The compact audit is persisted with the assistant turn, so restored sessions show the same request list without fetching the websites again.
+
+### V1 answer contract
+
+V1 has no post-generation Check module. Agent tokens stream directly to the
+student and the backend does not rewrite completed prose, inject sentence
+badges, mutate recommendation cards, or attach validation reports.
+
+Reliability comes from the answer contract: factual course claims must use the
+data tools available in that turn, uncertainty stays next to the affected
+statement in the student's language, and live seat questions use the live
+WebSoc tool. Markdown tables must remain structurally complete. Schedule time
+conflict detection and explicit live Schedule refresh remain because they are
+planning features, not answer post-processing.
 
 Run the read-only M14 live checks manually (excluded from default CI):
 
@@ -235,10 +267,10 @@ GitHub Actions runs install, syntax lint, dependency graph validation, and offli
 ## Correctness boundaries
 
 - The assistant is strongest for catalog, schedule, prerequisite, professor, and course-planning questions covered by the local data and implemented tools.
-- Local DB/tool data is the default highest-trust source. Web-sourced facts must be linked and shown separately; complete local DB data is not overridden by external web pages unless the answer explicitly describes the conflict.
+- Evidence is compared only within the same subject, field, term, and catalog year. Comparable source timestamps choose the newer value; without comparable timestamps, an official UCI source wins over an API aggregate. An unresolved tie is shown as a conflict and is never auto-corrected.
 - Restriction dates, types, scopes, exceptions, eligibility, and cited URLs come only from the typed restriction evidence bundle; the LLM is an explanation layer, not a fact source.
 - Degree Audit is not implemented. Major requirement support is limited and should not be treated as official degree certification.
 - `partial`, `stale`, and `unavailable` coverage states mean the assistant must say it cannot confirm a fact rather than inventing certainty.
 - Web source classes are `official_uci`, `official_university`, `government`, `professor_page`, `rmp`, `reddit`, `commercial`, `news`, and `unknown`. Reddit/forum/social results are anecdotal, and any web claim without a URL is not usable as a factual source.
-- Recommendation cards are validation-gated, but validation is not a substitute for official UCI enrollment rules.
+- Recommendation cards and Schedule writes are never validation-gated. Their badges describe risk; the Schedule remains a planning draft and is not a registration action.
 - Always verify add/drop deadlines, restrictions, prerequisites, waitlists, exams, and degree progress through official UCI systems.

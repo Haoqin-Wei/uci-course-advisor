@@ -33,6 +33,15 @@ def test_get_live_sections_tool_schema_is_available() -> None:
     }
 
 
+def test_get_sections_schema_encodes_official_historical_stop_rule() -> None:
+    description = _schema_by_name("get_sections")["function"]["description"]
+
+    assert "official Registrar WebSoc POST workflow" in description
+    assert "offering_status=not_offered" in description
+    assert "authoritative=true" in description
+    assert "do not follow it with web_search" in description
+
+
 def test_get_live_sections_dispatcher_uses_selected_term(monkeypatch) -> None:
     calls: list[dict] = []
 
@@ -61,7 +70,11 @@ def test_get_live_sections_dispatcher_uses_selected_term(monkeypatch) -> None:
             "section_codes": ["34070"],
             "force_refresh": True,
         },
-        context={"term": "Fall 2026"},
+        context={
+            "default_term": "2025 Spring",
+            "allowed_query_terms": ["Fall 2026"],
+            "query_term_source": "explicit",
+        },
     )
 
     assert result["source"] == "live_anteater_websoc"
@@ -93,6 +106,15 @@ def test_agent_prompt_encodes_live_availability_rules() -> None:
     assert "source` is `local_not_live`" in prompt
     assert "Live WebSoc via Anteater API" in prompt
     assert "as of" in prompt
+
+
+def test_agent_prompt_stops_after_authoritative_historical_no_match() -> None:
+    prompt = AGENT_SYSTEM_PROMPT
+
+    assert "fixed official Registrar WebSoc POST workflow" in prompt
+    assert "offering_status=not_offered" in prompt
+    assert "authoritative=true" in prompt
+    assert "do NOT call web_search, fetch_page" in prompt
 
 
 def test_agent_can_dispatch_live_sections_with_sse_chip(monkeypatch) -> None:

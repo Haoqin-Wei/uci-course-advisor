@@ -21,7 +21,9 @@ TermSource = Literal[
     "last_known_good",
     "code_fallback",
     "explicit",
-    "conversation_pinned",
+    "user_ui",
+    "automatic",
+    "migration",
 ]
 TermStatus = Literal[
     "available",

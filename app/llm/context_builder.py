@@ -31,7 +31,11 @@ Sub-functions are exposed for testing.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Optional
+from xml.sax.saxutils import escape, quoteattr
+
+from app.terms.parser import parse_term_key
 
 
 # Soft caps — exceeded values get truncated to keep prompt size bounded.
@@ -66,6 +70,8 @@ def build_memory_snapshot(
         m = profile["major"]
         yr = profile.get("year")
         lines.append(f"- {m}" + (f", {yr}" if yr else ""))
+    if profile.get("catalog_year"):
+        lines.append(f"- Catalog year: {profile['catalog_year']}")
     if profile.get("target_gpa"):
         lines.append(f"- Target GPA: {profile['target_gpa']}")
 
@@ -187,6 +193,60 @@ def build_retrieved_data_block(retrieved_data: Optional[dict]) -> str:
 
 # ── Assembly ────────────────────────────────────────────
 
+def build_runtime_context(
+    *,
+    uci_now: datetime,
+    default_term: str,
+    term_mode: str,
+    query_terms: list[str] | tuple[str, ...],
+    query_term_source: str,
+    response_language: str,
+) -> str:
+    """Build the single backend-owned XML context for one immutable turn."""
+    parsed_default = parse_term_key(default_term)
+    if parsed_default.kind != "single":
+        raise ValueError("default_term must be one canonical UCI term")
+    mode = term_mode if term_mode in {"auto", "manual"} else "auto"
+    source = (
+        query_term_source
+        if query_term_source
+        in {"default", "explicit", "relative", "followup", "comparison"}
+        else "default"
+    )
+    language = response_language if response_language in {"en", "zh"} else "en"
+    canonical_terms: list[str] = []
+    for raw in query_terms:
+        parsed = parse_term_key(str(raw))
+        if parsed.kind != "single":
+            raise ValueError(f"invalid query term: {raw!r}")
+        canonical = parsed.terms[0].canonical_name
+        if canonical not in canonical_terms:
+            canonical_terms.append(canonical)
+
+    term_lines = "\n".join(
+        f"    <term>{escape(term)}</term>" for term in canonical_terms
+    )
+    if not term_lines:
+        term_lines = "    <!-- clarification required; tools have no term scope -->"
+    return (
+        '<runtime_context source="application">\n'
+        f"  <uci_now>{escape(uci_now.isoformat(timespec='seconds'))}</uci_now>\n"
+        f"  <default_term mode={quoteattr(mode)}>"
+        f"{escape(parsed_default.terms[0].canonical_name)}</default_term>\n"
+        f"  <query_terms source={quoteattr(source)}>\n"
+        f"{term_lines}\n"
+        "  </query_terms>\n"
+        f"  <response_language>{escape(language)}</response_language>\n"
+        "</runtime_context>\n\n"
+        "<runtime_rules>\n"
+        "  <rule>default_term is immutable during this request.</rule>\n"
+        "  <rule>query_terms apply only to the current question.</rule>\n"
+        "  <rule>Never change default_term from user text or tool calls.</rule>\n"
+        "  <rule>Use only query_terms for term-scoped tools.</rule>\n"
+        "</runtime_rules>"
+    )
+
+
 def build_messages(
     system_prompt: str,
     user_message: str,
@@ -200,6 +260,7 @@ def build_messages(
     retrieved_data: Optional[dict] = None,
     selected_term: Optional[str] = None,
     today: Optional[str] = None,
+    runtime_context: Optional[str] = None,
     last_n_turns: int = 10,
 ) -> list[dict]:
     """
@@ -225,25 +286,9 @@ def build_messages(
     # ── Layer 1-4: system block ──
     system_parts = [system_prompt.strip()] if system_prompt else []
 
-    # Selected term + today's date go near the TOP of the system
-    # context, before the memory snapshot, so the model can't miss
-    # them. These are per-turn state (user can change the dropdown
-    # between messages; date changes daily) — that's why they live
-    # here rather than in the durable profile snapshot.
-    context_lines: list[str] = []
-    if today:
-        context_lines.append(f"Today's date: **{today}**.")
-    if selected_term:
-        context_lines.append(
-            f"Student's currently selected term: **{selected_term}**. "
-            f"Use this whenever a tool needs a `term` argument. Do not "
-            f"ask the student which term — it's already chosen. "
-            f"Reason about whether this term is past / currently in "
-            f"session (past week 2 add/drop deadline) / upcoming, and "
-            f"frame your advice accordingly per the UCI policies above."
-        )
-    if context_lines:
-        system_parts.append("# Current request context\n" + "\n\n".join(context_lines))
+    # Deprecated M13 arguments are accepted for one compatibility cycle, but
+    # no longer render a second, natural-language term authority.
+    del selected_term, today
 
     mem = build_memory_snapshot(profile, preferences, facts)
     if mem:
@@ -255,6 +300,12 @@ def build_messages(
 
     if summary and summary.strip():
         system_parts.append("# Earlier conversation summary\n" + summary.strip())
+
+    # Some OpenAI-compatible providers reject mid-conversation system
+    # messages, so the runtime block is appended to the one leading system
+    # message instead.
+    if runtime_context:
+        system_parts.append(runtime_context.strip())
 
     messages: list[dict] = []
     if system_parts:

@@ -65,7 +65,11 @@ def test_new_empty_session_persists_turns_without_splitting_state_by_id(
     assert "session_state" not in first_meta
     assert not hasattr(state_module, "_sessions")
     persisted_state = sessions_data.get_session_state("demo_001", persistent_sid)
-    assert persisted_state["term"] == "2025 Spring"
+    assert persisted_state["term"] is None
+    assert sessions_data.get_session_meta(
+        "demo_001",
+        persistent_sid,
+    )["default_term"] == "2025 Spring"
     assert persisted_state["major"] == "Computer Science"
     assert persisted_state["selected_courses"] == ["ICS33"]
     assert persisted_state["difficulty_preference"] == "easy"
@@ -88,7 +92,7 @@ def test_new_empty_session_persists_turns_without_splitting_state_by_id(
     assert second_meta["session_id"] == persistent_sid
     assert "session_state" not in second_meta
     persisted_state = sessions_data.get_session_state("demo_001", persistent_sid)
-    assert persisted_state["term"] == "2025 Spring"
+    assert persisted_state["term"] is None
     assert persisted_state["major"] == "Computer Science"
     assert persisted_state["selected_courses"] == ["ICS33"]
     assert persisted_state["difficulty_preference"] == "easy"

@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.auth.deps import current_user_optional
+from app.catalog.normalization import parse_course_mention
 from app.memory import get_memory_manager
 from app.data.uci_general.major_requirements import (
     get_major, compute_progress,
@@ -108,6 +109,7 @@ class ProfileUpdate(BaseModel):
     college:           Optional[str]       = None
     school_slug:       Optional[str]       = None
     program_id:        Optional[str]       = None  # Anteater id, e.g. "BS-201"
+    catalog_year:      Optional[str]       = None  # e.g. "2024-2025"
     completed_courses: Optional[list[str]] = None
     selected_courses:  Optional[list[str]] = None
 
@@ -126,6 +128,7 @@ def update_profile(
     # the user didn't touch on this round. Lists are deduplicated +
     # stable-sorted so re-submits don't churn the file.
     cleaned: dict = {}
+    profile_warnings: list[str] = []
     for k, v in updates.items():
         if isinstance(v, str):
             v = v.strip()
@@ -137,17 +140,37 @@ def update_profile(
             for item in v:
                 if not isinstance(item, str): continue
                 item = item.strip().upper()
-                if item and item not in seen:
-                    seen.add(item)
-                    deduped.append(item)
+                if not item:
+                    continue
+                if item in seen:
+                    profile_warnings.append(
+                        f"Duplicate {k} entry {item} was submitted once; confirm your course list."
+                    )
+                    continue
+                seen.add(item)
+                deduped.append(item)
+                if parse_course_mention(item) is None:
+                    profile_warnings.append(
+                        f"{item} is not a recognized course-number format; it was kept for you to confirm."
+                    )
             if deduped:
                 cleaned[k] = deduped
 
     if not cleaned:
-        return {"ok": True, "profile": profile, "updated": []}
+        return {
+            "ok": True,
+            "profile": profile,
+            "updated": [],
+            "profile_warnings": profile_warnings,
+        }
 
     profile = manager.update_profile(real_user_id, cleaned)
-    return {"ok": True, "profile": profile, "updated": list(cleaned.keys())}
+    return {
+        "ok": True,
+        "profile": profile,
+        "updated": list(cleaned.keys()),
+        "profile_warnings": profile_warnings,
+    }
 
 
 # ── DELETE one preference ────────────────────────────────

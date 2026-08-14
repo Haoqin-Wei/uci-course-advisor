@@ -98,6 +98,28 @@ MAX_ITERATIONS = 12
 # professor) → ~13-15 tools. 12 was too tight; the LLM would burn the
 # budget on enrichment and never reach propose_recommendation.
 MAX_TOTAL_TOOLS = 16
+IDEMPOTENT_TERM_READ_TOOLS = frozenset(
+    agent_tools.TERM_SCOPED_TOOLS - {"propose_recommendation"}
+)
+_OFFERING_SEARCH_MARKERS = (
+    "schedule of classes",
+    "class schedule",
+    "websoc",
+    "offered",
+    "offering",
+    "sections",
+    "开课",
+    "排课",
+    "课表",
+)
+_REDUNDANT_OFFERING_PAGE_MARKERS = (
+    "reg.uci.edu/perl/websoc",
+    "websoc.reg.uci.edu",
+    "api.peterportal.org",
+    "peterportal.org",
+    "coursicle.com",
+    "web.archive.org",
+)
 
 # When a budget limit is hit we stash the in-progress conversation so
 # the user can click "Continue" to resume with a fresh budget. State
@@ -144,6 +166,114 @@ def _summarize_tool_args(args: dict) -> dict:
         else:
             out[key] = _log_value(value)
     return out
+
+
+def _idempotent_tool_key(name: str, args: dict) -> Optional[str]:
+    if name not in IDEMPOTENT_TERM_READ_TOOLS:
+        return None
+    return f"{name}:{json.dumps(args or {}, sort_keys=True, default=str, separators=(',', ':'))}"
+
+
+def _record_definitive_course_offering(
+    context: dict,
+    name: str,
+    args: dict,
+    result: dict,
+) -> None:
+    if (
+        name != "get_sections"
+        or result.get("source") != "registrar_websoc"
+        or result.get("authoritative") is not True
+        or result.get("offering_status") not in {"offered", "not_offered"}
+    ):
+        return
+    record = {
+        "course_id": str(result.get("course_id") or args.get("course_id") or ""),
+        "term": str(result.get("term") or args.get("term") or ""),
+        "offering_status": result.get("offering_status"),
+        "source_url": result.get("source_url"),
+    }
+    records = context.setdefault("_definitive_course_offerings", [])
+    identity = (record["course_id"], record["term"])
+    if not any((item.get("course_id"), item.get("term")) == identity for item in records):
+        records.append(record)
+
+
+def _definitive_offering_stop_reason(
+    name: str,
+    args: dict,
+    *,
+    context: dict,
+) -> Optional[str]:
+    records = context.get("_definitive_course_offerings") or []
+    if not records:
+        return None
+
+    if name == "fetch_page":
+        url = str(args.get("url") or "").lower()
+        if any(marker in url for marker in _REDUNDANT_OFFERING_PAGE_MARKERS):
+            return (
+                "official Registrar WebSoc already returned a definitive course-offering "
+                "result; redundant offering-page fetch is disabled"
+            )
+
+    if name == "web_search":
+        query = str(args.get("query") or "")
+        query_lower = query.lower()
+        query_compact = re.sub(r"[^a-z0-9]", "", query_lower)
+        for record in records:
+            course_compact = re.sub(
+                r"[^a-z0-9]",
+                "",
+                str(record.get("course_id") or "").lower(),
+            )
+            if (
+                course_compact
+                and course_compact in query_compact
+                and any(marker in query_lower for marker in _OFFERING_SEARCH_MARKERS)
+            ):
+                return (
+                    "official Registrar WebSoc already returned a definitive result for "
+                    f"{record['course_id']} in {record['term']}; redundant offering search "
+                    "is disabled"
+                )
+
+    if name == "get_live_sections":
+        requested_course = re.sub(
+            r"[^a-z0-9]", "", str(args.get("course_id") or "").lower()
+        )
+        requested_term = str(args.get("term") or "")
+        for record in records:
+            record_course = re.sub(
+                r"[^a-z0-9]", "", str(record.get("course_id") or "").lower()
+            )
+            if requested_course == record_course and requested_term == record.get("term"):
+                return (
+                    "official Registrar WebSoc already resolved this historical offering; "
+                    "a secondary live-availability lookup is not applicable"
+                )
+    return None
+
+
+def _add_offering_event_fields(event: dict, name: str, result: dict) -> None:
+    if name != "get_sections":
+        return
+    offering_status = result.get("offering_status")
+    if not offering_status and result.get("found") is False:
+        offering_status = (
+            "not_offered"
+            if result.get("coverage_status") == "complete"
+            else "unavailable"
+        )
+    event.update(
+        {
+            "source": result.get("source"),
+            "offering_status": offering_status,
+            "authoritative": result.get("authoritative") is True,
+            "section_count": len(result.get("sections") or []),
+            "fetch_summary": result.get("fetches") or [],
+        }
+    )
 
 
 def _summarize_tool_result(result: dict) -> dict:
@@ -368,9 +498,14 @@ def _compact_workflow_record(record: dict) -> dict:
     return {**record, "result": compact_result}
 
 
-def _clarification_text(user_query: str, clarification: dict) -> str:
+def _clarification_text(
+    user_query: str,
+    clarification: dict,
+    response_language: Optional[str] = None,
+) -> str:
     has_cjk = bool(re.search(r"[\u3400-\u9fff]", user_query or ""))
-    key = "message_zh" if has_cjk else "message_en"
+    language = response_language or ("zh" if has_cjk else "en")
+    key = "message_zh" if language == "zh" else "message_en"
     return str(clarification.get(key) or clarification.get("message_en") or "")
 
 
@@ -379,6 +514,10 @@ def _stash_continuation(
     *,
     user_id: str,
     term: Optional[str],
+    default_term: Optional[str],
+    allowed_query_terms: list[str],
+    query_term_source: str,
+    response_language: str,
     pending_schedule: Optional[list[dict]],
     iterations_used: int,
     tool_calls_used: int,
@@ -391,6 +530,10 @@ def _stash_continuation(
         "messages": list(messages),  # shallow copy — entries are dicts we won't mutate
         "user_id":  user_id,
         "term":     term,
+        "default_term": default_term,
+        "allowed_query_terms": list(allowed_query_terms),
+        "query_term_source": query_term_source,
+        "response_language": response_language,
         "pending_schedule": list(pending_schedule or []),
         "iterations_used":  iterations_used,
         "tool_calls_used":  tool_calls_used,
@@ -415,6 +558,10 @@ async def run_agent(
     model: str,
     user_id: str,
     term: Optional[str] = None,
+    default_term: Optional[str] = None,
+    allowed_query_terms: Optional[list[str]] = None,
+    query_term_source: str = "default",
+    response_language: str = "en",
     pending_schedule: Optional[list[dict]] = None,
 ) -> AsyncIterator[dict]:
     """
@@ -422,17 +569,26 @@ async def run_agent(
     mutated in place (assistant + tool messages are appended each
     round) so the caller can inspect the full trace.
 
-    `term` is the student's currently-selected term (frontend
-    drop-down). It's stored on the tool context so dispatchers can
-    inject it as a default when the model forgets to pass `term=...`.
+    ``allowed_query_terms`` is the backend-resolved immutable allowlist.
+    ``term`` remains only as a representative compatibility value used by
+    deterministic workflow routing.
     """
     user_query = _latest_user_content(messages)
     deep_search_state = DeepSearchRunState(query=user_query)
+    resolved_allowed_terms = list(
+        allowed_query_terms
+        if allowed_query_terms is not None
+        else ([term] if term else [])
+    )
     matches, history_hint_message = load_history_hint(user_query)
     deep_search_state.history_matches = matches
     async for event in _run_loop(
         messages, client=client, model=model,
         user_id=user_id, term=term,
+        default_term=default_term or term,
+        allowed_query_terms=resolved_allowed_terms,
+        query_term_source=query_term_source,
+        response_language=response_language,
         pending_schedule=pending_schedule,
         start_iteration=0, start_tool_count=0,
         user_query=user_query,
@@ -482,6 +638,10 @@ async def resume_agent(
     async for event in _run_loop(
         messages, client=client, model=model,
         user_id=snap["user_id"], term=snap["term"],
+        default_term=snap.get("default_term") or snap.get("term"),
+        allowed_query_terms=snap.get("allowed_query_terms") or [],
+        query_term_source=snap.get("query_term_source") or "default",
+        response_language=snap.get("response_language") or "en",
         pending_schedule=snap.get("pending_schedule") or [],
         start_iteration=0, start_tool_count=0,
         user_query=snap["deep_search_state"].query,
@@ -498,6 +658,10 @@ async def _run_loop(
     model: str,
     user_id: str,
     term: Optional[str],
+    default_term: Optional[str],
+    allowed_query_terms: list[str],
+    query_term_source: str,
+    response_language: str,
     pending_schedule: Optional[list[dict]],
     start_iteration: int,
     start_tool_count: int,
@@ -509,6 +673,10 @@ async def _run_loop(
     tool_context = {
         "user_id": user_id,
         "term": term,
+        "default_term": default_term,
+        "allowed_query_terms": list(allowed_query_terms),
+        "query_term_source": query_term_source,
+        "response_language": response_language,
         "pending_schedule": list(pending_schedule or []),
         "user_query": user_query,
         "deep_search_state": deep_search_state,
@@ -517,7 +685,11 @@ async def _run_loop(
     primary_plan = build_primary_workflow_plan(workflow_route)
     clarification = primary_plan.get("clarification")
     if clarification:
-        clarification_text = _clarification_text(user_query, clarification)
+        clarification_text = _clarification_text(
+            user_query,
+            clarification,
+            response_language,
+        )
         observability.log_event(
             logger,
             logging.INFO,
@@ -541,6 +713,7 @@ async def _run_loop(
 
     total_tool_calls = start_tool_count
     forced_results: dict[str, dict] = {}
+    idempotent_results: dict[str, dict] = {}
     primary_result_records: list[dict] = []
     for primary_call in primary_plan.get("calls") or []:
         tool_name = primary_call["tool"]
@@ -575,6 +748,10 @@ async def _run_loop(
         )
         if asyncio.iscoroutine(result):
             result = await result
+        _record_definitive_course_offering(tool_context, tool_name, args, result)
+        cache_key = _idempotent_tool_key(tool_name, args) if not term_error else None
+        if cache_key is not None:
+            idempotent_results[cache_key] = result
         tool_ok = "error" not in result and result.get("ok", True) is not False
         forced_results[tool_name] = result
         primary_result_records.append(
@@ -615,6 +792,7 @@ async def _run_loop(
             "term_data_available": _result_has_term_data(result),
             "server_forced": True,
         }
+        _add_offering_event_fields(tool_done_event, tool_name, result)
         if tool_name == "get_department_restrictions":
             tool_done_event["restriction_evidence"] = result.get("evidence_bundle")
             tool_done_event["verified_facts"] = result.get("verified_facts")
@@ -685,10 +863,29 @@ async def _run_loop(
         for intent in workflow_route.get("intents", []):
             observability.increment("workflow_router.matches", intent=intent)
     for iteration in range(start_iteration, MAX_ITERATIONS):
+        request_messages = _messages_with_run_hints(messages, hint_messages)
+        prompt_layers = observability.estimate_prompt_layers(
+            request_messages,
+            tool_schemas=agent_tools.TOOL_SCHEMAS,
+        )
+        observability.increment(
+            "llm.input_tokens",
+            prompt_layers["total_input"],
+            model=model,
+            source="layered_estimate",
+        )
+        observability.log_event(
+            logger,
+            logging.INFO,
+            "llm_prompt_layers",
+            model=model,
+            iteration=iteration,
+            **prompt_layers,
+        )
         try:
             response = await client.chat.completions.create(
                 model=model,
-                messages=_messages_with_run_hints(messages, hint_messages),
+                messages=request_messages,
                 tools=agent_tools.TOOL_SCHEMAS,
                 tool_choice="auto",
                 stream=True,
@@ -829,6 +1026,10 @@ async def _run_loop(
                     iterations_used=iteration + 1,
                     tool_calls_used=total_tool_calls,
                     user_id=user_id, term=term,
+                    default_term=default_term,
+                    allowed_query_terms=allowed_query_terms,
+                    query_term_source=query_term_source,
+                    response_language=response_language,
                     pending_schedule=pending_schedule,
                     deep_search_state=deep_search_state,
                     history_hint_message=history_hint_message,
@@ -873,10 +1074,36 @@ async def _run_loop(
                    "name": tc["name"], "args": args, "label": label}
 
             forced_cache = tool_context.get("_forced_workflow_results") or {}
+            cache_key = _idempotent_tool_key(tc["name"], args) if not term_error else None
+            reused_result = False
+            stop_reason = (
+                _definitive_offering_stop_reason(
+                    tc["name"],
+                    args,
+                    context=tool_context,
+                )
+                if not term_error
+                else None
+            )
             if term_error:
                 result = {"error": f"invalid term for {tc['name']}: {term_error}"}
+            elif stop_reason:
+                result = {
+                    "ok": False,
+                    "error": stop_reason,
+                    "error_code": "definitive_offering_already_resolved",
+                }
+                observability.log_event(
+                    logger,
+                    logging.INFO,
+                    "definitive_offering_tool_blocked",
+                    tool=tc["name"],
+                    args=_summarize_tool_args(args),
+                    reason=stop_reason,
+                )
             elif tc["name"] in forced_cache:
                 result = forced_cache[tc["name"]]
+                reused_result = True
                 observability.log_event(
                     logger,
                     logging.INFO,
@@ -884,6 +1111,17 @@ async def _run_loop(
                     tool=tc["name"],
                     label=label,
                     server_forced=True,
+                )
+            elif cache_key is not None and cache_key in idempotent_results:
+                result = idempotent_results[cache_key]
+                reused_result = True
+                observability.log_event(
+                    logger,
+                    logging.INFO,
+                    "agent_tool_result_reused",
+                    tool=tc["name"],
+                    label=label,
+                    args=_summarize_tool_args(args),
                 )
             else:
                 result = agent_tools.dispatch(tc["name"], args, context=tool_context)
@@ -900,6 +1138,14 @@ async def _run_loop(
                     logger.warning("[agent] async tool %s failed: %s: %s",
                                    tc["name"], type(e).__name__, e)
                     result = {"error": f"{type(e).__name__}: {e}"}
+            _record_definitive_course_offering(
+                tool_context,
+                tc["name"],
+                args,
+                result,
+            )
+            if cache_key is not None and not term_error:
+                idempotent_results[cache_key] = result
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc["id"],
@@ -934,7 +1180,9 @@ async def _run_loop(
                 "label": label,
                 "args": args,
                 "term_data_available": _result_has_term_data(result),
+                "reused": reused_result,
             }
+            _add_offering_event_fields(tool_done_event, tc["name"], result)
             if tc["name"] == "get_department_restrictions":
                 tool_done_event["restriction_evidence"] = result.get(
                     "evidence_bundle"
@@ -962,6 +1210,10 @@ async def _run_loop(
         iterations_used=MAX_ITERATIONS,
         tool_calls_used=total_tool_calls,
         user_id=user_id, term=term,
+        default_term=default_term,
+        allowed_query_terms=allowed_query_terms,
+        query_term_source=query_term_source,
+        response_language=response_language,
         pending_schedule=pending_schedule,
         deep_search_state=deep_search_state,
         history_hint_message=history_hint_message,
@@ -978,6 +1230,10 @@ async def _emit_limit_reached_and_fallback(
     tool_calls_used: int,
     user_id: str,
     term: Optional[str],
+    default_term: Optional[str],
+    allowed_query_terms: list[str],
+    query_term_source: str,
+    response_language: str,
     pending_schedule: Optional[list[dict]],
     deep_search_state: DeepSearchRunState,
     history_hint_message: Optional[dict[str, str]],
@@ -997,6 +1253,10 @@ async def _emit_limit_reached_and_fallback(
     cid = _stash_continuation(
         messages,
         user_id=user_id, term=term,
+        default_term=default_term,
+        allowed_query_terms=allowed_query_terms,
+        query_term_source=query_term_source,
+        response_language=response_language,
         pending_schedule=pending_schedule,
         iterations_used=iterations_used,
         tool_calls_used=tool_calls_used,
@@ -1040,9 +1300,25 @@ async def _emit_limit_reached_and_fallback(
     tool_context: dict = {
         "user_id": user_id,
         "term": term,
+        "default_term": default_term,
+        "allowed_query_terms": list(allowed_query_terms),
+        "query_term_source": query_term_source,
+        "response_language": response_language,
         "pending_schedule": list(pending_schedule or []),
     }
 
+    fallback_prompt_layers = observability.estimate_prompt_layers(
+        fallback_messages,
+        tool_schemas=fallback_tools,
+    )
+    observability.log_event(
+        logger,
+        logging.INFO,
+        "llm_prompt_layers",
+        model=model,
+        iteration="fallback",
+        **fallback_prompt_layers,
+    )
     try:
         response = await client.chat.completions.create(
             model=model,

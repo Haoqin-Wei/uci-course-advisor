@@ -5,7 +5,7 @@ Stores per-session conversation history and metadata under
   data/memory/{user_id}/sessions/{session_id}/
 
 Each session is a folder with:
-  meta.json    — title, term_scope, timestamps, decisions, summary
+  meta.json    — title, default_term, timestamps, decisions, summary
   state.json   — structured per-session chat/planning state
   turns.jsonl  — append-only conversation log, one Turn per line
 
@@ -14,7 +14,7 @@ Sessions own conversation history. User-level memory
 across all sessions for that user.
 
 Public API:
-    create_session(user_id, title=None, term_scope=None)  → session_id
+    create_session(user_id, title=None, default_term=None) → session_id
     get_session_meta(user_id, session_id)                 → dict
     update_session_meta(user_id, session_id, **fields)    → dict
     get_session_state(user_id, session_id)                → dict
@@ -44,7 +44,9 @@ from typing import Optional, Any
 MEMORY_ROOT = Path("data/memory")
 SESSION_ID_PREFIX = "sess_"
 SESSION_ID_BYTES = 3                  # 6 hex chars → 16M possibilities
-TERM_METADATA_MIGRATION_VERSION = 1
+TERM_SCHEMA_VERSION = 2
+# Compatibility name used by the standalone migration script and old callers.
+TERM_METADATA_MIGRATION_VERSION = TERM_SCHEMA_VERSION
 
 
 # ── Exceptions ───────────────────────────────────────────
@@ -189,6 +191,8 @@ def _normalize_session_state(raw: Any, *, term: Optional[str] = None) -> dict:
 def create_session(
     user_id: str,
     title: Optional[str] = None,
+    default_term: Optional[str] = None,
+    *,
     term_scope: Optional[str] = None,
 ) -> str:
     """
@@ -203,16 +207,39 @@ def create_session(
     while _session_dir(user_id, session_id).exists():
         session_id = _new_session_id()
 
+    # ``term_scope`` is accepted for one compatibility cycle only. New code
+    # passes ``default_term`` and all persistence below uses the M16 field.
+    initial_default = default_term or term_scope
+    if initial_default:
+        from app.terms.parser import parse_term_key
+        parsed_initial = parse_term_key(str(initial_default))
+        initial_default = (
+            parsed_initial.terms[0].canonical_name
+            if parsed_initial.kind == "single"
+            else None
+        )
+    if not initial_default:
+        try:
+            from app.terms.service import get_term_resolution_service
+            initial_default = (
+                get_term_resolution_service().automatic_term().canonical_name
+            )
+        except Exception:
+            # The resolved API view still supplies the automatic term if the
+            # operational state is temporarily unavailable during creation.
+            initial_default = None
+
     now = _now_iso()
     meta = {
         "session_id":            session_id,
         "user_id":               user_id,
         "title":                 title or "New session",
-        "term_scope":            term_scope,
+        "default_term":          initial_default,
         "term_mode":             "auto",
         "term_source":           "automatic",
         "term_updated_at":       now,
-        "term_migration_version": TERM_METADATA_MIGRATION_VERSION,
+        "term_updated_by":       "auto_sync",
+        "term_schema_version":   TERM_SCHEMA_VERSION,
         "created_at":            now,
         "last_active_at":        now,
         "turn_count":            0,
@@ -221,16 +248,19 @@ def create_session(
         "summary_through_turn":  None,
     }
     _write_json(_meta_path(user_id, session_id), meta)
-    _write_json(_state_path(user_id, session_id), _default_session_state(term_scope))
+    _write_json(_state_path(user_id, session_id), _default_session_state())
     return session_id
 
 
 def migrate_term_metadata(memory_root: Optional[Path] = None) -> dict:
-    """Idempotently mark every pre-M13 conversation as automatic.
+    """Migrate legacy auto/pinned metadata to the M16 default-term schema.
 
-    Legacy ``term_scope`` is retained only as compatibility data; because
-    ``term_mode`` is auto, it is never interpreted as a user pin.
+    A legacy pin is trusted only when it has explicit ``user_ui`` provenance.
+    Invalid legacy terms are backed up before the conversation falls back to
+    automatic mode. Turns, cards, state, and schedules are never rewritten.
     """
+    from app.terms.parser import parse_term_key
+
     root = Path(memory_root) if memory_root is not None else MEMORY_ROOT
     migrated = 0
     skipped = 0
@@ -240,16 +270,42 @@ def migrate_term_metadata(memory_root: Optional[Path] = None) -> dict:
         if not isinstance(raw, dict):
             failed += 1
             continue
-        if raw.get("term_migration_version") == TERM_METADATA_MIGRATION_VERSION:
+        if raw.get("term_schema_version") == TERM_SCHEMA_VERSION:
             skipped += 1
             continue
+
+        legacy_value = raw.get("default_term") or raw.get("term_scope")
+        parsed = parse_term_key(str(legacy_value or ""))
+        canonical = (
+            parsed.terms[0].canonical_name
+            if parsed.kind == "single"
+            else None
+        )
+        explicit_ui_pin = (
+            raw.get("term_mode") in {"pinned", "manual"}
+            and raw.get("term_updated_by") == "user_ui"
+            and canonical is not None
+        )
+        if legacy_value and canonical is None:
+            backup_path = meta_path.with_name("meta.pre-m16.json")
+            if not backup_path.exists():
+                try:
+                    shutil.copy2(meta_path, backup_path)
+                except OSError:
+                    failed += 1
+                    continue
+
         updated = dict(raw)
+        updated.pop("term_scope", None)
+        updated.pop("term_migration_version", None)
         updated.update(
             {
-                "term_mode": "auto",
-                "term_source": "migration",
+                "default_term": canonical,
+                "term_mode": "manual" if explicit_ui_pin else "auto",
+                "term_source": "user_ui" if explicit_ui_pin else "migration",
                 "term_updated_at": _now_iso(),
-                "term_migration_version": TERM_METADATA_MIGRATION_VERSION,
+                "term_updated_by": "user_ui" if explicit_ui_pin else "migration",
+                "term_schema_version": TERM_SCHEMA_VERSION,
             }
         )
         try:
@@ -305,7 +361,10 @@ def get_session_state(user_id: str, session_id: str) -> dict:
     """
     meta = get_session_meta(user_id, session_id)
     state = _read_json(_state_path(user_id, session_id), default=None)
-    return _normalize_session_state(state, term=meta.get("term_scope"))
+    # Conversation default-term state lives only in meta.json. ``state.term``
+    # remains a legacy planning-module field and is no longer hydrated from
+    # conversation metadata.
+    return _normalize_session_state(state)
 
 
 def update_session_state(
@@ -367,18 +426,18 @@ def append_turn(
     *,
     cards: Optional[list] = None,
     followups: Optional[list] = None,
-    validation: Optional[dict] = None,
     web_fetches: Optional[list] = None,
+    query_terms: Optional[list[str]] = None,
+    query_term_source: Optional[str] = None,
+    course_ids: Optional[list[str]] = None,
 ) -> int:
     """
     Append a turn to turns.jsonl, return its turn_index.
     Auto-bumps turn_count and last_active_at in meta.
 
-    Optional extras (assistant turns only, in practice): cards/followups/
-    validation/web_fetches are persisted so history replay can reconstruct
-    course cards, followup chips, the validation footer, and the compact
-    actual-request audit. Falsy values are omitted from the JSONL so legacy
-    turns stay byte-identical when re-read.
+    Optional extras (assistant turns only, in practice): cards, followups,
+    and web fetches are persisted so history replay can reconstruct the
+    response UI. Falsy values are omitted from the JSONL.
     """
     if role not in ("user", "assistant"):
         raise ValueError(f"role must be 'user' or 'assistant', got {role!r}")
@@ -396,10 +455,14 @@ def append_turn(
         turn["cards"] = cards
     if followups:
         turn["followups"] = followups
-    if validation:
-        turn["validation"] = validation
     if web_fetches:
         turn["web_fetches"] = web_fetches
+    if query_terms:
+        turn["query_terms"] = query_terms[:3]
+    if query_term_source:
+        turn["query_term_source"] = query_term_source
+    if course_ids:
+        turn["course_ids"] = course_ids[:8]
     _append_jsonl(_turns_path(user_id, session_id), turn)
 
     meta["turn_count"]     = turn_index

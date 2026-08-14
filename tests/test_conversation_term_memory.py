@@ -4,7 +4,11 @@ from pathlib import Path
 
 from app.data import sessions
 from app.terms import FixedClock, LOS_ANGELES
-from app.terms.conversation import commit_conversation_resolution
+from app.terms.conversation import (
+    restore_automatic_default,
+    set_manual_default,
+    sync_automatic_default,
+)
 from app.terms.service import TermResolutionService
 from app.terms.store import InMemoryTermStateStore, TermStateSnapshot
 
@@ -34,61 +38,73 @@ def term_service() -> TermResolutionService:
 
 def test_new_conversation_metadata_is_auto(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(sessions, "MEMORY_ROOT", tmp_path)
-    sid = sessions.create_session("u1", term_scope="Spring 2025")
+    sid = sessions.create_session("u1", default_term="2025 Spring")
     meta = sessions.get_session_meta("u1", sid)
     assert meta["term_mode"] == "auto"
     assert meta["term_source"] == "automatic"
+    assert meta["default_term"] == "2025 Spring"
+    assert meta["term_updated_by"] == "auto_sync"
 
 
-def test_successful_single_term_query_pins_and_history_resolves_it(monkeypatch, tmp_path) -> None:
+def test_selector_choice_is_the_only_manual_mutation(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(sessions, "MEMORY_ROOT", tmp_path)
-    sid = sessions.create_session("u1")
+    sid = sessions.create_session("u1", default_term="2026 Fall")
     service = term_service()
-    resolution = service.resolve_message("查询 2026 Spring")
-    updated = commit_conversation_resolution(
-        "u1", sid, resolution, answer_succeeded=True
-    )
-    assert updated["term_mode"] == "pinned"
-    assert updated["term_scope"] == "2026 Spring"
+    updated = set_manual_default("u1", sid, "Spring 2026", service)
+    assert updated["term_mode"] == "manual"
+    assert updated["default_term"] == "2026 Spring"
+    assert updated["term_updated_by"] == "user_ui"
     assert service.effective_for_conversation(updated).canonical_name == "2026 Spring"
 
 
-def test_failed_or_blocked_or_multi_query_never_changes_term(monkeypatch, tmp_path) -> None:
+def test_selector_accepts_websoc_published_term_without_department_probe(
+    monkeypatch,
+    tmp_path,
+) -> None:
     monkeypatch.setattr(sessions, "MEMORY_ROOT", tmp_path)
-    sid = sessions.create_session("u1")
+    sid = sessions.create_session("u1", default_term="2026 Fall")
     service = term_service()
-    single = service.resolve_message("查询 2026 Spring")
-    commit_conversation_resolution("u1", sid, single, answer_succeeded=False)
-    assert sessions.get_session_meta("u1", sid)["term_mode"] == "auto"
-    commit_conversation_resolution(
-        "u1", sid, single, answer_succeeded=True, validation_blocked=True
-    )
-    assert sessions.get_session_meta("u1", sid)["term_mode"] == "auto"
-    multi = service.resolve_message("比较 2026 Spring 和 2026 Fall")
-    commit_conversation_resolution("u1", sid, multi, answer_succeeded=True)
-    assert sessions.get_session_meta("u1", sid)["term_mode"] == "auto"
+    state = service.store.load()
+    assert state is not None
+    state.availability.pop("2026 Spring")
+    service.store.save(state)
+
+    assert "2026 Spring" in service.available_terms()
+    updated = set_manual_default("u1", sid, "2026 Spring", service)
+
+    assert updated["term_mode"] == "manual"
+    assert updated["default_term"] == "2026 Spring"
 
 
-def test_current_term_resets_pinned_conversation_to_auto(monkeypatch, tmp_path) -> None:
+def test_query_resolution_never_changes_default_term(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(sessions, "MEMORY_ROOT", tmp_path)
-    sid = sessions.create_session("u1")
+    sid = sessions.create_session("u1", default_term="2026 Fall")
     service = term_service()
-    commit_conversation_resolution(
-        "u1", sid, service.resolve_message("2026 Spring"), answer_succeeded=True
-    )
-    reset = service.resolve_message("回到当前学期")
-    meta = commit_conversation_resolution("u1", sid, reset, answer_succeeded=True)
+    before = sessions.get_session_meta("u1", sid)
+    assert service.resolve_message("查询 2026 Spring").kind == "single"
+    assert service.resolve_message("比较 2026 Spring 和 2026 Fall").kind == "multi"
+    assert sessions.get_session_meta("u1", sid) == before
+
+
+def test_restore_auto_uses_current_automatic_term(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(sessions, "MEMORY_ROOT", tmp_path)
+    sid = sessions.create_session("u1", default_term="2026 Fall")
+    service = term_service()
+    set_manual_default("u1", sid, "2026 Spring", service)
+    meta = restore_automatic_default("u1", sid, service)
     assert meta["term_mode"] == "auto"
-    assert meta["term_scope"] == "2026 Fall"
+    assert meta["default_term"] == "2026 Fall"
 
 
-def test_unavailable_term_does_not_pin(monkeypatch, tmp_path) -> None:
+def test_manual_conversation_ignores_automatic_sync(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(sessions, "MEMORY_ROOT", tmp_path)
-    sid = sessions.create_session("u1")
-    resolution = term_service().resolve_message("2028 Winter")
-    assert resolution.all_available is False
-    commit_conversation_resolution("u1", sid, resolution, answer_succeeded=True)
-    assert sessions.get_session_meta("u1", sid)["term_mode"] == "auto"
+    sid = sessions.create_session("u1", default_term="2026 Fall")
+    service = term_service()
+    set_manual_default("u1", sid, "2026 Spring", service)
+    sync_automatic_default("u1", sid, service.automatic_term())
+    meta = sessions.get_session_meta("u1", sid)
+    assert meta["term_mode"] == "manual"
+    assert meta["default_term"] == "2026 Spring"
 
 
 def test_legacy_session_migration_is_idempotent_and_preserves_turns(tmp_path) -> None:
@@ -109,5 +125,7 @@ def test_legacy_session_migration_is_idempotent_and_preserves_turns(tmp_path) ->
     assert first == {"migrated": 1, "skipped": 0, "failed": 0}
     assert second == {"migrated": 0, "skipped": 1, "failed": 0}
     assert migrated["term_mode"] == "auto"
-    assert migrated["term_scope"] == "Spring 2025"
+    assert migrated["default_term"] == "2025 Spring"
+    assert "term_scope" not in migrated
+    assert migrated["term_schema_version"] == sessions.TERM_SCHEMA_VERSION
     assert (session_dir / "turns.jsonl").read_text(encoding="utf-8") == turns

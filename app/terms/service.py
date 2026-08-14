@@ -202,9 +202,13 @@ class TermResolutionService:
 
     def effective_for_conversation(self, meta: dict) -> ResolvedTerm:
         automatic = self.automatic_term()
-        if meta.get("term_mode") != "pinned":
+        if meta.get("term_mode") != "manual":
             return automatic
-        parsed = parse_term_key(str(meta.get("term_scope") or ""))
+        # ``term_scope`` is read-only compatibility for sessions not yet
+        # processed by the startup migration. New writes use default_term.
+        parsed = parse_term_key(
+            str(meta.get("default_term") or meta.get("term_scope") or "")
+        )
         if parsed.kind != "single":
             return automatic
         state = self.store.load() or TermStateSnapshot()
@@ -212,7 +216,7 @@ class TermResolutionService:
             parsed.terms[0],
             state,
             force_available=True,
-            source="conversation_pinned",
+            source="conversation_manual",
         )
 
     def automatic_state(self) -> dict:
@@ -245,14 +249,71 @@ class TermResolutionService:
         }
 
     def conversation_state(self, meta: dict) -> dict:
-        effective = self.effective_for_conversation(meta)
+        default = self.effective_for_conversation(meta)
         return {
-            "effective_term": effective.canonical_name,
-            "term_mode": meta.get("term_mode", "auto"),
-            "term_source": effective.source,
-            "term_status": effective.status,
-            "term_checked_at": effective.checked_at.isoformat(),
+            "default_term": default.canonical_name,
+            "term_mode": (
+                "manual" if meta.get("term_mode") == "manual" else "auto"
+            ),
+            "term_source": (
+                meta.get("term_source")
+                if meta.get("term_mode") == "manual"
+                else default.source
+            ),
+            "term_status": default.status,
+            "term_checked_at": default.checked_at.isoformat(),
+            "available_terms": self.available_terms(
+                include=default.canonical_name,
+            ),
         }
+
+    def available_terms(self, *, include: Optional[str] = None) -> list[str]:
+        """Canonical published selector choices, ordered chronologically."""
+        state = self.store.load() or TermStateSnapshot()
+        names = {
+            name
+            for name, record in state.availability.items()
+            if isinstance(record, dict) and record.get("available") is True
+        }
+        names.update(state.websoc_terms)
+        if include:
+            names.add(include)
+        automatic = self.automatic_term().canonical_name
+        names.add(automatic)
+        keys: list[TermKey] = []
+        for name in names:
+            parsed = parse_term_key(str(name))
+            if parsed.kind == "single" and parsed.terms[0] not in keys:
+                keys.append(parsed.terms[0])
+        quarter_order = {
+            "Winter": 0,
+            "Spring": 1,
+            "Summer1": 2,
+            "Summer10wk": 3,
+            "Summer2": 4,
+            "Fall": 5,
+        }
+        keys.sort(key=lambda key: (key.year, quarter_order[key.quarter]))
+        return [key.canonical_name for key in keys]
+
+    def is_selectable_term(self, key: TermKey) -> bool:
+        """Return whether the selector is allowed to persist ``key``.
+
+        The WebSoc term list is itself the publication contract for explicit
+        user selection.  ``availability`` is a stronger, department-level
+        probe used by the automatic-term transition algorithm; most historical
+        terms are intentionally not probed.  Keeping these two concepts
+        separate prevents the UI from offering a published historical term
+        that the mutation endpoint then rejects.
+        """
+        state = self.store.load() or TermStateSnapshot()
+        name = key.canonical_name
+        availability = state.availability.get(name)
+        if isinstance(availability, dict) and availability.get("available") is True:
+            return True
+        if name in state.websoc_terms:
+            return True
+        return name == self.automatic_term().canonical_name
 
     def _resolved(
         self,

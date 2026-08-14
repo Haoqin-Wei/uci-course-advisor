@@ -161,6 +161,99 @@ def test_fetch_live_sections_rate_limit_returns_unavailable_metric(
     assert metrics["counters"]["live_websoc.api_result{result=unavailable}"] == 1
 
 
+def test_fetch_live_sections_uses_recent_last_success_after_refresh_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    class FakeResponse:
+        status_code = 200
+        text = "ok"
+
+        def json(self):
+            return {
+                "ok": True,
+                "data": {
+                    "schools": [
+                        {
+                            "departments": [
+                                {"courses": [{"sections": [_raw_section()]}]}
+                            ]
+                        }
+                    ]
+                },
+            }
+
+    def fake_request(self, method, url, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return FakeResponse()
+        raise requests.Timeout("refresh timed out")
+
+    monkeypatch.setattr(requests.sessions.Session, "request", fake_request)
+
+    first = anteater.fetch_live_sections(
+        year="2026",
+        quarter="Fall",
+        department="COMPSCI",
+        course_number="161",
+    )
+    stale = anteater.fetch_live_sections(
+        year="2026",
+        quarter="Fall",
+        department="COMPSCI",
+        course_number="161",
+        force_refresh=True,
+    )
+
+    assert first is not None
+    assert stale is not None
+    assert stale["stale"] is True
+    assert stale["cache_hit"] is True
+    assert stale["retrieved_at"] == first["retrieved_at"]
+    assert stale["stale_age_seconds"] <= anteater.LIVE_WEBSOC_TTL_SECONDS
+
+
+def test_fetch_live_sections_does_not_use_expired_last_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = (
+        "live_websoc",
+        "2026",
+        "Fall",
+        "COMPSCI",
+        "161",
+        (),
+    )
+    old = __import__("time").time() - anteater.LIVE_WEBSOC_TTL_SECONDS - 1
+    anteater._live_sections_cache[("last_success", *key)] = (
+        old,
+        {
+            "source": "live_anteater_websoc",
+            "retrieved_at": "2026-07-18T11:00:00Z",
+            "cache_hit": False,
+            "stale": False,
+            "sections": [_raw_section()],
+        },
+    )
+
+    def failed_request(self, method, url, **kwargs):
+        raise requests.Timeout("refresh timed out")
+
+    monkeypatch.setattr(requests.sessions.Session, "request", failed_request)
+
+    result = anteater.fetch_live_sections(
+        year="2026",
+        quarter="Fall",
+        department="COMPSCI",
+        course_number="161",
+        force_refresh=True,
+    )
+
+    assert result is None
+
+
 def test_get_live_sections_maps_anteater_availability_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

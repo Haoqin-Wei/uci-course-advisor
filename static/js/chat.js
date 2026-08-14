@@ -27,7 +27,10 @@ async function sendMessage(text) {
 
   // Build request payload — send currentSessionId or "" for "new session"
   const customPrompt = getActivePrompt();
-  const payload = { message: msg, session_id: currentSessionId || '' };
+  const payload = {
+    message: msg,
+    session_id: currentSessionId || '',
+  };
   if (customPrompt) payload.system_prompt = customPrompt;
 
   // Create the AI message bubble up-front; tokens stream into its body.
@@ -72,7 +75,12 @@ async function sendMessage(text) {
         startToolChip(aiMsg, event.label || event.name, event.name);
       },
       tool_call_done(event) {
-        finishToolChip(aiMsg, event.ok !== false, event.fetch_summary || []);
+        finishToolChip(
+          aiMsg,
+          event.ok !== false,
+          event.fetch_summary || [],
+          event,
+        );
       },
       limit_reached(event) {
         // Agent hit its budget. Stash the continuation_id on the
@@ -200,11 +208,32 @@ function startToolChip(wrap, label, toolName) {
   scrollChat();
 }
 
-function finishToolChip(wrap, ok, fetchSummary) {
+function finishToolChip(wrap, ok, fetchSummary, resultMeta = {}) {
   const chip = (wrap._toolChipQueue || []).shift();
   if (chip) {
     chip.classList.remove('is-active');
     chip.classList.add(ok ? 'is-done' : 'is-error');
+    if (chip.dataset.toolName === 'get_sections') {
+      const label = chip.querySelector('.tool-label');
+      const count = Number(resultMeta.section_count || 0);
+      if (count > 0) {
+        chip.classList.add('is-sections-found');
+        if (label) label.textContent += ` · 找到 ${count} 个 section`;
+      } else if (
+        resultMeta.offering_status === 'not_offered'
+        && resultMeta.authoritative === true
+      ) {
+        chip.classList.add('is-official-no-match');
+        if (label) label.textContent += ' · 官方无匹配';
+      } else if (resultMeta.offering_status === 'not_offered') {
+        chip.classList.add('is-no-match');
+        if (label) label.textContent += ' · 未找到 section';
+      } else if (resultMeta.offering_status === 'unavailable') {
+        chip.classList.remove('is-done');
+        chip.classList.add('is-unavailable');
+        if (label) label.textContent += ' · 数据不可用';
+      }
+    }
   }
   if (Array.isArray(fetchSummary) && fetchSummary.length > 0) {
     renderWebFetchSummary(wrap, fetchSummary);
@@ -237,6 +266,7 @@ function renderWebFetchSummary(wrap, fetches) {
   const roleLabels = {
     registrar_websoc_form: 'WebSoc 查询表单',
     registrar_websoc_results: 'WebSoc 部门结果',
+    registrar_websoc_course_results: 'WebSoc 课程结果',
     undergrad_restrictions: '本科限制官方页',
     graduate_restrictions: '研究生限制官方页',
     policy: '政策官方页',
@@ -349,6 +379,8 @@ function finalizeAiMessage(wrap, fullText, meta, stopped) {
   body.classList.remove('streaming');
   body.innerHTML = formatMarkdown(fullText || '');
 
+  renderQueryTermBadge(wrap, meta);
+
   if (!wrap._webFetchRendered
       && Array.isArray(meta.web_fetches)
       && meta.web_fetches.length > 0) {
@@ -375,13 +407,22 @@ function finalizeAiMessage(wrap, fullText, meta, stopped) {
     wrap.appendChild(fuDiv);
   }
 
-  // Validation footer
-  if (!stopped && meta.validation_report
-      && Array.isArray(meta.validation_report.issues)
-      && meta.validation_report.issues.length > 0) {
-    const vDiv = document.createElement('div');
-    vDiv.innerHTML = renderValidationFooter(meta.validation_report);
-    wrap.appendChild(vDiv.firstElementChild);
+  if (!stopped && meta.suggest_term_change?.term) {
+    const suggestion = document.createElement('div');
+    suggestion.className = 'term-change-suggestion';
+    const text = document.createElement('span');
+    text.textContent = `Set ${meta.suggest_term_change.term} as this conversation’s default?`;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = 'Confirm';
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      const ok = await confirmSuggestedTerm(meta.suggest_term_change.term);
+      if (ok) suggestion.remove();
+      else button.disabled = false;
+    });
+    suggestion.append(text, button);
+    wrap.appendChild(suggestion);
   }
 
   // Continue button — only when the agent loop hit a budget limit
@@ -392,6 +433,19 @@ function finalizeAiMessage(wrap, fullText, meta, stopped) {
   }
 
   scrollChat();
+}
+
+function renderQueryTermBadge(wrap, meta) {
+  const terms = Array.isArray(meta?.query_terms) ? meta.query_terms : [];
+  const defaultTerm = meta?.default_term || currentTermContext?.term;
+  if (!terms.length || (terms.length === 1 && terms[0] === defaultTerm)) return;
+  const badge = document.createElement('div');
+  badge.className = 'query-term-badge';
+  badge.textContent = terms.length > 1
+    ? `本次比较：${terms.join(' ↔ ')}`
+    : `本次查询：${terms[0]}`;
+  const body = wrap.querySelector('.msg-ai-body');
+  wrap.insertBefore(badge, body);
 }
 
 function renderContinueBanner(wrap, continuationId, reason) {
@@ -447,6 +501,7 @@ async function continueAgent(wrap, continuationId, btn) {
   };
 
   let resumedText = '';
+  let resumedMeta = null;
   let newContinuationId = null;
   let newReason = null;
 
@@ -466,13 +521,24 @@ async function continueAgent(wrap, continuationId, btn) {
         resumedText += event.text;
         appendStreamingToken(resumeShell, resumedText);
       },
+      meta(event) {
+        resumedMeta = event;
+        if (typeof event.final_answer === 'string') {
+          resumedText = event.final_answer;
+        }
+      },
       tool_call_start(event) {
         // Reuse the existing chip container on `wrap`. Pass the
         // real wrap, not the shell, so chips land in the right DOM.
         startToolChip(wrap, event.label || event.name, event.name);
       },
       tool_call_done(event) {
-        finishToolChip(wrap, event.ok !== false, event.fetch_summary || []);
+        finishToolChip(
+          wrap,
+          event.ok !== false,
+          event.fetch_summary || [],
+          event,
+        );
       },
       limit_reached(event) {
         newContinuationId = event.continuation_id;

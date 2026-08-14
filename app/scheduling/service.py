@@ -235,6 +235,33 @@ def build_pending_schedule_bundle_items(
                 if isinstance(section, dict)
             ]
 
+        # A forced live refresh may resolve a section that is not present in
+        # the bundled catalog. Preserve that exact, verified snapshot as
+        # validation input so time/final conflicts are still detected. Never
+        # substitute a different section from the same course.
+        snapshot = entry.get("materialized_section")
+        if isinstance(snapshot, dict) and (
+            _section_num(snapshot) == section_ref
+            or _section_code(snapshot) == section_ref
+        ):
+            normalized_snapshot = _with_course_id(
+                snapshot,
+                course_id,
+                term=entry_term,
+            )
+            if not any(
+                (
+                    _section_num(section)
+                    and _section_num(section) == _section_num(normalized_snapshot)
+                )
+                or (
+                    _section_code(section)
+                    and _section_code(section) == _section_code(normalized_snapshot)
+                )
+                for section in sections_by_course[course_key]
+            ):
+                sections_by_course[course_key].append(normalized_snapshot)
+
         match = next(
             (
                 section

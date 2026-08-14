@@ -16,6 +16,17 @@ body {
 }
 button { font-family: inherit; }
 input { font-family: inherit; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 
 :where(button, input, select, textarea, [role="button"], [role="menuitem"]):focus-visible {
   outline: 2px solid var(--accent);
@@ -71,9 +82,16 @@ input { font-family: inherit; }
   height: 22px;
   background: var(--border-default);
 }
-.term-display {
+.term-control {
   flex: 0 0 224px;
   min-width: 224px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.term-select {
+  width: 100%;
   background: var(--bg-panel-2);
   border: 1px solid var(--border-default);
   color: var(--text-secondary);
@@ -84,6 +102,35 @@ input { font-family: inherit; }
   line-height: 1.2;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.term-select:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+.term-restore {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--text-micro);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.term-error {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  max-width: 320px;
+  padding: 4px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--danger);
+  color: #fff;
+  font-size: var(--text-micro);
+  line-height: 1.25;
+  z-index: 120;
+}
+.term-error:empty {
+  display: none;
 }
 .topbar-right {
   margin-left: auto;
@@ -457,6 +504,34 @@ body.schedule-open .msg-ai { max-width: 680px; }
   margin-bottom: var(--space-2);
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+.query-term-badge {
+  display: inline-flex;
+  width: fit-content;
+  margin-bottom: var(--space-2);
+  padding: 3px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--bg-panel-2);
+  color: var(--text-secondary);
+  font-size: var(--text-micro);
+  font-variant-numeric: tabular-nums;
+}
+.term-change-suggestion {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--text-secondary-size);
+}
+.term-change-suggestion button {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  color: var(--accent);
+  padding: 4px 8px;
+  cursor: pointer;
 }
 .msg-ai-body {
   background: var(--bg-panel);
@@ -1231,12 +1306,18 @@ body.schedule-open .msg-ai { max-width: 680px; }
 .cc-badge-success       { background: var(--success-soft);       color: var(--success); }
 .cc-source-badge        { border: 1px solid var(--border-default); }
 .cc-source-db_verified,
-.cc-source-official_uci { background: var(--success-soft);       color: var(--success); }
+.cc-source-official_uci,
+.cc-source-uci_catalog,
+.cc-source-uci_websoc,
+.cc-source-anteater_courses,
+.cc-source-anteater_programs { background: var(--success-soft); color: var(--success); }
 .cc-source-official_web { background: var(--accent-soft);        color: var(--accent); }
 .cc-source-live_anteater_websoc { background: var(--success-soft); color: var(--success); }
 .cc-source-websoc_comments,
 .cc-source-official_department_link { background: var(--accent-soft); color: var(--accent); }
 .cc-source-local_not_live { background: var(--warning-soft); color: var(--warning); }
+.cc-source-last_known_live { background: var(--warning-soft); color: var(--warning); }
+.cc-source-student_declaration { background: var(--accent-soft); color: var(--accent); }
 .cc-source-external_web { background: var(--overlay-light);      color: var(--text-secondary); }
 .cc-source-anecdotal    { background: var(--warning-soft);       color: var(--warning); }
 .cc-source-unverified   { background: var(--danger-soft);        color: var(--danger); }
@@ -1516,6 +1597,33 @@ tr.cc-sg-row .cc-sg-add-hover.added {
 }
 .tool-chip.is-error .tool-dot {
   background: var(--danger);
+  animation: none;
+}
+
+.tool-chip.is-sections-found,
+.tool-chip.is-official-no-match {
+  border-color: rgba(5, 150, 105, 0.35);
+  color: var(--success);
+  background: rgba(5, 150, 105, 0.08);
+  opacity: 1;
+}
+
+.tool-chip.is-sections-found .tool-dot,
+.tool-chip.is-official-no-match .tool-dot {
+  background: var(--success);
+}
+
+.tool-chip.is-no-match,
+.tool-chip.is-unavailable {
+  border-color: rgba(217, 119, 6, 0.4);
+  color: var(--warning);
+  background: rgba(217, 119, 6, 0.08);
+  opacity: 1;
+}
+
+.tool-chip.is-no-match .tool-dot,
+.tool-chip.is-unavailable .tool-dot {
+  background: var(--warning);
   animation: none;
 }
 .tool-fetch-details {
@@ -1809,7 +1917,8 @@ body.schedule-open .input-row {
 /* Clear button — escape hatch for sessions stuck in legacy state.
    Pushed against the close button on the right, but visually less
    prominent (ghost style) so users don't fat-finger a wipe. */
-.schedule-clear {
+.schedule-clear,
+.schedule-refresh {
   margin-left: auto;
   background: transparent;
   border: 1px solid var(--border-default);
@@ -1824,12 +1933,21 @@ body.schedule-open .input-row {
   text-transform: uppercase;
   transition: all var(--transition);
 }
+.schedule-refresh {
+  margin-left: 0;
+}
+.schedule-refresh:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
 .schedule-clear:hover {
   border-color: var(--danger);
   color: var(--danger);
   background: var(--danger-soft);
 }
-.schedule-clear:disabled {
+.schedule-clear:disabled,
+.schedule-refresh:disabled {
   opacity: 0.4;
   pointer-events: none;
 }
@@ -1864,7 +1982,7 @@ body.schedule-open .input-row {
 }
 .schedule-entry {
   display: grid;
-  grid-template-columns: minmax(80px, 1fr) auto auto 28px;
+  grid-template-columns: minmax(80px, 1fr) auto auto auto auto 28px;
   align-items: center;
   gap: var(--space-2);
   min-height: 32px;
@@ -1874,6 +1992,10 @@ body.schedule-open .input-row {
   color: var(--text-secondary);
 }
 .schedule-entry:hover { background: var(--overlay-soft); }
+.schedule-entry.has-conflict {
+  outline: 1px solid var(--danger);
+  background: var(--danger-soft);
+}
 .schedule-entry-course {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1908,6 +2030,32 @@ body.schedule-open .input-row {
 }
 .schedule-entry button:hover { color: var(--danger); background: var(--danger-soft); }
 .schedule-entry button .material-symbols-outlined { font-size: 16px; }
+.schedule-entry-risk {
+  padding: 2px 5px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-micro);
+  text-transform: capitalize;
+  background: var(--warning-soft);
+  color: var(--warning);
+  white-space: nowrap;
+}
+.schedule-entry-risk-verified,
+.schedule-entry-risk-corrected {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.schedule-entry-risk-conflict,
+.schedule-entry-risk-unresolved,
+.schedule-entry-risk-full,
+.schedule-entry-risk-cancelled {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.schedule-planning-note {
+  padding: 2px var(--space-2) var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-micro);
+}
 .schedule-empty-compact { padding-block: var(--space-8); }
 .schedule-toast-region {
   position: fixed;
@@ -2034,6 +2182,9 @@ body.schedule-open .input-row {
   box-shadow: var(--shadow-panel);
   z-index: 5;
 }
+.sg-event.has-conflict {
+  box-shadow: 0 0 0 2px var(--danger);
+}
 .sg-event-top {
   display: flex;
   align-items: baseline;
@@ -2154,11 +2305,16 @@ body.schedule-open .input-row {
   .topbar-status {
     display: none;
   }
-  .term-display {
+  .term-control {
     flex: 1 1 auto;
     min-width: 0;
+  }
+  .term-select {
     padding-inline: var(--space-2);
     font-size: 11px;
+  }
+  .term-restore {
+    display: none;
   }
   .topbar-right {
     gap: var(--space-2);
@@ -2178,7 +2334,7 @@ body.schedule-open .input-row {
 }
 
 /* ═══════════════════════════════════════════════════════
-   ADDITIONS: stop button, settings modal, validation footer
+   ADDITIONS: stop button and settings modal
    ═══════════════════════════════════════════════════════ */
 
 /* ── Topbar gear icon ─────────────────────────────────── */
@@ -2394,42 +2550,29 @@ body.schedule-open .input-row {
   border-color: var(--border-default);
 }
 
-/* ── Validation footer (inside AI message) ───────────── */
-.validation-footer {
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px dashed var(--border-default);
-  font-size: var(--text-label);
-  color: var(--text-tertiary);
-}
-.validation-footer-header {
-  font-weight: var(--weight-semibold);
-  color: var(--text-secondary);
-  margin-bottom: var(--space-1);
-  letter-spacing: 0.02em;
-}
-.validation-issue {
+.wizard-catalog-year {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-3);
   align-items: flex-start;
-  line-height: 1.55;
-  padding: 2px 0;
-}
-.validation-issue-icon {
-  flex-shrink: 0;
-  width: 14px;
-  text-align: center;
-}
-.validation-issue-error    .validation-issue-icon { color: var(--danger); }
-.validation-issue-warn     .validation-issue-icon { color: var(--warning); }
-.validation-issue-info     .validation-issue-icon { color: var(--accent); }
-.validation-issue code {
-  background: var(--bg-elevated);
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-family: var(--font-mono);
-  font-size: 11px;
+  margin-top: var(--space-4);
   color: var(--text-secondary);
+}
+.wizard-catalog-year {
+  flex-direction: column;
+}
+.wizard-catalog-year small {
+  display: block;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+.wizard-catalog-year input {
+  width: min(240px, 100%);
+  margin-top: var(--space-1);
+  padding: 8px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
 }
 /* ═══════════════════════════════════════════════════════
    Profile popover + Memory modal (Phase 3.1)

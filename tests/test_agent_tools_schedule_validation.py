@@ -66,6 +66,7 @@ def test_propose_recommendation_attaches_schedule_bundle_validation(monkeypatch)
     context = {
         "user_id": "demo_001",
         "term": "Fall 2026",
+        "allowed_query_terms": ["Fall 2026"],
         "pending_schedule": [
             {"course_id": "IN4MATX43", "section": "A", "status": "pending"}
         ],
@@ -135,6 +136,7 @@ def test_propose_recommendation_surfaces_unknown_prerequisites(monkeypatch):
     context = {
         "user_id": "demo_001",
         "term": "Fall 2026",
+        "allowed_query_terms": ["Fall 2026"],
         "pending_schedule": [],
     }
 
@@ -176,6 +178,7 @@ def test_agent_and_manual_add_return_same_schedule_conflict(
     agent_context = {
         "user_id": "demo_001",
         "term": "Fall 2026",
+        "allowed_query_terms": ["Fall 2026"],
         "pending_schedule": pending_schedule,
     }
     agent_result = agent_tools.dispatch(

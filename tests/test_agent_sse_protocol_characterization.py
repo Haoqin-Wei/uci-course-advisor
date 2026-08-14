@@ -257,7 +257,7 @@ def test_stream_chat_returns_grounded_fallback_when_agent_errors_before_streamin
         "demo_001",
         events[1]["session_id"],
     )
-    assert session_state["term"] == "2025 Spring"
+    assert session_state["term"] is None
     assert "session_state" not in events[1]
     assert "intent" not in events[1]
     assert events[1]["cards"] == []
@@ -266,11 +266,14 @@ def test_stream_chat_returns_grounded_fallback_when_agent_errors_before_streamin
         "session_id",
         "cards",
         "followups",
-        "validation_report",
         "final_answer",
-        "effective_term",
+        "default_term",
+        "term_mode",
         "term_source",
-        "term_status",
+        "query_terms",
+        "query_term_source",
+        "default_term_changed",
+        "available_terms",
     }
     assert "error" not in {event["type"] for event in events}
 
@@ -323,9 +326,17 @@ def test_stream_continue_resumes_once_and_persists_assistant_text(monkeypatch):
         )
     )
 
-    assert [event["type"] for event in resumed_events] == ["token", "final", "done"]
+    assert [event["type"] for event in resumed_events] == [
+        "token",
+        "final",
+        "meta",
+        "done",
+    ]
     assert resumed_events[0]["text"] == "Resumed answer."
     assert resumed_events[1]["text"] == "Resumed answer."
+    assert resumed_events[2]["final_answer"] == "Resumed answer."
+    assert "verification_report" not in resumed_events[2]
+    assert "validation_report" not in resumed_events[2]
     assert not hasattr(state_module, "_sessions")
     assert [turn["role"] for turn in sessions_data.read_turns("demo_001", session_id)] == [
         "assistant"

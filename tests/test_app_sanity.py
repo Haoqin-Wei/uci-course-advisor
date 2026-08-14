@@ -33,7 +33,7 @@ def test_frontend_and_static_assets_force_cache_revalidation(app_client):
     assert asset.headers["cache-control"] == "no-cache, must-revalidate"
 
 
-def test_session_api_ignores_term_body_and_returns_resolved_context(app_client):
+def test_session_api_ignores_term_body_and_returns_default_context(app_client):
     created = app_client.post(
         "/api/sessions/demo_001",
         json={"title": "Read-only term", "term_scope": "2099 Fall"},
@@ -41,8 +41,8 @@ def test_session_api_ignores_term_body_and_returns_resolved_context(app_client):
 
     assert created.status_code == 200
     payload = created.json()
-    assert payload["term_scope"] is None
-    assert payload["effective_term"] == "2025 Spring"
+    assert "term_scope" not in payload
+    assert payload["default_term"] == "2025 Spring"
     assert payload["term_mode"] == "auto"
     assert payload["term_source"] == "anteater"
 
@@ -50,7 +50,7 @@ def test_session_api_ignores_term_body_and_returns_resolved_context(app_client):
         f"/api/sessions/demo_001/{payload['session_id']}?include_turns=false"
     )
     assert restored.status_code == 200
-    assert restored.json()["effective_term"] == "2025 Spring"
+    assert restored.json()["default_term"] == "2025 Spring"
 
     listed = app_client.get("/api/sessions/demo_001")
     assert listed.status_code == 200
@@ -59,31 +59,55 @@ def test_session_api_ignores_term_body_and_returns_resolved_context(app_client):
         for item in listed.json()["sessions"]
         if item["session_id"] == payload["session_id"]
     )
-    assert listed_session["effective_term"] == "2025 Spring"
+    assert listed_session["default_term"] == "2025 Spring"
     assert listed_session["term_mode"] == "auto"
 
 
-def test_session_api_resolves_pinned_conversation_term(app_client):
+def test_default_term_api_sets_manual_and_restores_auto(app_client, runtime_paths):
+    from app.data import sessions
+    from app.terms.store import JsonFileTermStateStore
+
+    store = JsonFileTermStateStore(runtime_paths.term_state)
+    state = store.load()
+    state.websoc_terms.append("2026 Fall")
+    state.availability["2026 Fall"] = {
+        "available": True,
+        "course_count": 1,
+        "section_count": 1,
+    }
+    store.save(state)
+    session_id = sessions.create_session("demo_001", title="Manual term")
+
+    selected = app_client.put(
+        f"/api/sessions/{session_id}/default-term",
+        json={"mode": "manual", "term": "Fall 2026"},
+    )
+    assert selected.status_code == 200
+    assert selected.json()["default_term"] == "2026 Fall"
+    assert selected.json()["term_mode"] == "manual"
+    assert selected.json()["term_source"] == "user_ui"
+
+    restored = app_client.put(
+        f"/api/sessions/{session_id}/default-term",
+        json={"mode": "auto", "term": "2099 Fall"},
+    )
+    assert restored.status_code == 200
+    assert restored.json()["default_term"] == "2025 Spring"
+    assert restored.json()["term_mode"] == "auto"
+
+
+def test_default_term_api_rejects_unavailable_without_mutation(app_client):
     from app.data import sessions
 
-    session_id = sessions.create_session("demo_001", title="Pinned term")
-    sessions.update_session_meta(
-        "demo_001",
-        session_id,
-        term_scope="2026 Fall",
-        term_mode="pinned",
-        term_source="explicit",
+    session_id = sessions.create_session("demo_001", title="Stable term")
+    before = sessions.get_session_meta("demo_001", session_id)
+    response = app_client.put(
+        f"/api/sessions/{session_id}/default-term",
+        json={"mode": "manual", "term": "2099 Fall"},
     )
-
-    response = app_client.get(
-        f"/api/sessions/demo_001/{session_id}?include_turns=false"
-    )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["effective_term"] == "2026 Fall"
-    assert payload["term_mode"] == "pinned"
-    assert payload["term_source"] == "conversation_pinned"
+    assert response.status_code == 422
+    after = sessions.get_session_meta("demo_001", session_id)
+    assert after == before
 
 
 def test_non_streaming_chat_endpoint_is_removed(app_client):

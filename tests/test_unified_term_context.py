@@ -42,7 +42,7 @@ def _seed_available_terms(runtime_paths, *terms: str) -> None:
     store.save(state)
 
 
-def test_chat_ignores_frontend_term_and_uses_backend_effective_term(monkeypatch):
+def test_chat_ignores_frontend_term_and_uses_backend_default_term(monkeypatch):
     captured: dict = {}
 
     async def fake_handle(_message, state, _memory, *, queue, term, **_kwargs):
@@ -65,14 +65,15 @@ def test_chat_ignores_frontend_term_and_uses_backend_effective_term(monkeypatch)
 
     assert captured["term"] == "2025 Spring"
     assert captured["state"]["term"] == "2025 Spring"
-    assert meta["effective_term"] == "2025 Spring"
+    assert meta["default_term"] == "2025 Spring"
+    assert meta["query_terms"] == ["2025 Spring"]
+    assert meta["default_term_changed"] is False
     persisted = sessions_data.get_session_meta("demo_001", meta["session_id"])
     assert persisted["term_mode"] == "auto"
-    assert "term_mode" not in meta
-    assert "term_update" not in meta
+    assert persisted["default_term"] == "2025 Spring"
 
 
-def test_successful_single_available_term_pins_conversation(
+def test_successful_single_available_term_does_not_change_planning_term(
     runtime_paths,
     monkeypatch,
 ):
@@ -92,11 +93,11 @@ def test_successful_single_available_term_pins_conversation(
     )
     persisted = sessions_data.get_session_meta("demo_001", meta["session_id"])
 
-    assert meta["effective_term"] == "2026 Fall"
-    assert "term_mode" not in meta
-    assert "term_update" not in meta
-    assert persisted["term_scope"] == "2026 Fall"
-    assert persisted["term_mode"] == "pinned"
+    assert meta["default_term"] == "2025 Spring"
+    assert meta["query_terms"] == ["2026 Fall"]
+    assert meta["default_term_changed"] is False
+    assert persisted["term_mode"] == "auto"
+    assert persisted["default_term"] == "2025 Spring"
 
 
 def test_failed_turn_does_not_pin_explicit_term(runtime_paths, monkeypatch):
@@ -124,12 +125,13 @@ def test_failed_turn_does_not_pin_explicit_term(runtime_paths, monkeypatch):
         )
     )
 
-    assert meta["effective_term"] == "2025 Spring"
+    assert meta["default_term"] == "2025 Spring"
+    assert meta["query_terms"] == ["2026 Fall"]
     persisted = sessions_data.get_session_meta("demo_001", meta["session_id"])
     assert persisted["term_mode"] == "auto"
 
 
-def test_unknown_term_can_pin_only_after_tool_finds_term_data(monkeypatch):
+def test_unknown_term_tool_success_does_not_change_planning_term(monkeypatch):
     async def fake_handle(
         _message,
         _state,
@@ -159,14 +161,13 @@ def test_unknown_term_can_pin_only_after_tool_finds_term_data(monkeypatch):
         )
     )
 
-    assert meta["effective_term"] == "2026 Fall"
+    assert meta["default_term"] == "2025 Spring"
     persisted = sessions_data.get_session_meta("demo_001", meta["session_id"])
-    assert persisted["term_mode"] == "pinned"
-    assert persisted["term_scope"] == "2026 Fall"
-    assert "query_terms" not in meta
+    assert persisted["term_mode"] == "auto"
+    assert meta["query_terms"] == ["2026 Fall"]
 
 
-def test_known_unavailable_term_is_rejected_without_running_agent(
+def test_known_unavailable_term_reaches_agent_for_tool_or_context_handling(
     runtime_paths,
     monkeypatch,
 ):
@@ -180,10 +181,14 @@ def test_known_unavailable_term_is_rejected_without_running_agent(
     }
     store.save(state)
 
-    async def unexpected_agent(*_args, **_kwargs):
-        raise AssertionError("known unavailable term must not reach the agent")
+    captured = {}
 
-    monkeypatch.setattr(chat_router, "_handle_agent", unexpected_agent)
+    async def fake_handle(_message, state, _memory, *, queue, **_kwargs):
+        captured["term"] = state["term"]
+        await queue.put({"type": "token", "text": "当前数据暂未发布。"})
+        return "当前数据暂未发布。", [], [], None
+
+    monkeypatch.setattr(chat_router, "_handle_agent", fake_handle)
     events = asyncio.run(
         _collect_events(
             ChatRequest(message="show courses in 2027 Winter", session_id="")
@@ -191,8 +196,10 @@ def test_known_unavailable_term_is_rejected_without_running_agent(
     )
     meta = _meta(events)
 
-    assert "has not been published" in events[0]["text"]
-    assert meta["effective_term"] == "2025 Spring"
+    assert captured["term"] == "2027 Winter"
+    assert events[0]["text"] == "当前数据暂未发布。"
+    assert meta["default_term"] == "2025 Spring"
+    assert meta["query_terms"] == ["2027 Winter"]
     persisted = sessions_data.get_session_meta("demo_001", meta["session_id"])
     assert persisted["term_mode"] == "auto"
 
@@ -219,43 +226,167 @@ def test_multi_term_query_does_not_change_conversation_term(runtime_paths, monke
     )
 
     assert captured["query_terms"] == ["2026 Winter", "2026 Fall"]
-    assert "query_terms" not in meta
-    assert meta["effective_term"] == "2025 Spring"
+    assert meta["query_terms"] == ["2026 Winter", "2026 Fall"]
+    assert meta["query_term_source"] == "comparison"
+    assert meta["default_term"] == "2025 Spring"
     persisted = sessions_data.get_session_meta("demo_001", meta["session_id"])
     assert persisted["term_mode"] == "auto"
 
 
-def test_invalid_ambiguous_term_does_not_silently_use_default(monkeypatch):
-    async def unexpected_agent(*_args, **_kwargs):
-        raise AssertionError("ambiguous term must not reach the agent")
+def test_q1_q2_q3_followup_uses_structured_focus_and_keeps_manual_default(
+    monkeypatch,
+):
+    session_id = sessions_data.create_session(
+        "demo_001",
+        title="Q1 Q2 Q3",
+        default_term="2025 Fall",
+    )
+    sessions_data.update_session_meta(
+        "demo_001",
+        session_id,
+        default_term="2025 Fall",
+        term_mode="manual",
+        term_source="user_ui",
+        term_updated_by="user_ui",
+    )
+    captured: list[dict] = []
 
-    monkeypatch.setattr(chat_router, "_handle_agent", unexpected_agent)
+    async def fake_handle(_message, state, _memory, *, queue, **_kwargs):
+        captured.append({
+            "query_terms": list(state["query_terms"]),
+            "response_language": state["response_language"],
+            "default_term": state["default_term"],
+        })
+        await queue.put({"type": "token", "text": "已按本轮范围查询。"})
+        return "已按本轮范围查询。", [], [], None
+
+    monkeypatch.setattr(chat_router, "_handle_agent", fake_handle)
+    for message in (
+        "2024 Fall 有没有 ICS 33？",
+        "那 2025 Fall 呢？",
+        "对比一下这两个学期",
+    ):
+        asyncio.run(
+            _collect_events(ChatRequest(message=message, session_id=session_id))
+        )
+
+    assert [item["query_terms"] for item in captured] == [
+        ["2024 Fall"],
+        ["2025 Fall"],
+        ["2024 Fall", "2025 Fall"],
+    ]
+    assert all(item["response_language"] == "zh" for item in captured)
+    assert all(item["default_term"] == "2025 Fall" for item in captured)
+    persisted = sessions_data.get_session_meta("demo_001", session_id)
+    assert persisted["default_term"] == "2025 Fall"
+    assert persisted["term_mode"] == "manual"
+
+
+def test_followup_reuses_latest_complete_discussion_term_without_changing_planning_term(
+    monkeypatch,
+):
+    session_id = sessions_data.create_session(
+        "demo_001",
+        title="Discussion term fixture",
+        term_scope="2025 Spring",
+    )
+    sessions_data.append_turn(
+        "demo_001",
+        session_id,
+        "user",
+        "请查一下 2025 Fall 的课程。",
+    )
+    sessions_data.append_turn(
+        "demo_001",
+        session_id,
+        "assistant",
+        "你想继续比较哪些课程？",
+    )
+    sessions_data.update_session_meta(
+        "demo_001",
+        session_id,
+        recent_query_focus={
+            "course_ids": [],
+            "terms": ["2025 Fall"],
+            "updated_at": "2026-07-31T00:00:00+00:00",
+        },
+    )
+    captured = {}
+
+    async def fake_handle(_message, state, _memory, *, queue, **_kwargs):
+        captured.update(state)
+        await queue.put({"type": "token", "text": "继续按 2025 Fall 查询。"})
+        return "继续按 2025 Fall 查询。", [], [], None
+
+    monkeypatch.setattr(chat_router, "_handle_agent", fake_handle)
+    meta = _meta(
+        asyncio.run(
+            _collect_events(
+                ChatRequest(message="这个学期有哪些独有的课？", session_id=session_id)
+            )
+        )
+    )
+
+    assert captured["term"] == "2025 Fall"
+    assert captured["query_terms"] == ["2025 Fall"]
+    assert captured["default_term"] == "2025 Spring"
+    assert meta["default_term"] == "2025 Spring"
+
+
+def test_ambiguous_term_reaches_agent_with_history_and_current_context(monkeypatch):
+    captured = {}
+
+    async def fake_handle(_message, state, _memory, *, queue, recent_turns, **_kwargs):
+        captured["term"] = state["term"]
+        captured["recent_turns"] = recent_turns
+        await queue.put({"type": "token", "text": "Which Fall term do you mean?"})
+        return "Which Fall term do you mean?", [], [], None
+
+    monkeypatch.setattr(chat_router, "_handle_agent", fake_handle)
     events = asyncio.run(
         _collect_events(ChatRequest(message="show Fall courses", session_id=""))
     )
 
-    assert "couldn't map that term unambiguously" in events[0]["text"]
-    assert _meta(events)["effective_term"] == "2025 Spring"
+    assert events[0]["text"] == "Which Fall term do you mean?"
+    assert captured["term"] == "2025 Spring"
+    assert captured["recent_turns"] == []
+    assert _meta(events)["default_term"] == "2025 Spring"
+    assert _meta(events)["query_terms"] == []
 
 
 def test_tool_arguments_use_canonical_effective_term():
     resolved, error = agent_tools.resolve_tool_arguments(
         "get_sections",
         {"course_id": "COMPSCI 161"},
-        context={"term": "Fall 2026"},
+        context={"allowed_query_terms": ["Fall 2026"]},
     )
     assert error is None
     assert resolved["term"] == "2026 Fall"
 
+    resolved, error = agent_tools.resolve_tool_arguments(
+        "get_sections",
+        {"course_id": "COMPSCI 161", "term": "2025 Spring"},
+        context={"allowed_query_terms": ["2025 Spring"]},
+    )
+    assert error is None
+    assert resolved["term"] == "2025 Spring"
+
     _, error = agent_tools.resolve_tool_arguments(
         "get_sections",
-        {"course_id": "COMPSCI 161", "term": "Fall"},
-        context={"term": "2025 Spring"},
+        {"course_id": "COMPSCI 161", "term": "2026 Fall"},
+        context={"allowed_query_terms": ["2025 Spring"]},
     )
-    assert "four-digit year" in str(error)
+    assert "outside the allowed" in str(error)
+
+    _, error = agent_tools.resolve_tool_arguments(
+        "get_sections",
+        {"course_id": "COMPSCI 161", "term": "2027 Winter"},
+        context={"allowed_query_terms": ["2025 Spring", "2026 Fall"]},
+    )
+    assert "outside the allowed" in str(error)
 
 
-def test_validation_preserves_all_successful_tool_terms():
+def test_successful_tool_terms_are_canonical_and_deduplicated():
     meta = {
         "successful_tool_calls": [
             {"name": "get_sections", "args": {"term": "Fall 2026"}},
@@ -264,7 +395,7 @@ def test_validation_preserves_all_successful_tool_terms():
         ]
     }
 
-    assert chat_router._validation_terms_from_agent_meta(meta) == [
+    assert chat_router._tool_terms_from_agent_meta(meta) == [
         "2026 Fall",
         "2026 Winter",
     ]

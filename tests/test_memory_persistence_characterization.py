@@ -116,6 +116,9 @@ def test_profile_update_route_persists_after_fresh_memory_manager(
     assert payload["profile"]["year"] == "Junior"
     assert payload["profile"]["completed_courses"] == ["ICS33"]
     assert payload["profile"]["selected_courses"] == ["STATS67"]
+    assert payload["profile_warnings"] == [
+        "Duplicate completed_courses entry ICS33 was submitted once; confirm your course list."
+    ]
 
     fresh_manager = _fresh_memory_manager(runtime_paths.memory_root)
     try:
@@ -131,6 +134,20 @@ def test_profile_update_route_persists_after_fresh_memory_manager(
     assert profile["selected_courses"] == ["STATS67"]
     assert "major: Computer Science" in prompt_block
     assert "completed_courses: ['ICS33']" in prompt_block
+
+
+def test_profile_update_keeps_unrecognized_course_input_with_warning(app_client):
+    response = app_client.post(
+        "/api/memory/path-value-is-ignored/profile",
+        json={"completed_courses": ["not-a-course"]},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["profile"]["completed_courses"] == ["NOT-A-COURSE"]
+    assert payload["profile_warnings"] == [
+        "NOT-A-COURSE is not a recognized course-number format; it was kept for you to confirm."
+    ]
 
 
 def test_profile_update_route_updates_loaded_memory_context_without_restart(

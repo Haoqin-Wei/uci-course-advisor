@@ -29,6 +29,127 @@ def test_build_websoc_department_url_uses_fixed_registrar_endpoint() -> None:
     assert params["CancelledCourses"] == "Exclude"
 
 
+def test_build_websoc_course_params_uses_course_number_and_post_contract() -> None:
+    params = websoc_workflow.build_websoc_course_params(
+        "Fall 2026",
+        "econ",
+        "167",
+    )
+
+    assert params["Submit"] == "Display Web Results"
+    assert params["YearTerm"] == "2026-92"
+    assert params["Dept"] == "ECON"
+    assert params["CourseNum"] == "167"
+    assert "ShowComments" not in params
+
+
+def test_parse_websoc_course_offered_returns_normalized_sections() -> None:
+    result = websoc_workflow.parse_websoc_course_html(
+        _fixture("econ_course_offered.html"),
+        term="Fall 2026",
+        department="ECON",
+        course_number="157",
+        source_url=websoc_workflow.WEBSOC_URL,
+        retrieved_at="2026-08-14T00:00:00Z",
+    )
+
+    assert result["ok"] is True
+    assert result["found"] is True
+    assert result["offering_status"] == "offered"
+    assert result["authoritative"] is True
+    assert result["course_title"] == "ECON DEVELOPMENT"
+    assert len(result["sections"]) == 2
+    lecture = result["sections"][0]
+    assert lecture["section_code"] == "62505"
+    assert lecture["section_num"] == "A"
+    assert lecture["instructors"] == ["SARRAF, G."]
+    assert lecture["days"] == "M"
+    assert lecture["max_capacity"] == 300
+    assert lecture["enrolled"] == 299
+    assert lecture["seats_open"] == 1
+    assert lecture["source"] == "registrar_websoc"
+    assert result["sections"][1]["instructors"] == [
+        "FENSTEMACHER, K.",
+        "SARRAF, G.",
+    ]
+
+
+def test_parse_websoc_course_no_match_is_definitive_not_offered() -> None:
+    result = websoc_workflow.parse_websoc_course_html(
+        _fixture("econ_course_not_offered.html"),
+        term="Fall 2026",
+        department="ECON",
+        course_number="167",
+        source_url=websoc_workflow.WEBSOC_URL,
+        retrieved_at="2026-08-14T00:00:00Z",
+    )
+
+    assert result["ok"] is True
+    assert result["found"] is False
+    assert result["offering_status"] == "not_offered"
+    assert result["authoritative"] is True
+    assert result["sections"] == []
+    assert "reported no matching sections" in result["reason"]
+
+
+def test_parse_websoc_form_page_is_unavailable_not_not_offered() -> None:
+    result = websoc_workflow.parse_websoc_course_html(
+        _fixture("search_form.html"),
+        term="Fall 2026",
+        department="ECON",
+        course_number="167",
+        source_url=websoc_workflow.WEBSOC_URL,
+    )
+
+    assert result["ok"] is False
+    assert result["found"] is False
+    assert result["offering_status"] == "unavailable"
+    assert result["authoritative"] is False
+    assert result["error_code"] == "websoc_not_search_results"
+
+
+def test_fetch_websoc_course_offering_validates_form_then_posts_course() -> None:
+    class Response:
+        status_code = 200
+        url = websoc_workflow.WEBSOC_URL
+        headers = {"content-type": "text/html"}
+
+        def __init__(self, text: str):
+            self.text = text
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        def __init__(self):
+            self.post_data = None
+
+        def get(self, url, **kwargs):
+            assert url == websoc_workflow.WEBSOC_URL
+            assert kwargs["timeout"] == websoc_workflow.REQUEST_TIMEOUT_S
+            return Response(_fixture("search_form.html"))
+
+        def post(self, url, **kwargs):
+            assert url == websoc_workflow.WEBSOC_URL
+            self.post_data = kwargs["data"]
+            return Response(_fixture("econ_course_not_offered.html"))
+
+    session = FakeSession()
+    result = websoc_workflow.fetch_websoc_course_offering(
+        term="Fall 2026",
+        department="ECON",
+        course_number="167",
+        session=session,
+    )
+
+    assert result["ok"] is True
+    assert result["offering_status"] == "not_offered"
+    assert session.post_data["YearTerm"] == "2026-92"
+    assert session.post_data["Dept"] == "ECON"
+    assert session.post_data["CourseNum"] == "167"
+    assert [item["method"] for item in result["fetches"]] == ["GET", "POST"]
+
+
 def test_parse_art_websoc_comments_extracts_restriction_dates_and_links() -> None:
     result = websoc_workflow.parse_websoc_department_html(
         _fixture("art_department.html"),

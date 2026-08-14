@@ -60,6 +60,19 @@ def test_complete_term_empty_sections_are_no_offering(
 def test_unavailable_term_api_failure_is_cannot_confirm(
     monkeypatch: pytest.MonkeyPatch,
 ):
+    monkeypatch.setattr(
+        db.websoc_workflow,
+        "fetch_websoc_course_offering",
+        lambda **_kwargs: {
+            "ok": False,
+            "found": False,
+            "offering_status": "unavailable",
+            "error_code": "websoc_term_unavailable",
+            "message": "term unavailable",
+            "source_url": db.websoc_workflow.WEBSOC_URL,
+            "retrieved_at": "2026-08-14T00:00:00Z",
+        },
+    )
     monkeypatch.setattr(db.anteater, "fetch_sections", lambda *_args, **_kwargs: None)
 
     result = db.get_sections("COMPSCI 999", "Winter 2099")
@@ -67,4 +80,65 @@ def test_unavailable_term_api_failure_is_cannot_confirm(
     assert result["found"] is False
     assert result["source"] == "none"
     assert result["coverage_status"] == "unavailable"
-    assert "live API could not confirm" in result["reason"]
+    assert "Registrar WebSoc" in result["reason"]
+    assert result["registrar_websoc"]["error_code"] == "websoc_term_unavailable"
+
+
+def test_unavailable_local_term_uses_definitive_registrar_no_match(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        db.websoc_workflow,
+        "fetch_websoc_course_offering",
+        lambda **_kwargs: {
+            "ok": True,
+            "found": False,
+            "authoritative": True,
+            "offering_status": "not_offered",
+            "source_url": db.websoc_workflow.WEBSOC_URL,
+            "retrieved_at": "2026-08-14T00:00:00Z",
+            "workflow_id": "websoc_course_offering",
+            "sections": [],
+            "reason": "Registrar WebSoc reported no matching sections",
+        },
+    )
+
+    def unexpected_anteater(*_args, **_kwargs):
+        raise AssertionError("definitive Registrar result must stop secondary lookup")
+
+    monkeypatch.setattr(db.anteater, "fetch_sections", unexpected_anteater)
+
+    result = db.get_sections("COMPSCI 999", "Winter 2099")
+
+    assert result["ok"] is True
+    assert result["found"] is False
+    assert result["source"] == "registrar_websoc"
+    assert result["offering_status"] == "not_offered"
+    assert result["authoritative"] is True
+
+
+def test_unavailable_local_term_uses_registrar_sections(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    section = {"section_code": "62505", "section_num": "A"}
+    monkeypatch.setattr(
+        db.websoc_workflow,
+        "fetch_websoc_course_offering",
+        lambda **_kwargs: {
+            "ok": True,
+            "found": True,
+            "authoritative": True,
+            "offering_status": "offered",
+            "source_url": db.websoc_workflow.WEBSOC_URL,
+            "retrieved_at": "2026-08-14T00:00:00Z",
+            "workflow_id": "websoc_course_offering",
+            "sections": [section],
+        },
+    )
+
+    result = db.get_sections("COMPSCI 999", "Winter 2099")
+
+    assert result["found"] is True
+    assert result["source"] == "registrar_websoc"
+    assert result["offering_status"] == "offered"
+    assert result["sections"] == [section]
