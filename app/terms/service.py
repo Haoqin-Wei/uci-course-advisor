@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from app import observability
-from app.terms.calendar import TermCalendarError, calculate_week2_friday_cutoff
+from app.terms.calendar import calculate_week8_cutoff
 from app.terms.clock import Clock, SystemClock
 from app.terms.models import ResolvedTerm, TermKey, TermParseError, TermParseResult
 from app.terms.parser import parse_term_key, parse_term_text
@@ -78,17 +78,7 @@ def _cutoff(record: Optional[dict]) -> Optional[datetime]:
     start = _instruction_start(record)
     if start is None:
         return None
-    official = None
-    if record:
-        official = (
-            record.get("officialAddDropDeadline")
-            or record.get("addDropDeadline")
-            or record.get("addDeadline")
-        )
-    try:
-        return calculate_week2_friday_cutoff(start, official_deadline=official)
-    except TermCalendarError:
-        return None
+    return calculate_week8_cutoff(start)
 
 
 class TermResolutionService:
@@ -109,73 +99,85 @@ class TermResolutionService:
         )
         self.fallback_term = fallback_term
 
+    def _timeline(self, state: TermStateSnapshot) -> list[tuple[date, TermKey, dict]]:
+        records, duplicates = self._calendar_records(state)
+        return sorted(
+            (start, key, record)
+            for key, record in records.items()
+            if key.is_regular and key not in duplicates
+            and (start := _instruction_start(record)) is not None
+        )
+
+    @staticmethod
+    def _end_date(start: date, record: dict) -> date:
+        for field in ("quarterEnd", "termEnd", "quarter_end", "finalsEnd", "finalExamsEnd"):
+            if record.get(field):
+                try:
+                    return date.fromisoformat(str(record[field])[:10])
+                except ValueError:
+                    pass
+        # Calendar APIs sometimes omit quarterEnd. Instructional weeks plus
+        # finals give an explicit, bounded fallback; never carry Spring into Fall.
+        week1 = start + timedelta(days=(7 - start.weekday()) % 7)
+        return week1 + timedelta(days=74)
+
+    def current_term(self) -> Optional[ResolvedTerm]:
+        """The term actually in progress, independent of planning defaults."""
+        state = self.synchronizer.state_for_use()
+        today = self.clock.now().date()
+        for start, key, record in reversed(self._timeline(state)):
+            if start <= today <= self._end_date(start, record):
+                return self._resolved(key, state)
+        return None
+
+    def relative_base(self) -> TermKey:
+        """During breaks, 'next quarter' is the next regular quarter."""
+        current = self.current_term()
+        return current.key if current else self.automatic_term().key.previous_regular()
+
+    def is_future(self, key: TermKey) -> bool:
+        state = self.synchronizer.state_for_use()
+        records, duplicates = self._calendar_records(state)
+        start = _instruction_start(records.get(key)) if key not in duplicates else None
+        if start:
+            return start > self.clock.now().date()
+        order = {"Winter": 0, "Spring": 1, "Fall": 2}
+        base = self.relative_base()
+        return (key.year, order.get(key.quarter, -1)) > (base.year, order[base.quarter])
+
     def automatic_term(self) -> ResolvedTerm:
         state = self.synchronizer.state_for_use()
-        current = self._key_or_fallback(state.automatic_term)
-        if state.source == "code_fallback" or state.status == "fallback":
-            return self._resolved(current, state, force_available=True)
-
-        records, duplicates = self._calendar_records(state)
-        previous = current
-        transition_cutoff: Optional[datetime] = None
-        transition_evidence: Optional[dict] = None
-
-        # One call catches up through every consecutively eligible regular term.
-        for _ in range(12):
-            current_record = records.get(current)
-            current_cutoff = _cutoff(current_record)
-            if current in duplicates or current_cutoff is None or self.clock.now() < current_cutoff:
-                break
-
-            candidate = current.next_regular()
-            candidate_record = records.get(candidate)
-            availability = state.availability.get(candidate.canonical_name) or {}
-            if (
-                candidate in duplicates
-                or _instruction_start(candidate_record) is None
-                or candidate.canonical_name not in state.websoc_terms
-                or availability.get("available") is not True
-                or int(availability.get("course_count") or 0) < 1
-                or int(availability.get("section_count") or 0) < 1
-            ):
-                break
-
-            current = candidate
-            transition_cutoff = current_cutoff
-            transition_evidence = availability
-
+        previous = self._key_or_fallback(state.automatic_term)
+        current = previous
+        timeline = self._timeline(state)
+        now = self.clock.now()
+        started = [item for item in timeline if item[0] <= now.date()]
+        transition_cutoff = None
+        if started:
+            start, key, record = started[-1]
+            # An incomplete old calendar must not advance forever or invent
+            # today's quarter. Keep the last known default when coverage ends.
+            if (now.date() - self._end_date(start, record)).days <= 120:
+                transition_cutoff = calculate_week8_cutoff(start)
+                current = key.next_regular() if now >= transition_cutoff else key
+        elif timeline and previous not in self._calendar_records(state)[1]:
+            current = timeline[0][1]
         if current != previous:
-            changed_at = self.clock.now().isoformat(timespec="seconds")
-            state = replace(
-                state,
-                automatic_term=current.canonical_name,
-                transition={
-                    "previous": previous.canonical_name,
-                    "current": current.canonical_name,
-                    "cutoff": transition_cutoff.isoformat() if transition_cutoff else None,
-                    "availability": transition_evidence,
-                    "source": state.source,
-                    "changed_at": changed_at,
-                },
-            )
+            state = replace(state, automatic_term=current.canonical_name, transition={
+                "previous": previous.canonical_name,
+                "current": current.canonical_name,
+                "cutoff": transition_cutoff.isoformat() if transition_cutoff else None,
+                "source": "calendar_week8",
+                "changed_at": now.isoformat(timespec="seconds"),
+            })
             self.store.save(state)
             observability.increment("term.automatic_transition")
-            observability.log_event(
-                logger,
-                logging.INFO,
-                "automatic_term_changed",
-                previous=previous.canonical_name,
-                current=current.canonical_name,
-                cutoff=transition_cutoff.isoformat() if transition_cutoff else None,
-                availability=transition_evidence,
-                source=state.source,
-                changed_at=changed_at,
-            )
-        return self._resolved(current, state, force_available=True)
+        # Publication is evidence about data, never a gate on the date default.
+        return self._resolved(current, state)
 
     def resolve_message(self, text: str) -> QueryTermResolution:
         automatic = self.automatic_term()
-        parsed = parse_term_text(text, automatic_term=automatic.key)
+        parsed = parse_term_text(text, automatic_term=self.relative_base())
         if parsed.error:
             return QueryTermResolution(automatic, parsed)
         state = self.store.load() or TermStateSnapshot()
@@ -201,23 +203,7 @@ class TermResolutionService:
         )
 
     def effective_for_conversation(self, meta: dict) -> ResolvedTerm:
-        automatic = self.automatic_term()
-        if meta.get("term_mode") != "manual":
-            return automatic
-        # ``term_scope`` is read-only compatibility for sessions not yet
-        # processed by the startup migration. New writes use default_term.
-        parsed = parse_term_key(
-            str(meta.get("default_term") or meta.get("term_scope") or "")
-        )
-        if parsed.kind != "single":
-            return automatic
-        state = self.store.load() or TermStateSnapshot()
-        return self._resolved(
-            parsed.terms[0],
-            state,
-            force_available=True,
-            source="conversation_manual",
-        )
+        return self.automatic_term()
 
     def automatic_state(self) -> dict:
         """Return the read-only operational view used by APIs and health."""
@@ -232,8 +218,8 @@ class TermResolutionService:
             "last_attempt_at": state.last_attempt_at,
             "last_error": state.last_error,
             "next_cutoff": (
-                automatic.week2_friday_cutoff.isoformat()
-                if automatic.week2_friday_cutoff
+                automatic.week8_cutoff.isoformat()
+                if automatic.week8_cutoff
                 else None
             ),
             "checked_at": automatic.checked_at.isoformat(),
@@ -252,14 +238,8 @@ class TermResolutionService:
         default = self.effective_for_conversation(meta)
         return {
             "default_term": default.canonical_name,
-            "term_mode": (
-                "manual" if meta.get("term_mode") == "manual" else "auto"
-            ),
-            "term_source": (
-                meta.get("term_source")
-                if meta.get("term_mode") == "manual"
-                else default.source
-            ),
+            "term_mode": "auto",
+            "term_source": default.source,
             "term_status": default.status,
             "term_checked_at": default.checked_at.isoformat(),
             "available_terms": self.available_terms(
@@ -332,13 +312,13 @@ class TermResolutionService:
             available = available or force_available
         status = (
             state.status
-            if available
-            else "unavailable" if availability_record is not None else "unknown"
+            if available or state.status in {"fallback", "stale"}
+            else "unavailable" if availability.get("available") is False else "unknown"
         )
         return ResolvedTerm.from_key(
             key,
             instruction_start=_instruction_start(record),
-            week2_friday_cutoff=_cutoff(record),
+            week8_cutoff=_cutoff(record),
             data_available=available or force_available,
             source=source or state.source,
             status=status,

@@ -197,11 +197,14 @@ class TermStateSynchronizer:
                     source_url=checked.source_url,
                 )
                 if checked.status != "ok":
-                    return self._sync_failed(
-                        current,
-                        now,
-                        f"availability:{candidate.canonical_name}:{checked.status}",
-                    )
+                    # Course publication is independent of calendar validity.
+                    # Preserve a probe failure as unknown data, not a failed
+                    # calendar refresh that can pin the planning default.
+                    availability[candidate.canonical_name] = {
+                        "available": None, "status": checked.status,
+                        "checked_at": checked.checked_at, "source_url": checked.source_url,
+                    }
+                    continue
                 availability[candidate.canonical_name] = {
                     "available": checked.available,
                     "course_count": checked.course_count,
@@ -297,4 +300,3 @@ def get_term_synchronizer() -> TermStateSynchronizer:
     if _synchronizer is None or getattr(_synchronizer.store, "path", None) != path:
         _synchronizer = TermStateSynchronizer(JsonFileTermStateStore(path))
     return _synchronizer
-

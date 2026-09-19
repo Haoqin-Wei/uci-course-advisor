@@ -20,7 +20,7 @@ def test_term_state_endpoint_returns_backend_automatic_context(app_client):
     assert payload["automatic_term"] == "2025 Spring"
     assert payload["source"] == "anteater"
     assert payload["status"] == "fresh"
-    assert set(payload) == {"automatic_term", "source", "status"}
+    assert set(payload) == {"automatic_term", "source", "status", "next_cutoff"}
 
 
 def test_frontend_and_static_assets_force_cache_revalidation(app_client):
@@ -63,7 +63,7 @@ def test_session_api_ignores_term_body_and_returns_default_context(app_client):
     assert listed_session["term_mode"] == "auto"
 
 
-def test_default_term_api_sets_manual_and_restores_auto(app_client, runtime_paths):
+def test_default_term_api_rejects_manual_and_accepts_auto_refresh(app_client, runtime_paths):
     from app.data import sessions
     from app.terms.store import JsonFileTermStateStore
 
@@ -82,10 +82,8 @@ def test_default_term_api_sets_manual_and_restores_auto(app_client, runtime_path
         f"/api/sessions/{session_id}/default-term",
         json={"mode": "manual", "term": "Fall 2026"},
     )
-    assert selected.status_code == 200
-    assert selected.json()["default_term"] == "2026 Fall"
-    assert selected.json()["term_mode"] == "manual"
-    assert selected.json()["term_source"] == "user_ui"
+    assert selected.status_code == 422
+    assert selected.json()["detail"]["code"] == "manual_term_disabled"
 
     restored = app_client.put(
         f"/api/sessions/{session_id}/default-term",

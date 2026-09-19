@@ -14,6 +14,10 @@ Conventions:
 
 from __future__ import annotations
 
+import csv
+from functools import lru_cache
+from pathlib import Path
+
 
 # canonical_dept → list of accepted aliases (in addition to canonical itself)
 DEPARTMENT_ALIASES: dict[str, list[str]] = {
@@ -75,6 +79,30 @@ for _canonical, _aliases in DEPARTMENT_ALIASES.items():
         _ALIAS_TO_CANONICAL[_a.lower()] = _canonical
 
 
+@lru_cache(maxsize=1)
+def _catalog_department_lookup() -> dict[str, str]:
+    """Load registrar department codes from the bundled UCI catalog.
+
+    The alias table is intentionally small and conversational. It must not be
+    used as an allow-list for structured registrar data, otherwise legitimate
+    departments disappear whenever the hand-maintained aliases lag the
+    catalog.
+    """
+    path = Path(__file__).resolve().parents[2] / "data" / "uci" / "courses.csv"
+    if not path.exists():
+        return {}
+    lookup: dict[str, str] = {}
+    try:
+        with path.open("r", encoding="utf-8", newline="") as stream:
+            for row in csv.DictReader(stream):
+                canonical = " ".join((row.get("department") or "").split()).upper()
+                if canonical:
+                    lookup[canonical.lower()] = canonical
+    except OSError:
+        return {}
+    return lookup
+
+
 def resolve_department(text: str) -> str | None:
     """Map any known alias to canonical dept. Returns None if unknown.
 
@@ -83,12 +111,12 @@ def resolve_department(text: str) -> str | None:
     if not text:
         return None
     normalized = " ".join(text.split()).lower()
-    return _ALIAS_TO_CANONICAL.get(normalized)
+    return _ALIAS_TO_CANONICAL.get(normalized) or _catalog_department_lookup().get(normalized)
 
 
 def known_departments() -> set[str]:
     """All canonical department names."""
-    return set(DEPARTMENT_ALIASES.keys())
+    return set(DEPARTMENT_ALIASES.keys()) | set(_catalog_department_lookup().values())
 
 
 # ── Colloquial course-ID form ────────────────────────────

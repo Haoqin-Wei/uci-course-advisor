@@ -192,8 +192,10 @@ a lot about RMP scores")
 - Topic interests ("Keeps asking about ML / databases / AI")
 - Anything else that would help a future session personalize advice
 
-Even single-mention preferences are worth recording — better to capture and let
-deduplication handle it later than to miss it. Just stay short and concrete.
+Only record a preference when it is grounded in something the USER actually
+said. The evidence quote must be a short exact substring of a USER message.
+Never use the advisor's statements as evidence. Do not infer a durable preference
+from a one-off constraint unless the user states it as a preference.
 
 DO NOT capture:
 - Hard facts already extracted on every turn (major, year, currently_taking, \
@@ -201,10 +203,10 @@ completed, target_gpa, graduation_term — these have their own pipeline)
 - Anything already in the existing-preferences list (don't restate)
 
 Return ONLY a JSON object in this exact shape:
-{"preferences": ["short pref under 80 chars", "...", ...]}
+{"preferences": [{"text": "short preference under 80 chars", "evidence_quote": "exact user quote", "confidence": 0.0}]}
 
 If genuinely nothing new: {"preferences": []}
-Maximum 3 preferences per call. Each preference must be one short sentence.
+Maximum 3 preferences per call. Confidence must be between 0 and 1.
 """
 
 # ── Agent loop system prompt ─────────────────────────────
@@ -419,12 +421,14 @@ Trust order:
 professor_page > external_web > forum/social > llm_inference`.
 
 Web-source rules:
-- Web information cannot override `complete` local DB data. If they \
-  conflict, default to DB and show the web item as a conflict note.
+- For course offerings, a validated Registrar WebSoc result takes precedence \
+  over a missing or stale local snapshot. Local row counts are not proof of \
+  completeness. External non-official search results do not override verified \
+  structured evidence; show unresolved conflicts explicitly.
 - If local DB coverage is `partial` / `stale` / `unavailable`, official \
   web can supplement the answer, but every such fact must be labeled \
   web-sourced.
-- If web and DB conflict, say exactly:
+- For other unresolved web/DB conflicts, explain the competing evidence:
   "本地数据库显示：..."
   "网页来源显示：..."
   "判断：两者来源不同；本地 DB 用于结构化开课/section 判断，网页用于补充政策或公告。"
@@ -446,12 +450,16 @@ Professor-specific web rules:
 
 Course-offering rules:
 - Whether a course is offered in a term is primarily determined by \
-  `get_sections(course, term)`.
-- If coverage is complete and no sections are returned, say local DB \
-  confirms no offering for that term.
-- If coverage is partial/stale/unavailable and no sections are returned, \
-  say local DB cannot confirm; web search may be used only as a labeled \
-  supplement.
+  `get_course_offerings(course_id, terms)` or `get_sections(course, term)`.
+- These tools automatically check official Registrar WebSoc after every local \
+  miss or stale snapshot, then the secondary API if the official request fails.
+- A local no-match never proves no offering, even if legacy coverage says \
+  complete. Only an authoritative not_offered result establishes that the \
+  official timetable currently lists no matching course for that term.
+- When the tools return unavailable after fallback, say the offering could \
+  not be verified. Network/parse failures never mean no offering or unpublished.
+- Internal coverage counts, cache contents, provider error codes and lookup \
+  diagnostics are for debugging; do not print them unless the user asks why.
 
 Citation format when web results are used:
 - Put a markdown link directly after the web-sourced fact, e.g. \
@@ -651,28 +659,50 @@ your prose**. The cards ARE the list.
 5. Prose: short framing + 2–3 follow-up questions ("want me to filter \
    to morning sections?" etc.)
 
-# Term-strictness (IMPORTANT)
+# Term resolution and offering evidence
 
-The backend supplies a canonical discussion-default term in the system \
-context. A more specific complete term or term pair in the current message \
-or recent conversation takes precedence. \
-You MUST:
-- Pass the applicable canonical term on every tool that takes a term \
-(get_sections, get_live_sections, search_courses, check_section_conflict). Never guess \
-or silently switch to another term. Multi-term comparisons must use the \
-corresponding established term on each tool call.
-- If the tool returns `found=false` with a reason like "no sections \
-for X in 2026 Spring", report that honestly: "2026 Spring 这门课没有 \
-开课/没数据，要不要换个学期看看？". Do NOT silently look up another \
-term or pretend the data exists.
-- For historical "was this course offered?" questions, `get_sections` \
-uses a fixed official Registrar WebSoc POST workflow when local coverage \
-is unavailable. If it returns `offering_status=not_offered` and \
-`authoritative=true`, that is the definitive official result. Answer from \
-it immediately; do NOT call web_search, fetch_page, Anteater, PeterPortal, \
-Coursicle, Wayback, or construct a WebSoc CGI URL. If it returns \
-`offering_status=unavailable`, describe the unavailable evidence rather \
-than converting it into "not offered".
+The backend supplies current_term (actually in progress), default_term (a
+planning fallback that advances at Week 8), and query_terms (the targets of
+this question). Use only query_terms in term-scoped calls; the top-bar default
+never overrides the query. State the year and quarter in every offering answer.
+If a year was inferred, briefly say which year you assumed. Summer is not
+supported. Preserve the target term when using historical evidence.
+
+For whether a course runs, who teaches it, cross-term professor comparisons,
+and seasonal offering patterns, prefer get_course_offerings with ALL query_terms.
+Comparison answers should show a compact table: term, whether offered, lecture
+professors. Deduplicate professor names and mark unannounced instructors TBA.
+Do not fetch ratings, grades or meeting times unless the user asks for them.
+For a simple offering/professor question, answer only the target term,
+offering status, instructors and source. Do not check prerequisites or add
+eligibility judgments, personal-profile analysis, enrollment advice, unrelated
+course suggestions or a follow-up sales pitch unless the user asks for those.
+Offering-pattern questions examine six completed Fall/Winter/Spring terms;
+only say 'only Winter in the last two years' if other seasons are verified
+not_offered. Unknown records do not support an exclusive pattern.
+Use only the requested two-year evidence window for historical references.
+Never extrapolate catalog terms_offered metadata into claims such as 'every
+year since 2005', 'never in Fall', or a guaranteed future seasonal pattern.
+
+Distinguish offered, not_offered, unpublished, and unavailable. found=false
+alone does NOT establish that a course was not offered. An authoritative
+not_offered result establishes 'the official timetable currently lists no
+matching course'. Local coverage counts or a local no-match are not evidence
+of no offering; a timeout or a parse error means unable to confirm. Never turn a
+transport error into 'the future schedule is unpublished'.
+
+When get_course_offerings returns unpublished with historical_reference,
+report that the target timetable is unpublished, list the prior two same-season
+records and, if at least one was offered, say the course MAY be offered based
+on that history. State how many years support this. This is not confirmation.
+Never predict future professors, seats, times or section codes from history;
+professors listed in historical_reference belong to those historical terms.
+Do not create enrollment recommendation cards from predicted offerings.
+
+For historical lookups, get_sections uses the fixed official Registrar WebSoc POST workflow
+whenever local sections are missing or stale. If offering_status=not_offered and authoritative=true,
+do NOT call web_search, fetch_page, Anteater, PeterPortal, Coursicle, Wayback
+or a model-built WebSoc URL: this is the definitive official no-match.
 
 # Data honesty
 
@@ -801,9 +831,8 @@ right now" — it's a snapshot, not a guarantee.
 
 # Answer format — Card layout (HARD RULE)
 
-For any substantive answer (course / professor evaluation, \
-recommendation, comparison, judgement call), use this exact card \
-structure. The tone is serious, terse, professional — like a \
+For course/professor evaluations and recommendations, use this card \
+structure. For term offering/professor comparisons, use the compact table above instead. The tone is serious, terse, professional — like a \
 briefing document, not a chat message. Skip blocks that have no \
 data; do NOT print empty headers.
 
@@ -1242,6 +1271,11 @@ async def stream_agent_response(
         "completed_courses": session_state.get("completed_courses") or [],
         "selected_courses":  session_state.get("selected_courses") or [],
     }
+    if (memory_context or {}).get("academic_context"):
+        derived_profile = {
+            **derived_profile,
+            "_academic_context": memory_context["academic_context"],
+        }
 
     from app.terms.clock import SystemClock
 
@@ -1253,6 +1287,10 @@ async def stream_agent_response(
         query_terms=session_state.get("query_terms") or [],
         query_term_source=session_state.get("query_term_source") or "default",
         response_language=session_state.get("response_language") or "en",
+        current_term=session_state.get("current_term"),
+        query_intent=session_state.get("query_intent") or "lookup",
+        query_scope_error=session_state.get("query_scope_error"),
+        inferred_year=bool(session_state.get("inferred_year")),
     )
     messages = context_builder.build_messages(
         system_prompt=base_system,
@@ -1264,6 +1302,7 @@ async def stream_agent_response(
         summary=summary,
         recent_turns=recent_turns,
         retrieved_data=None,    # agent fetches via tools, not prefetch
+        memory_evidence=(memory_context or {}).get("prefetched_context"),
         runtime_context=runtime_context,
         last_n_turns=10,
     )
@@ -1278,6 +1317,7 @@ async def stream_agent_response(
             query_term_source=session_state.get("query_term_source") or "default",
             response_language=session_state.get("response_language") or "en",
             pending_schedule=session_state.get("pending_schedule") or [],
+            offering_course_ids=session_state.get("query_course_ids") or [],
         ):
             yield event
     except asyncio.CancelledError:
@@ -1291,7 +1331,7 @@ async def stream_agent_response(
 async def reflect_on_history_llm(
     history: list[dict],
     existing_preferences: list,
-) -> list[str]:
+) -> list[dict]:
     """Channel B: extract NEW soft preferences from recent turns."""
     if not LLM_ENABLED:
         logger.info("[Channel B] skipped: LLM disabled")
@@ -1336,7 +1376,33 @@ async def reflect_on_history_llm(
         result = _parse_json_response(raw)
         if isinstance(result, dict):
             prefs = result.get("preferences", [])
-            cleaned = [str(p).strip() for p in prefs if p and str(p).strip()]
+            user_messages = [
+                str(message.get("content") or "")
+                for message in recent
+                if message.get("role") == "user"
+            ]
+            cleaned: list[dict] = []
+            for pref in prefs[:3] if isinstance(prefs, list) else []:
+                if not isinstance(pref, dict):
+                    continue
+                text = str(pref.get("text") or "").strip()[:160]
+                quote = str(pref.get("evidence_quote") or "").strip()[:300]
+                try:
+                    confidence = max(0.0, min(float(pref.get("confidence", 0.0)), 1.0))
+                except (TypeError, ValueError):
+                    confidence = 0.0
+                if not text or not quote or confidence < 0.60:
+                    continue
+                if not any(quote.casefold() in message.casefold() for message in user_messages):
+                    logger.warning("[Channel B] rejected ungrounded preference: %r", text)
+                    continue
+                cleaned.append(
+                    {
+                        "text": text,
+                        "evidence_quote": quote,
+                        "confidence": confidence,
+                    }
+                )
             return cleaned
         return []
     except Exception as e:
@@ -1573,6 +1639,11 @@ def _build_messages_for_llm(
         "completed_courses": session_state.get("completed_courses") or [],
         "selected_courses":  session_state.get("selected_courses") or [],
     }
+    if (memory_context or {}).get("academic_context"):
+        derived_profile = {
+            **derived_profile,
+            "_academic_context": memory_context["academic_context"],
+        }
 
     base_with_legacy = base_system
     if fallback_memory_block:
@@ -1592,6 +1663,7 @@ def _build_messages_for_llm(
         summary=summary,
         recent_turns=recent_turns,
         retrieved_data=retrieved_data,
+        memory_evidence=(memory_context or {}).get("prefetched_context"),
         last_n_turns=10,
     )
 

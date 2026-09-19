@@ -1,6 +1,6 @@
 """Unified automatic-term context domain."""
 
-from app.terms.calendar import TermCalendarError, calculate_week2_friday_cutoff
+from app.terms.calendar import TermCalendarError, calculate_week2_friday_cutoff, calculate_week8_cutoff
 from app.terms.clock import Clock, FixedClock, LOS_ANGELES, SystemClock
 from app.terms.models import (
     REGULAR_QUARTERS,
@@ -41,6 +41,7 @@ __all__ = [
     "TermStateSnapshot",
     "TermStateStore",
     "calculate_week2_friday_cutoff",
+    "calculate_week8_cutoff",
     "extract_explicit_term_keys",
     "next_recent_focus_terms",
     "parse_term_key",

@@ -1,4 +1,4 @@
-"""Deterministic conversation default-term mutations.
+"""Automatic conversation defaults and compatibility for retired selectors.
 
 Only functions in this module may write conversation term metadata. Chat
 questions, LLM output, tool calls, and answer success never call these
@@ -38,8 +38,6 @@ def sync_automatic_default(
 ) -> dict:
     """Refresh an auto conversation at a request/turn boundary."""
     meta = sessions.get_session_meta(user_id, session_id)
-    if meta.get("term_mode") == "manual":
-        return meta
     if (
         meta.get("default_term") == automatic.canonical_name
         and meta.get("term_mode") == "auto"
@@ -63,49 +61,12 @@ def set_manual_default(
     value: str,
     service: TermResolutionService,
 ) -> dict:
-    """Apply a canonical, published selector choice."""
-    current = sessions.get_session_meta(user_id, session_id)
-    resolution = service.resolve_explicit(value)
-    if resolution.error is not None or resolution.kind != "single":
-        message = (
-            resolution.error.message
-            if resolution.error is not None
-            else "expected exactly one UCI term"
-        )
-        raise TermSelectionError("invalid_term", message)
-    selected = resolution.terms[0]
-    if not service.is_selectable_term(selected.key):
-        raise TermSelectionError(
-            "term_unavailable",
-            f"{selected.canonical_name} is not published or available yet",
-        )
-    if (
-        current.get("term_mode") == "manual"
-        and current.get("default_term") == selected.canonical_name
-        and current.get("term_updated_by") == "user_ui"
-    ):
-        return current
-    updated = sessions.update_session_meta(
-        user_id,
-        session_id,
-        default_term=selected.canonical_name,
-        term_mode="manual",
-        term_source="user_ui",
-        term_updated_at=_now_iso(),
-        term_updated_by="user_ui",
-        term_schema_version=sessions.TERM_SCHEMA_VERSION,
+    """Reject retired selector writes, including requests from stale clients."""
+    sessions.get_session_meta(user_id, session_id)
+    raise TermSelectionError(
+        "manual_term_disabled",
+        "The default term is automatic. Specify a term in your message instead.",
     )
-    observability.increment("term.selector_change")
-    observability.log_event(
-        logger,
-        logging.INFO,
-        "conversation_default_term_changed",
-        session_id=session_id,
-        default_term=selected.canonical_name,
-        actor="user_ui",
-        result="success",
-    )
-    return updated
 
 
 def restore_automatic_default(

@@ -33,6 +33,7 @@ def get_term_state() -> dict:
         "automatic_term": state["automatic_term"],
         "source": state["source"],
         "status": state["status"],
+        "next_cutoff": state["next_cutoff"],
     }
 
 

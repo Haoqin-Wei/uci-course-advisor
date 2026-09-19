@@ -43,7 +43,7 @@ _COURSE_MENTION = re.compile(
     r"(?<![A-Za-z0-9_&/])"
     r"(?P<dept>" + _DEPT_TOKEN + r"(?:\s+" + _DEPT_TOKEN + r")?)"   # 1 or 2 tokens
     r"\s*"
-    r"(?P<num>[A-Z]?\d{1,3}[A-Z]{0,3})"
+    r"(?P<num>[A-Z]?\d{1,3}[A-Z0-9/]{0,5})"
     r"(?![A-Za-z0-9_])",
     re.IGNORECASE,
 )

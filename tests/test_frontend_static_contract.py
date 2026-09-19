@@ -43,27 +43,29 @@ def test_frontend_does_not_fake_term_or_duplicate_palette_tokens() -> None:
     assert "rgba(79, 93, 128, 0.12)']" not in text
 
 
-def test_frontend_term_selector_is_backend_mutated_and_query_scoped() -> None:
+def test_frontend_default_term_is_read_only_and_query_scoped() -> None:
     text = _frontend_text()
     index = (STATIC / "index.html").read_text(encoding="utf-8")
     api_client = (STATIC / "js" / "api-client.js").read_text(encoding="utf-8")
     chat = (STATIC / "js" / "chat.js").read_text(encoding="utf-8")
     sessions = (STATIC / "js" / "sessions.js").read_text(encoding="utf-8")
 
-    assert 'id="termSelect"' in index
+    assert 'id="defaultTermLabel"' in index
+    assert 'id="termSelect"' not in index
     assert 'aria-label="Conversation default term"' in index
-    assert "term-select" in text
-    assert "handleTermSelection(event)" in index
-    assert "restoreAutoTerm()" in index
-    assert "/default-term" in api_client
-    assert "mutateDefaultTerm(" in api_client
+    assert "term-default-tag" in text
+    assert ">default</span>" in index
+    assert "handleTermSelection(event)" not in index
+    assert "restoreAutoTerm()" not in index
+    assert "/default-term" not in api_client
+    assert "mutateDefaultTerm(" not in api_client
     assert "/api/terms" not in text
     assert "/api/term-state" in api_client
     assert "payload.term" not in chat
     assert "applyTermPayload(event)" in chat
     assert "renderQueryTermBadge(wrap, meta)" in chat
     assert "本次比较：" in chat
-    assert "confirmSuggestedTerm(" in api_client
+    assert "confirmSuggestedTerm(" not in api_client
     assert "useAutomaticTermContext()" in sessions
     assert "applyTermPayload(data)" in sessions
 
@@ -95,7 +97,7 @@ def test_frontend_assets_are_split_into_roadmap_modules() -> None:
     for path in EXPECTED_FRONTEND_MODULES:
         rel = "/" + path.relative_to(ROOT).as_posix()
         assert rel in index
-        assert f'{rel}?v=20260814-m17' in index
+        assert f'{rel}?v=20260917-auto-terms' in index
 
 
 def test_key_browser_regression_flows_are_wired() -> None:
@@ -104,17 +106,28 @@ def test_key_browser_regression_flows_are_wired() -> None:
     schedule = (STATIC / "js" / "schedule.js").read_text(encoding="utf-8")
     auth = (STATIC / "js" / "auth.js").read_text(encoding="utf-8")
     onboarding = (STATIC / "js" / "onboarding.js").read_text(encoding="utf-8")
+    transcript = (STATIC / "js" / "transcript-import.js").read_text(encoding="utf-8")
+    profile = (STATIC / "js" / "profile-memory.js").read_text(encoding="utf-8")
+    sessions = (STATIC / "js" / "sessions.js").read_text(encoding="utf-8")
 
     assert "developer_mode:" not in chat
     assert "/api/auth/login" in auth
     assert "/api/auth/request_code" in auth
     assert "/api/auth/verify" in auth
-    assert "function continueAsGuest(" in auth
+    assert "function continueAsGuest(" not in auth
+    assert "@uci.edu" in auth
 
     assert "/api/onboarding/schools" in onboarding
     assert "/api/onboarding/majors" in onboarding
     assert "/api/onboarding/courses/all" in onboarding
-    assert "/api/memory/" in onboarding
+    assert "/api/memory/me" in onboarding
+    assert "/api/memory/${USER_ID}" not in onboarding
+    assert "/api/memory/${USER_ID}" not in profile
+    assert "/api/sessions/${USER_ID}" not in sessions
+
+    assert "transcriptRenderImportResult" in transcript
+    assert "need attention" in transcript
+    assert "View details" in transcript
 
     assert "/api/chat/stream" in chat
     assert "function startToolChip(" in chat
@@ -237,7 +250,9 @@ def test_frontend_accessibility_and_mobile_contracts() -> None:
     assert 'role="dialog"' in index
     assert 'aria-modal="true"' in index
     assert '<a onclick="continueAsGuest()"' not in index
-    assert 'class="auth-guest-btn"' in index
+    assert 'class="auth-guest-btn"' not in index
+    assert 'id="regConsent"' in index
+    assert 'id="transcriptFileInput"' in index
     assert 'aria-label="Close settings"' in index
     assert 'aria-label="Close weekly schedule"' in index
     assert index.count("Data from <a href=\"https://icssc.link/about-anteaterapi\"") == 2

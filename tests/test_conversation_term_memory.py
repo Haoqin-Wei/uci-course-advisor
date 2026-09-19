@@ -1,4 +1,6 @@
 import json
+import pytest
+
 from datetime import datetime
 from pathlib import Path
 
@@ -7,6 +9,7 @@ from app.terms import FixedClock, LOS_ANGELES
 from app.terms.conversation import (
     restore_automatic_default,
     set_manual_default,
+    TermSelectionError,
     sync_automatic_default,
 )
 from app.terms.service import TermResolutionService
@@ -46,34 +49,13 @@ def test_new_conversation_metadata_is_auto(monkeypatch, tmp_path) -> None:
     assert meta["term_updated_by"] == "auto_sync"
 
 
-def test_selector_choice_is_the_only_manual_mutation(monkeypatch, tmp_path) -> None:
+def test_manual_default_is_rejected_without_mutating_session(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(sessions, "MEMORY_ROOT", tmp_path)
     sid = sessions.create_session("u1", default_term="2026 Fall")
-    service = term_service()
-    updated = set_manual_default("u1", sid, "Spring 2026", service)
-    assert updated["term_mode"] == "manual"
-    assert updated["default_term"] == "2026 Spring"
-    assert updated["term_updated_by"] == "user_ui"
-    assert service.effective_for_conversation(updated).canonical_name == "2026 Spring"
-
-
-def test_selector_accepts_websoc_published_term_without_department_probe(
-    monkeypatch,
-    tmp_path,
-) -> None:
-    monkeypatch.setattr(sessions, "MEMORY_ROOT", tmp_path)
-    sid = sessions.create_session("u1", default_term="2026 Fall")
-    service = term_service()
-    state = service.store.load()
-    assert state is not None
-    state.availability.pop("2026 Spring")
-    service.store.save(state)
-
-    assert "2026 Spring" in service.available_terms()
-    updated = set_manual_default("u1", sid, "2026 Spring", service)
-
-    assert updated["term_mode"] == "manual"
-    assert updated["default_term"] == "2026 Spring"
+    before = sessions.get_session_meta("u1", sid)
+    with pytest.raises(TermSelectionError, match="automatic"):
+        set_manual_default("u1", sid, "2026 Spring", term_service())
+    assert sessions.get_session_meta("u1", sid) == before
 
 
 def test_query_resolution_never_changes_default_term(monkeypatch, tmp_path) -> None:
@@ -90,21 +72,21 @@ def test_restore_auto_uses_current_automatic_term(monkeypatch, tmp_path) -> None
     monkeypatch.setattr(sessions, "MEMORY_ROOT", tmp_path)
     sid = sessions.create_session("u1", default_term="2026 Fall")
     service = term_service()
-    set_manual_default("u1", sid, "2026 Spring", service)
+    sessions.update_session_meta("u1", sid, default_term="2026 Spring", term_mode="manual")
     meta = restore_automatic_default("u1", sid, service)
     assert meta["term_mode"] == "auto"
     assert meta["default_term"] == "2026 Fall"
 
 
-def test_manual_conversation_ignores_automatic_sync(monkeypatch, tmp_path) -> None:
+def test_legacy_manual_conversation_is_reset_by_automatic_sync(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(sessions, "MEMORY_ROOT", tmp_path)
     sid = sessions.create_session("u1", default_term="2026 Fall")
     service = term_service()
-    set_manual_default("u1", sid, "2026 Spring", service)
+    sessions.update_session_meta("u1", sid, default_term="2026 Spring", term_mode="manual")
     sync_automatic_default("u1", sid, service.automatic_term())
     meta = sessions.get_session_meta("u1", sid)
-    assert meta["term_mode"] == "manual"
-    assert meta["default_term"] == "2026 Spring"
+    assert meta["term_mode"] == "auto"
+    assert meta["default_term"] == "2026 Fall"
 
 
 def test_legacy_session_migration_is_idempotent_and_preserves_turns(tmp_path) -> None:

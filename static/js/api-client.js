@@ -3,7 +3,7 @@ const API = '';
 /* ──────────────────────────────────────────────────────
    Phase 3 R3 — session management
    ─────────────────────────────────────────────────────
-   USER_ID is fixed for the demo (single-tenant). The session_id is
+   User-owned endpoints resolve identity from the session cookie. The session_id is
    no longer hardcoded — it's:
      null            → "next message starts a new session"
                        (the empty-state UI is shown)
@@ -12,13 +12,9 @@ const API = '';
    auto-creates a new session and returns its real ID via the meta
    event; we then update currentSessionId and refresh the sidebar list.
 */
-// USER_ID is the value the frontend sends in URLs/bodies. The backend
-// IGNORES the value and pulls the authoritative user id from the auth
-// cookie via current_user_optional (anon → demo_001, real session →
-// the registered user's UUID). So this is purely a URL-shape stand-in;
-// any non-empty string works. Updated to the email after login for
-// display purposes only.
-let USER_ID = 'demo_001';
+// Keep only the authenticated UUID in client state. URLs use /me so email
+// addresses and account identifiers do not enter access logs.
+let USER_ID = 'me';
 // Populated by /api/auth/me on boot or after a successful login.
 // null = guest (backend will route to demo_001).
 let currentAuthUser = null;
@@ -74,139 +70,51 @@ inputEl.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
 
-function setTermContext(term, source, status, mode, availableTerms) {
+let termRefreshTimer = null;
+
+function setTermContext(term, source, status) {
   if (!term) return;
-  const normalizedMode = mode === 'manual' ? 'manual' : 'auto';
-  const terms = Array.from(new Set(
-    [...(availableTerms || []), term].filter(Boolean)
-  ));
-  currentTermContext = {
-    term,
-    source: source || null,
-    status: status || null,
-    mode: normalizedMode,
-    availableTerms: terms,
-  };
-  renderTermSelector();
+  currentTermContext = {term, source: source || null, status: status || null, mode: 'auto'};
+  const label = document.getElementById('defaultTermLabel');
+  if (label) label.textContent = term;
   updateWelcomeTerm();
 }
 
 function applyTermPayload(payload) {
   if (!payload) return;
-  const term = payload.default_term || payload.automatic_term;
-  const source = payload.term_source || payload.source;
-  const status = payload.term_status || payload.status;
-  const mode = payload.term_mode || 'auto';
-  setTermContext(term, source, status, mode, payload.available_terms);
+  // Query terms belong to individual answers and never change this label.
+  setTermContext(payload.default_term || payload.automatic_term,
+    payload.term_source || payload.source, payload.term_status || payload.status);
 }
 
 function useAutomaticTermContext() {
   if (automaticTermContext) applyTermPayload(automaticTermContext);
 }
 
-function renderTermSelector() {
-  const select = document.getElementById('termSelect');
-  if (!select || !currentTermContext) return;
-  const automatic = automaticTermContext?.automatic_term || currentTermContext.term;
-  const choices = currentTermContext.availableTerms || [];
-  const options = [
-    `<option value="__auto__">Auto · ${escHTML(automatic)}</option>`,
-    ...choices.map(term => (
-      `<option value="${escAttr(term)}">${escHTML(term)}</option>`
-    )),
-  ];
-  select.innerHTML = options.join('');
-  select.value = currentTermContext.mode === 'manual'
-    ? currentTermContext.term
-    : '__auto__';
-  select.disabled = false;
-  const restore = document.getElementById('termRestoreAuto');
-  if (restore) restore.hidden = currentTermContext.mode !== 'manual';
-}
-
-function setTermError(message) {
-  const el = document.getElementById('termError');
-  if (!el) return;
-  el.textContent = message || '';
-  el.title = message || '';
-}
-
-async function ensureSessionForTermMutation() {
-  if (currentSessionId) return currentSessionId;
-  const response = await fetch(`${API}/api/sessions/${USER_ID}`, {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({title: 'New conversation'}),
-  });
-  if (!response.ok) throw new Error(`Could not create conversation (${response.status})`);
-  const data = await response.json();
-  currentSessionId = data.session_id;
-  applyTermPayload(data);
-  setActiveSessionItem(currentSessionId);
-  loadSessionList();
-  return currentSessionId;
-}
-
-async function mutateDefaultTerm(mode, term) {
-  const select = document.getElementById('termSelect');
-  if (select) select.disabled = true;
-  setTermError('');
-  try {
-    const sessionId = await ensureSessionForTermMutation();
-    const response = await fetch(`${API}/api/sessions/${sessionId}/default-term`, {
-      method: 'PUT',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(mode === 'manual' ? {mode, term} : {mode: 'auto'}),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const detail = data.detail?.message || data.detail || `HTTP ${response.status}`;
-      throw new Error(String(detail));
-    }
-    applyTermPayload(data);
-    return true;
-  } catch (error) {
-    setTermError(`Term not changed: ${error.message}`);
-    renderTermSelector();
-    return false;
-  } finally {
-    if (select) select.disabled = false;
-  }
-}
-
-async function handleTermSelection(event) {
-  const requested = event.target.value;
-  // Keep the authoritative value visible until the API confirms the change.
-  renderTermSelector();
-  if (requested === '__auto__') {
-    await mutateDefaultTerm('auto');
-  } else {
-    await mutateDefaultTerm('manual', requested);
-  }
-}
-
-async function restoreAutoTerm() {
-  await mutateDefaultTerm('auto');
-}
-
-async function confirmSuggestedTerm(term) {
-  await mutateDefaultTerm('manual', term);
-}
-
-/* ── Boot: resolve automatic term + conversation selector context ── */
 async function loadTermState() {
   try {
     const res = await fetch(`${API}/api/term-state`);
     if (!res.ok) throw new Error(`status ${res.status}`);
     const data = await res.json();
     automaticTermContext = data;
-    if (!currentSessionId) applyTermPayload(data);
+    applyTermPayload(data);
+    clearTimeout(termRefreshTimer);
+    const boundary = Date.parse(data.next_cutoff || '');
+    const delay = Number.isFinite(boundary) && boundary > Date.now()
+      ? Math.min(boundary - Date.now() + 100, 86400000) : 86400000;
+    termRefreshTimer = setTimeout(loadTermState, delay);
   } catch (err) {
     console.warn('Failed to load /api/term-state', err);
-    const select = document.getElementById('termSelect');
-    if (select) select.innerHTML = '<option>Term unavailable</option>';
+    const label = document.getElementById('defaultTermLabel');
+    if (label && !currentTermContext) label.textContent = 'Term unavailable';
+    clearTimeout(termRefreshTimer);
+    termRefreshTimer = setTimeout(loadTermState, 60000);
   }
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') loadTermState();
+});
 
 async function loadDefaultPromptFromAPI() {
   if (defaultSystemPrompt !== null) return defaultSystemPrompt;

@@ -21,7 +21,6 @@ from app.catalog.term import Term
 SCHEMA_VERSION = "uci-relational-v1"
 DATA_DIR = Path("data/uci")
 
-_COMPLETE_MIN_SECTIONS = 1_000
 _STALE_AFTER_DAYS = 365
 
 
@@ -124,11 +123,11 @@ def default_term_name(manifest: Optional[dict] = None) -> Optional[str]:
 def _coverage_status(section_count: int, updated_at: Optional[str]) -> str:
     if section_count <= 0:
         return "unavailable"
-    if section_count < _COMPLETE_MIN_SECTIONS:
-        return "partial"
     if _is_stale(updated_at):
         return "stale"
-    return "complete"
+    # Row volume cannot prove that every department was collected. Until the
+    # importer records explicit completion evidence, all snapshots are partial.
+    return "partial"
 
 
 def _is_stale(updated_at: Optional[str]) -> bool:

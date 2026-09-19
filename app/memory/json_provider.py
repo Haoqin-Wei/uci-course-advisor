@@ -354,7 +354,7 @@ class JSONFileMemoryProvider(MemoryProvider):
 
     # ── Write API ───────────────────────────────────────────
 
-    def add_preference(self, user_id: str, text: str) -> None:
+    def add_preference(self, user_id: str, text: str, **_provenance) -> None:
         prefs = self._preferences(user_id)
         text = text.strip()
         if not text:
@@ -389,7 +389,7 @@ class JSONFileMemoryProvider(MemoryProvider):
         self._enforce_size_limit(user_id, "preferences", USER_PROFILE_MAX_CHARS)
         self._save_user(user_id, self._loaded[user_id])
 
-    def add_fact(self, user_id: str, text: str) -> None:
+    def add_fact(self, user_id: str, text: str, **_provenance) -> None:
         self._ensure_loaded(user_id)
         text = text.strip()
         if not text:
@@ -402,9 +402,18 @@ class JSONFileMemoryProvider(MemoryProvider):
         self._enforce_size_limit(user_id, "facts", FACTS_MAX_CHARS)
         self._save_user(user_id, self._loaded[user_id])
 
-    def update_profile(self, user_id: str, updates: dict) -> dict:
+    def update_profile(self, user_id: str, updates: dict, **provenance) -> dict:
         self._ensure_loaded(user_id)
-        cleaned = {k: v for k, v in updates.items() if v not in (None, "", [])}
+        allow_empty = (
+            {"completed_courses"}
+            if provenance.get("source_type") == "transcript_import"
+            else set()
+        )
+        cleaned = {
+            key: value
+            for key, value in updates.items()
+            if value not in (None, "") and (value != [] or key in allow_empty)
+        }
         if not cleaned:
             return self.get_profile(user_id)
         # Skip writing if nothing actually changes

@@ -61,6 +61,8 @@ def get_memory(user_id: str, user: dict = Depends(current_user_optional)):
     profile = snapshot.get("profile") or {}
     prefs = snapshot.get("preferences") or []
     facts = snapshot.get("facts") or []
+    memories = snapshot.get("memories") or []
+    memory_stats = snapshot.get("memory_stats") or {}
 
     # Coerce shapes defensively (the JSON files are user-editable).
     if not isinstance(profile, dict):
@@ -90,7 +92,38 @@ def get_memory(user_id: str, user: dict = Depends(current_user_optional)):
         "profile": profile,
         "facts":   facts,
         "preferences": prefs,
+        "memories": memories if isinstance(memories, list) else [],
+        "memory_stats": memory_stats if isinstance(memory_stats, dict) else {},
         "major_progress": progress,
+    }
+
+
+@router.get("/api/memory/{user_id}/items")
+def list_memory_items(
+    user_id: str,
+    kind: Optional[str] = None,
+    status: str = "active",
+    limit: int = 100,
+    user: dict = Depends(current_user_optional),
+):
+    """Inspect evidence records, including superseded/forgotten versions."""
+    real_user_id = user["id"]
+    if kind not in (None, "fact", "preference"):
+        raise HTTPException(status_code=400, detail="kind must be fact or preference")
+    if status not in ("active", "superseded", "forgotten", "all"):
+        raise HTTPException(
+            status_code=400,
+            detail="status must be active, superseded, forgotten, or all",
+        )
+    return {
+        "user_id": real_user_id,
+        "items": get_memory_manager().list_memories(
+            real_user_id,
+            kind=kind,
+            status=status,
+            limit=max(1, min(limit, 500)),
+        ),
+        "stats": get_memory_manager().memory_stats(real_user_id),
     }
 
 
@@ -205,3 +238,17 @@ def forget_all_preferences(
     real_user_id = user["id"]
     removed = get_memory_manager().forget_all_preferences(real_user_id)
     return {"ok": True, "removed": removed}
+
+
+@router.delete("/api/memory/{user_id}/items/{memory_id}")
+def forget_memory_item(
+    user_id: str,
+    memory_id: str,
+    user: dict = Depends(current_user_optional),
+):
+    """Soft-forget any evidence item; the audit/version record is retained."""
+    real_user_id = user["id"]
+    result = get_memory_manager().forget_memory(real_user_id, memory_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Active memory item not found")
+    return {"ok": True, **result}

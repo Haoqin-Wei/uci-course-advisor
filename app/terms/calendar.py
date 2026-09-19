@@ -12,6 +12,17 @@ class TermCalendarError(ValueError):
     pass
 
 
+def calculate_week8_cutoff(instruction_start: date | datetime | str) -> datetime:
+    """Start of instructional Week 8, in Pacific time (including DST).
+
+    Fall's short opening week is Week 0; Week 1 starts on the first
+    Monday on or after instruction begins, as in the Registrar calendar.
+    """
+    start = _coerce_date(instruction_start, field="instruction start")
+    week1 = start + timedelta(days=(7 - start.weekday()) % 7)
+    return datetime.combine(week1 + timedelta(weeks=7), time.min, tzinfo=LOS_ANGELES)
+
+
 def _coerce_date(value: date | datetime | str, *, field: str) -> date:
     if isinstance(value, datetime):
         return value.date()
@@ -53,4 +64,3 @@ def calculate_week2_friday_cutoff(
     week1_monday = start + timedelta(days=days_until_monday)
     week2_friday = week1_monday + timedelta(days=11)
     return datetime.combine(week2_friday, time(17, 0), tzinfo=LOS_ANGELES)
-

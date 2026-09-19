@@ -13,10 +13,14 @@ This project is not an official UCI advisor, degree audit, or enrollment system.
 - Expandable fetch audit under restriction tool chips showing each real GET/POST request, response status, byte count, source role, depth, and whether it supplied the final facts.
 - Direct answer streaming with no post-generation Check or hidden rewrite step; evidence and uncertainty rules live in the Agent answer contract.
 - Structured recommendation cards remain available for planning; unresolved sections can be kept in Schedule without creating a fabricated calendar block.
-- Backend-owned automatic term resolution with conversation-level `auto/manual` defaults, an explicit selector, per-turn query scopes, and canonical `YYYY Quarter` values.
+- Automatic Week 8 planning defaults, a read-only default badge, conversational term inference, and multi-term offering/professor comparisons.
 - Structured XML runtime context plus a backend tool guard keeps the conversation default separate from the term(s) each tool is allowed to query.
 - Cross-term schedules: every entry keeps its own term, overlaps are non-blocking, and the same course/section can coexist across terms.
-- Authenticated sessions, isolated guest identities, onboarding, profile memory, preferences, and cross-session restoration.
+- Verified `@uci.edu` accounts, authenticated sessions, onboarding, and cross-session restoration.
+- Optional UCI unofficial-transcript import: PDF.js extracts text entirely in
+  the browser, discards identity fields, and sends only allow-listed structured
+  academic records to the authenticated server profile.
+- MemoryBear-inspired evidence memory with SQLite/FTS5 recall, source quotes, confidence, temporal supersession, soft forgetting, and an audit trail.
 - Profile course selection reads the checked-in local UCI catalog first, then a restart-safe runtime snapshot; a full paginated Anteater crawl is only a last resort.
 - Local catalog coverage manifest that distinguishes `complete`, `partial`, `stale`, and `unavailable` data.
 - Private-beta hardening: rate limits, production cookie/CSRF defaults, no shared writable demo user in production, and traceable logs.
@@ -31,9 +35,9 @@ flowchart LR
   Agent["Agent loop<br/>streaming LLM + tool calls + continuation budget"]
   Tools["Agent tools<br/>course, sections, grades, professors, prereqs, schedule, web_search"]
   Data["Data layer<br/>local CSV/SQLite + optional Anteater fallback"]
-  Memory["Persistent state<br/>sessions, profile, facts, preferences, schedule"]
+  Memory["Persistent state<br/>sessions + SQLite evidence memory + schedule"]
   Validation["Data Check v2<br/>claims, evidence, deterministic correction, risk notices"]
-  Terms["Term context<br/>automatic/default/query + selector + tool guard"]
+  Terms["Term context<br/>current/default/query + read-only badge + tool guard"]
   Restrictions["Restriction evidence<br/>WebSoc entry + official linked page + timeline parser"]
 
   Browser --> API
@@ -61,6 +65,7 @@ flowchart LR
 ├── requirements-dev.txt            # Runtime + test/data-script dependencies
 ├── app/
 │   ├── agent/                      # Tool-calling agent loop and tool schemas
+│   ├── academic/                   # Structured transcript models and server store
 │   ├── auth/                       # Auth store, cookies, guest identity, rate limits
 │   ├── catalog/                    # Term parsing, local catalog loaders, coverage manifest
 │   ├── data/                       # Course/professor/grade/session data access
@@ -108,12 +113,66 @@ For production/runtime-only installs, use `requirements.txt` instead of `require
 - `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL`: enable live LLM mode.
 - `ANTEATER_API_KEY`: optional external UCI API fallback.
 - `TERM_STATE_PATH`: runtime-only automatic-term cache; defaults to `data/runtime/term_state.json`.
+- `MEMORY_PROVIDER`, `MEMORY_ROOT`, `MEMORY_DB_PATH`, `MEMORY_MAX_ACTIVE_ITEMS`: select and size the evidence-backed long-term memory store. SQLite is the default; `json` is a rollback mode.
+- `ACADEMIC_DB_PATH`: server-side normalized academic record database. It never stores PDF bytes or raw transcript text.
 - `WEB_SEARCH_ENABLED`, `WEB_SEARCH_PROVIDER`, `WEB_SEARCH_API_KEY`, `WEB_SEARCH_MAX_RESULTS`, `WEB_SEARCH_TIMEOUT_SECONDS`: controlled web-search mode. Development defaults to `WEB_SEARCH_ENABLED=true` and `WEB_SEARCH_PROVIDER=duckduckgo`; production defaults to disabled unless explicitly enabled. Tests force offline fake/disabled modes.
 - `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_SUBJECT`: optional email verification delivery.
 - `ALLOW_SHARED_DEMO`, `ALLOW_GUEST_USERS`, `COOKIE_SECURE`, `CSRF_PROTECTION`, `ALLOWED_ORIGINS`, `ALLOW_CUSTOM_SYSTEM_PROMPT`: private-beta safety switches.
 - `LLM_INPUT_USD_PER_1K`, `LLM_OUTPUT_USD_PER_1K`: optional estimated cost rates for observability logs.
 
 Do not commit `.env`, API keys, auth databases, verification codes, cookies, or runtime memory data.
+
+### Transcript import
+
+The private beta accepts the current text-based UCI unofficial transcript PDF
+format, up to 5 MB and 20 pages. The original file is processed by the vendored,
+pinned PDF.js build in browser memory and is never uploaded. The parser submits
+only course identifiers, effective grades, units, GPA summary fields, university
+requirement status, and exam/transfer summaries. Name, Student ID, source URL,
+file name, and raw extracted text are not part of the API schema.
+
+The server stores one effective row per course, hides non-passing statuses from
+the Student Profile, merges imports with manually entered courses, and uses UCI
+repeat notation such as `RF`/`G0` to resolve repeats. Imported results are
+student-provided and are not an official UCI transcript or degree audit.
+
+Transcript course rows carry separate `department` and `course_number` fields.
+Canonical registrar departments come from `data/uci/courses.csv`; the smaller
+conversation alias table is not used as a structured-data allow-list. Import
+responses distinguish `added`, `updated`, `unchanged`, `older_ignored`, and true
+`skipped` records, with sanitized per-course reason codes for UI diagnostics.
+Parser-only issues remain local to the browser except for an aggregate count.
+
+Browser requests for user-owned memory and conversations use `/api/memory/me`
+and `/api/sessions/me`. The server resolves ownership from the signed session
+cookie, and request logging records route templates rather than account values.
+
+The two real sample PDFs used for local smoke verification must stay outside the
+repository. Run the aggregate-only checker with local sample paths:
+
+```bash
+node scripts/verify_transcript_parser.mjs "/path/to/sample-one.pdf" "/path/to/sample-two.pdf"
+```
+
+### Long-term memory
+
+The default memory backend is an in-process SQLite/FTS5 evidence store. It
+imports existing JSON profile/fact/preference data once, keeps message-level
+provenance for new memories, versions conflicts instead of overwriting them,
+and injects query-relevant memories as untrusted historical evidence rather
+than permanent system instructions. The existing Memory panel exposes sources,
+confidence, lifecycle counts, and user-controlled soft forgetting.
+
+For an eager migration before deployment:
+
+```bash
+python scripts/migrate_memory_to_sqlite.py --dry-run
+python scripts/migrate_memory_to_sqlite.py
+```
+
+See [the MemoryBear integration design](docs/memorybear-integration.md) for the
+schema, prompt trust boundary, API, attribution, and the features deliberately
+deferred from the full upstream platform.
 
 ## Data preparation
 
@@ -143,23 +202,17 @@ Network/data refresh scripts exist under `scripts/`, but default tests and offli
 
 ### Automatic term state
 
-The backend is the sole term authority. It combines the Los Angeles clock, UCI instruction dates from Anteater `calendar/all`, the Week 2 Friday 17:00 cutoff, the published WebSoc term list, and a non-empty department-level WebSoc probe. The probe checks a small sequence of common departments and stops after the first course with a section, avoiding a multi-megabyte all-department payload. Automatic selection advances only through Fall, Winter, and Spring; Summer remains available for explicit queries.
+The backend uses `America/Los_Angeles` and UCI instruction dates from Anteater `calendar/all`. The actual ongoing `current_term` is separate from the planning `default_term`. At Week 8 Monday 00:00 Pacific time, the default advances Fall → Winter → Spring → Fall, regardless of whether the next timetable is published. Week 1 starts on the first Monday on or after instruction begins, accounting for Fall's opening Week 0. Official term end dates are preferred; when absent, the bounded calendar fallback ends after finals in Week 11. Summer queries are not supported yet.
 
-Successful state is refreshed after 30 days and remains usable as last-known-good data for 45 days. If an older cache cannot refresh, the API and UI explicitly report the versioned `code_fallback` term. The JSON store uses atomic replacement and a process-local lock. Multi-process production deployments must replace the store/lock boundary with shared storage and a distributed lock before relying on one global sync writer.
+`GET /api/term-state` returns `automatic_term`, `source`, `status`, and `next_cutoff`. The frontend displays a read-only `YYYY Quarter · default` badge and refreshes at the next boundary and when the tab becomes visible. Per-answer query badges never overwrite this default. Legacy manual/pinned sessions migrate to automatic mode (metadata schema v3); the old mutation endpoint rejects manual requests with `manual_term_disabled` and continues accepting auto refresh for compatibility.
 
-The browser-facing `/api/term-state` response intentionally contains only `automatic_term`, `source`, and `status`; detailed timestamps, cache age, availability evidence, fallback state, and transitions remain available through the health endpoints. Static asset URLs are versioned and revalidated so a new HTML shell cannot run against an older JavaScript bundle.
+Complete user dates and actual-current relative references take precedence, followed by relevant discussion context, then the default. Missing years are inferred from context or the current/upcoming quarter and disclosed in the answer. Ordinary follow-ups (including a different course such as “那 ICS 32 呢”) retain the discussion terms. A bounded semantic LLM pass handles indirect follow-ups and offering-pattern intent, with deterministic fallback on timeout or offline operation. Backend term guards validate the resulting scope independently of the model.
 
-Each conversation persists one stable `default_term` and a `term_mode`:
+`get_course_offerings` queries every requested term and summarizes whether a course runs and its lecture/seminar professors. Pattern questions inspect the six previous completed regular terms (two years). Only verified records support conclusions about seasonality; missing data is not evidence of absence. The tool distinguishes `offered`, `not_offered`, `unpublished`, and `unavailable`. An unpublished future quarter is identified from a successful official WebSoc form lookup, not a transport error or a missing local catalog. Its previous two same-season quarters are returned separately as `historical_reference`; an observed offering supports a labelled **possible** future offering, never a professor or section prediction. Reference lookups do not replace the user's target or update discussion focus.
 
-- `auto` conversations refresh to the current automatic term when opened or when a new turn starts.
-- Selecting a published term calls `PUT /api/sessions/{session_id}/default-term` and changes only that conversation to `manual`.
-- “Restore Auto” immediately returns the conversation to the current automatic term.
-- A question that names another term does not touch the selector. It creates temporary `query_terms`; cross-default and comparison answers show a query badge.
-- Follow-ups such as “那 2025 Fall 呢？” and “对比一下这两个学期” use compact structured focus rather than rescanning assistant prose.
+Successful calendar state is refreshed after 30 days and remains usable as last-known-good data for 45 days. The versioned code fallback remains explicitly labelled when live synchronization cannot recover. Calendar-backed date selection and timetable availability are independent. The JSON store uses atomic replacement and a process-local lock; multi-process production deployments require shared storage and a distributed lock.
 
-The LLM receives one backend-built XML runtime block with UCI time, default term, query allowlist, source, and response language. This markup is a compact context boundary, not a security mechanism. Every term-scoped tool call is independently overridden or rejected by the backend guard, so model-proposed terms cannot escape the current query scope.
-
-Selector choices and mutations use the same publication contract: a canonical term present in WebSoc’s published list can be selected even when it was not one of the small set of department probes used to advance the automatic term. Unknown future terms remain rejected.
+The LLM receives one XML runtime block with UCI time, current/default/query terms, query intent, inference status, and response language. Query scopes remain server-validated; historical reference expansion is bounded inside the offering tool to the previous two same-season quarters.
 
 ### Profile course catalog loading
 
@@ -259,7 +312,7 @@ GitHub Actions runs install, syntax lint, dependency graph validation, and offli
 ## Runtime modes
 
 - Offline mode: no API keys. The app uses local data, deterministic fallbacks, and test doubles. This is the default development/test mode.
-- External API mode: Anteater term-state sync and live UCI fallback can run without a key under the shared quota; set `ANTEATER_API_KEY` for a dedicated rate limit. Partial/stale local data is surfaced as uncertain instead of silently overruled.
+- External API mode: Anteater term-state sync and live UCI fallback can run without a key under the shared quota; set `ANTEATER_API_KEY` for a dedicated rate limit. Missing or stale local sections trigger the fixed official Registrar WebSoc query, followed by Anteater when the official request fails. Results retain their source, lookup time and failure diagnostics.
 - Controlled web search: development can use `WEB_SEARCH_PROVIDER=duckduckgo` without an API key. `WEB_SEARCH_PROVIDER=fake` is the deterministic provider for offline tests/dev fixtures; unimplemented paid providers fail closed with a structured `provider_unimplemented` response. Web search results are never written into the local DB and are labeled with URL, domain, retrieved date, source class, and trust level.
 - Live LLM mode: set `DEEPSEEK_API_KEY`. The adapter uses an OpenAI-compatible DeepSeek endpoint and streams through the agent loop.
 - Email delivery: set `RESEND_API_KEY` and sender variables. Without this, development can still exercise auth flows without logging verification codes.
@@ -270,7 +323,8 @@ GitHub Actions runs install, syntax lint, dependency graph validation, and offli
 - Evidence is compared only within the same subject, field, term, and catalog year. Comparable source timestamps choose the newer value; without comparable timestamps, an official UCI source wins over an API aggregate. An unresolved tie is shown as a conflict and is never auto-corrected.
 - Restriction dates, types, scopes, exceptions, eligibility, and cited URLs come only from the typed restriction evidence bundle; the LLM is an explanation layer, not a fact source.
 - Degree Audit is not implemented. Major requirement support is limited and should not be treated as official degree certification.
-- `partial`, `stale`, and `unavailable` coverage states mean the assistant must say it cannot confirm a fact rather than inventing certainty.
+- Local row counts do not establish complete department coverage. Every local section miss is checked against official WebSoc; only a validated official no-match supports `not_offered`. If official and secondary lookups cannot confirm the result, return `unavailable`, never no-offering or unpublished. Only a future term absent from the successfully read official term list triggers the prior two same-season references.
+- Offering-only answers stay focused on term, offering status, professor and source. Historical patterns use the requested two-year window; cache diagnostics and unsolicited prerequisite/eligibility advice are excluded.
 - Web source classes are `official_uci`, `official_university`, `government`, `professor_page`, `rmp`, `reddit`, `commercial`, `news`, and `unknown`. Reddit/forum/social results are anecdotal, and any web claim without a URL is not usable as a factual source.
 - Recommendation cards and Schedule writes are never validation-gated. Their badges describe risk; the Schedule remains a planning draft and is not a registration action.
 - Always verify add/drop deadlines, restrictions, prerequisites, waitlists, exams, and degree progress through official UCI systems.

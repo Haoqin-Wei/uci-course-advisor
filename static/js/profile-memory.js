@@ -44,7 +44,7 @@ async function loadMemory() {
   const body = document.getElementById('memoryBody');
   body.innerHTML = '<div class="memory-empty">Loading…</div>';
   try {
-    const r = await fetch(`${API}/api/memory/${USER_ID}`);
+    const r = await fetch(`${API}/api/memory/me`);
     if (!r.ok) {
       body.innerHTML = `<div class="memory-empty">Failed to load memory (${r.status}). ` +
         `Make sure the memory router is registered.</div>`;
@@ -73,13 +73,17 @@ async function loadProfile() {
   const body = document.getElementById('profileBody');
   body.innerHTML = '<div class="memory-empty">Loading…</div>';
   try {
-    const uid = USER_ID;
-    const r = await fetch(`${API}/api/memory/${uid}`);
-    if (!r.ok) {
-      body.innerHTML = `<div class="memory-empty">Failed to load profile (${r.status}).</div>`;
+    const [memoryResponse, academicResponse] = await Promise.all([
+      fetch(`${API}/api/memory/me`),
+      fetch(`${API}/api/academic/profile`),
+    ]);
+    if (!memoryResponse.ok) {
+      body.innerHTML = `<div class="memory-empty">Failed to load profile (${memoryResponse.status}).</div>`;
       return;
     }
-    renderProfile(await r.json());
+    const data = await memoryResponse.json();
+    data.academic = academicResponse.ok ? await academicResponse.json() : {};
+    renderProfile(data);
   } catch (err) {
     body.innerHTML = `<div class="memory-empty">Error: ${escHTML(String(err))}</div>`;
   }
@@ -87,6 +91,7 @@ async function loadProfile() {
 
 function renderProfile(data) {
   const p = data.profile || {};
+  const academic = data.academic || {};
   let html = '';
 
   // ── Wizard re-open entry point ──
@@ -121,32 +126,73 @@ function renderProfile(data) {
   html += `</div></div>`;
 
   // ── Course lists (Completed / Enrolled / Waitlisted) ──
+  const importedCompleted = Array.isArray(academic.completed_courses)
+    ? academic.completed_courses : [];
+  const completed = importedCompleted.length
+    ? importedCompleted
+    : (p.completed_courses || []).map(courseId => ({course_id: courseId, title: ''}));
   const sections = [
-    ['Completed',  p.completed_courses  || [], 'dot-complete'],
+    ['Completed',  completed, 'dot-complete'],
     ['Enrolled',   p.selected_courses   || [], 'dot-enrolled'],
     ['Waitlisted', p.waitlisted_courses || [], 'dot-waitlist'],
   ];
   for (const [label, courses, dotClass] of sections) {
     html += `<div class="memory-section">
-      <div class="memory-section-label">${label}<span class="profile-section-count">${courses.length}</span></div>`;
+      <div class="profile-section-label-row">
+        <div class="memory-section-label">${label}<span class="profile-section-count">${courses.length}</span></div>` +
+        (label === 'Completed'
+          ? `<button class="wizard-btn primary transcript-import-button" type="button"
+                     data-transcript-button onclick="triggerTranscriptPicker('profile')">Import updated transcript</button>`
+          : '') +
+      `</div>`;
+    if (label === 'Completed') {
+      if (academic.last_import?.imported_at) {
+        html += `<div class="profile-import-meta">Last transcript import: ${escHTML(_formatProfileDate(academic.last_import.imported_at))}</div>`;
+      }
+      html += `<div class="transcript-import-status" id="profileTranscriptStatus" hidden aria-live="polite"></div>`;
+    }
     if (!courses.length) {
       html += `<div class="memory-empty">No ${label.toLowerCase()} courses.</div>`;
     } else {
       html += `<div class="profile-course-grid">`;
-      for (const cid of courses) {
-        html += `<div class="left-course-tag"><span class="${dotClass}"></span> ${escHTML(_prettyCourseId(cid))}</div>`;
+      for (const course of courses) {
+        const cid = typeof course === 'string' ? course : course.course_id;
+        const title = typeof course === 'string' ? '' : course.title;
+        const text = title ? `${_prettyCourseId(cid)} · ${title}` : _prettyCourseId(cid);
+        html += `<div class="left-course-tag"><span class="${dotClass}"></span> ${escHTML(text)}</div>`;
       }
       html += `</div>`;
+    }
+    if (label === 'Completed') {
+      html += `<div class="profile-unverified-note">User-provided and not verified by UCI. ZotAdvisor is not an official degree audit.</div>`;
     }
     html += `</div>`;
   }
 
+  html += `<div class="profile-danger-zone">
+    <div>
+      <div class="profile-wizard-cta-title">Delete account</div>
+      <p class="profile-wizard-cta-sub">Remove your profile, academic data, and conversations.</p>
+    </div>
+    <button class="modal-btn danger" type="button" onclick="openDeleteAccount()">Delete account</button>
+  </div>`;
+
   document.getElementById('profileBody').innerHTML = html;
+}
+
+function _formatProfileDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value || '');
+  return date.toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
 }
 
 function renderMemory(data) {
   const profile = data.profile || {};
   const prefs = data.preferences || [];
+  const memories = Array.isArray(data.memories) ? data.memories : [];
+  const stats = data.memory_stats || {};
   const prog = data.major_progress;
 
   let html = '';
@@ -194,6 +240,32 @@ function renderMemory(data) {
       `</div>`;
   }
 
+  // ── Evidence-backed facts ──────────────────────────
+  const factMemories = memories.filter(item => item && item.kind === 'fact');
+  if (factMemories.length) {
+    html += `<div class="memory-section">
+      <div class="memory-section-label">Remembered facts</div>`;
+    for (const item of factMemories.slice(0, 12)) {
+      const confidence = Number.isFinite(Number(item.confidence))
+        ? `${Math.round(Number(item.confidence) * 100)}% confidence`
+        : '';
+      const source = memorySourceLabel(item);
+      html += `<div class="memory-pref-row">
+        <div class="memory-pref-text">${escHTML(item.text || '')}` +
+        ((confidence || source)
+          ? `<span class="memory-pref-when">${escHTML([confidence, source].filter(Boolean).join(' · '))}</span>`
+          : '') +
+        (item.source_quote
+          ? `<span class="memory-pref-when">Source: “${escHTML(item.source_quote)}”</span>`
+          : '') +
+        `</div>
+        <button class="memory-pref-forget" title="Forget this memory"
+                onclick="forgetMemoryItem('${escHTML(item.id || '')}')">&#x2715;</button>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
   // ── Learned preferences ──────────────────────────
   html += `<div class="memory-section">
     <div class="memory-section-label">Learned preferences</div>`;
@@ -203,9 +275,18 @@ function renderMemory(data) {
   } else {
     for (const p of prefs) {
       const when = p.learned_at ? formatLearnedAt(p.learned_at) : '';
+      const confidence = Number.isFinite(Number(p.confidence))
+        ? `${Math.round(Number(p.confidence) * 100)}% confidence`
+        : '';
+      const source = memorySourceLabel(p);
       html += `<div class="memory-pref-row">
         <div class="memory-pref-text">${escHTML(p.text || '')}` +
-        (when ? `<span class="memory-pref-when">${when}</span>` : '') +
+        ((when || confidence || source)
+          ? `<span class="memory-pref-when">${escHTML([when, confidence, source].filter(Boolean).join(' · '))}</span>`
+          : '') +
+        (p.source_quote
+          ? `<span class="memory-pref-when">Source: “${escHTML(p.source_quote)}”</span>`
+          : '') +
         `</div>
         <button class="memory-pref-forget" title="Forget this"
                 onclick="forgetPreference('${escHTML(p.id)}')">&#x2715;</button>
@@ -215,7 +296,28 @@ function renderMemory(data) {
   }
   html += `</div>`;
 
+  if (stats.provider) {
+    html += `<div class="memory-section">
+      <div class="memory-section-label">Memory engine</div>
+      <div class="memory-about-line">${escHTML(stats.provider)} · ` +
+      `${Number(stats.active || 0)} active · ${Number(stats.superseded || 0)} superseded · ` +
+      `${Number(stats.forgotten || 0)} forgotten</div>
+    </div>`;
+  }
+
   document.getElementById('memoryBody').innerHTML = html;
+}
+
+function memorySourceLabel(item) {
+  if (!item) return '';
+  if (item.source_session_id) {
+    const turn = item.source_turn_index != null ? `, turn ${item.source_turn_index}` : '';
+    return `from conversation${turn}`;
+  }
+  if (item.source_type === 'legacy_import') return 'imported';
+  if (item.source_type === 'llm_inferred') return 'inferred from conversation';
+  if (item.source_type === 'user_explicit') return 'stated by you';
+  return '';
 }
 
 function formatLearnedAt(iso) {
@@ -232,9 +334,8 @@ function formatLearnedAt(iso) {
 }
 
 async function forgetPreference(prefId) {
-  const uid = USER_ID;
   try {
-    const r = await fetch(`${API}/api/memory/${uid}/preferences/${prefId}`,
+    const r = await fetch(`${API}/api/memory/me/preferences/${prefId}`,
                          { method: 'DELETE' });
     if (!r.ok) {
       alert(`Failed to forget: ${r.status}`);
@@ -248,12 +349,26 @@ async function forgetPreference(prefId) {
 
 async function forgetAllPreferences() {
   if (!confirm('Forget all learned preferences? This cannot be undone.')) return;
-  const uid = USER_ID;
   try {
-    const r = await fetch(`${API}/api/memory/${uid}/preferences/forget_all`,
+    const r = await fetch(`${API}/api/memory/me/preferences/forget_all`,
                          { method: 'POST' });
     if (!r.ok) {
       alert(`Failed: ${r.status}`);
+      return;
+    }
+    loadMemory();
+  } catch (err) {
+    alert(`Network error: ${err}`);
+  }
+}
+
+async function forgetMemoryItem(memoryId) {
+  if (!memoryId) return;
+  try {
+    const r = await fetch(`${API}/api/memory/me/items/${encodeURIComponent(memoryId)}`,
+                         { method: 'DELETE' });
+    if (!r.ok) {
+      alert(`Failed to forget: ${r.status}`);
       return;
     }
     loadMemory();

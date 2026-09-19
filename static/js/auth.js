@@ -1,9 +1,8 @@
 /* ── Auth modal handlers ───────────────────────────────
    Boot flow:
      1. Try /api/auth/me. 200 → set currentAuthUser, skip modal.
-     2. 401 → show #authModal. User can login/register or continue
-        as guest (modal closes; requests fall back to demo_001
-        server-side).
+     2. 401 → show #authModal. Private testing requires a verified
+        @uci.edu account; there is no guest entry point.
    After a successful login/register, we close the modal and refresh
    the sidebar/sessions so the UI reflects the new user. */
 
@@ -13,7 +12,7 @@ async function bootCheckAuth() {
     if (r.ok) {
       const data = await r.json();
       currentAuthUser = data.user;
-      USER_ID = currentAuthUser.email || currentAuthUser.id;
+      USER_ID = currentAuthUser.id;
       return true;  // logged in
     }
   } catch (err) {
@@ -74,11 +73,18 @@ async function doLogin() {
   }
 }
 
+const TERMS_VERSION = '2026-09-03';
+const PRIVACY_VERSION = '2026-09-03';
+
+function isUciEmail(value) {
+  return /^[^@\s]+@uci\.edu$/i.test(String(value || '').trim());
+}
+
 async function doRequestCode() {
   setAuthError('');
   const email = document.getElementById('regEmail').value.trim();
-  if (!email) {
-    setAuthError('请输入邮箱');
+  if (!isUciEmail(email)) {
+    setAuthError('内测仅支持已验证的 @uci.edu 邮箱');
     return;
   }
   const btn = document.getElementById('regSendBtn');
@@ -111,6 +117,7 @@ async function doVerify() {
   const email = document.getElementById('regEmail').value.trim();
   const code = document.getElementById('regCode').value.trim();
   const password = document.getElementById('regPassword').value;
+  const accepted = document.getElementById('regConsent').checked;
   if (!email || !code || !password) {
     setAuthError('请填写完整：邮箱、验证码、密码');
     return;
@@ -119,13 +126,25 @@ async function doVerify() {
     setAuthError('密码至少 8 位');
     return;
   }
+  if (!accepted) {
+    setAuthError('请确认年满 18 岁并接受服务条款与隐私声明');
+    return;
+  }
   const btn = document.getElementById('regVerifyBtn');
   btn.disabled = true; btn.textContent = '创建中…';
   try {
     const r = await fetch(`${API}/api/auth/verify`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({email, code, password}),
+      body: JSON.stringify({
+        email,
+        code,
+        password,
+        age_18_confirmed: true,
+        terms_accepted: true,
+        terms_version: TERMS_VERSION,
+        privacy_version: PRIVACY_VERSION,
+      }),
     });
     if (!r.ok) {
       const detail = (await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`;
@@ -143,7 +162,7 @@ async function doVerify() {
 async function onAuthSuccess(authBody) {
   // Server set the session cookie via Set-Cookie; we just refresh state.
   currentAuthUser = {id: authBody.user_id, email: authBody.email};
-  USER_ID = authBody.email || authBody.user_id;
+  USER_ID = authBody.user_id;
   document.getElementById('authModal').classList.remove('open');
   paintAuthChrome();
   // Reset any session UI that was loaded under demo_001 — the new user
@@ -155,15 +174,6 @@ async function onAuthSuccess(authBody) {
   // is idempotent (sessionStorage skip-flag + the empty-profile check),
   // so re-calling it later in the same tab is safe.
   await maybeShowWizard();
-}
-
-function continueAsGuest() {
-  // Backend will route to demo_001 because no session cookie is set.
-  // Just close the modal and let init() proceed.
-  document.getElementById('authModal').classList.remove('open');
-  currentAuthUser = null;
-  USER_ID = 'demo_001';
-  paintAuthChrome();
 }
 
 // Sync the popover email line + show/hide the Sign-out item based on
@@ -178,7 +188,7 @@ function paintAuthChrome() {
     logoutSep.style.display = '';
     logoutItem.style.display = '';
   } else {
-    popEmail.textContent = 'demo_001 · guest';
+    popEmail.textContent = 'Sign in required';
     logoutSep.style.display = 'none';
     logoutItem.style.display = 'none';
   }
@@ -196,6 +206,56 @@ async function doLogout() {
   // anything from the previous session.
   window.location.reload();
 }
+
+function openDeleteAccount() {
+  document.getElementById('profileModal')?.classList.remove('open');
+  document.getElementById('deleteAccountError').classList.remove('is-visible');
+  document.getElementById('deleteAccountError').textContent = '';
+  document.getElementById('deleteAccountPassword').value = '';
+  document.getElementById('deleteAccountModal').classList.add('open');
+  setTimeout(() => document.getElementById('deleteAccountPassword').focus(), 50);
+}
+
+function closeDeleteAccount(event) {
+  if (event && event.type === 'click' && event.target.id !== 'deleteAccountModal') return;
+  document.getElementById('deleteAccountModal').classList.remove('open');
+}
+
+async function deleteAccount() {
+  const password = document.getElementById('deleteAccountPassword').value;
+  const error = document.getElementById('deleteAccountError');
+  if (!password) {
+    error.textContent = 'Enter your password to continue.';
+    error.classList.add('is-visible');
+    return;
+  }
+  if (!window.confirm('Permanently delete your ZotAdvisor account and all primary data?')) return;
+  const button = document.getElementById('deleteAccountSubmit');
+  button.disabled = true;
+  button.textContent = 'Deleting…';
+  try {
+    const response = await fetch(`${API}/api/auth/account`, {
+      method: 'DELETE',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({password}),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.detail || `Delete failed (${response.status})`);
+    }
+    window.location.reload();
+  } catch (err) {
+    error.textContent = err.message || String(err);
+    error.classList.add('is-visible');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Delete account';
+  }
+}
+
+window.openDeleteAccount = openDeleteAccount;
+window.closeDeleteAccount = closeDeleteAccount;
+window.deleteAccount = deleteAccount;
 
 // Submit-on-Enter for the auth inputs.
 document.getElementById('loginPassword')?.addEventListener('keydown', e => {

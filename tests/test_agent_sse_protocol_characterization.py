@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 
+import pytest
 from fastapi import BackgroundTasks
 
 from app.agent import loop as agent_loop
@@ -32,7 +33,8 @@ async def _collect_agent_events(events) -> list[dict]:
     return [event async for event in events]
 
 
-def test_handle_agent_forwards_tool_limit_and_merges_fallback_cards(monkeypatch):
+@pytest.mark.parametrize("language", ["zh", "en"])
+def test_handle_agent_forwards_tool_limit_and_merges_fallback_cards(monkeypatch, language):
     from app.llm import adapter
 
     async def fake_stream_agent_response(*_args, **_kwargs):
@@ -68,6 +70,7 @@ def test_handle_agent_forwards_tool_limit_and_merges_fallback_cards(monkeypatch)
             "iterations": 6,
             "tool_calls": 16,
             "continuation_id": "continue-token",
+            "response_language": language,
         }
         yield {"type": "token", "text": "Final."}
         yield {
@@ -139,7 +142,27 @@ def test_handle_agent_forwards_tool_limit_and_merges_fallback_cards(monkeypatch)
         "iterations": 6,
         "tool_calls": 16,
         "continuation_id": "continue-token",
+        "response_language": language,
     }
+
+
+@pytest.mark.parametrize(
+    ("message", "previous_message", "expected"),
+    [
+        ("Recommend courses", "推荐课程", "en"),
+        ("Compare professors", "推荐课程", "en"),
+        ("推荐一下课程", "Recommend courses", "zh"),
+        ("帮我查 COMPSCI 161", "Recommend courses", "zh"),
+        ("CS161", "推荐课程", "zh"),
+        ("CS161", "Recommend courses", "en"),
+    ],
+)
+def test_response_language_follows_current_question(message, previous_message, expected):
+    history = [
+        {"role": "user", "content": previous_message},
+        {"role": "assistant", "content": "这里是课程信息。"},
+    ]
+    assert chat_router._response_language(message, history) == expected
 
 
 def test_handle_agent_preflight_error_returns_grounded_fallback(monkeypatch):
@@ -261,17 +284,22 @@ def test_stream_chat_returns_grounded_fallback_when_agent_errors_before_streamin
     assert "session_state" not in events[1]
     assert "intent" not in events[1]
     assert events[1]["cards"] == []
+    assert events[1]["response_language"] == "en"
     assert set(events[1]) == {
         "type",
         "session_id",
         "cards",
         "followups",
         "final_answer",
+        "response_language",
         "default_term",
         "term_mode",
         "term_source",
         "query_terms",
         "query_term_source",
+        "query_intent",
+        "inferred_year",
+        "current_term",
         "default_term_changed",
         "available_terms",
     }

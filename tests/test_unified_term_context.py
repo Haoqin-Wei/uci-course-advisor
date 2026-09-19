@@ -42,6 +42,37 @@ def _seed_available_terms(runtime_paths, *terms: str) -> None:
     store.save(state)
 
 
+def test_week9_chat_keeps_future_focus_until_user_explicitly_asks_current(monkeypatch):
+    from datetime import datetime
+    from app.terms import LOS_ANGELES
+    from tests.test_automatic_term_planning import calendar_service
+
+    service = calendar_service(datetime(2026, 11, 20, tzinfo=LOS_ANGELES))
+    monkeypatch.setattr(chat_router, "get_term_resolution_service", lambda: service)
+    sid = sessions_data.create_session("demo_001", default_term="2025 Winter")
+    sessions_data.update_session_meta("demo_001", sid, term_mode="manual")
+    captured = []
+
+    async def answer(message, state, memory, *, queue, **kwargs):
+        captured.append(dict(state))
+        text = "本次查询 " + ", ".join(state["query_terms"])
+        await queue.put({"type": "token", "text": text})
+        return text, [], [], None
+
+    monkeypatch.setattr(chat_router, "_handle_agent", answer)
+    for question in ("Winter 的 ICS 33 谁教", "那 ICS 32 呢", "本学期 ICS 32 谁教"):
+        events = asyncio.run(_collect_events(ChatRequest(message=question, session_id=sid)))
+        assert _meta(events)["default_term"] == "2027 Winter"
+        assert _meta(events)["current_term"] == "2026 Fall"
+    assert [s["query_terms"] for s in captured] == [["2027 Winter"], ["2027 Winter"], ["2026 Fall"]]
+    assert captured[0]["inferred_year"] is True
+    assert captured[1]["query_course_ids"] == ["ICS32"]
+    meta = sessions_data.get_session_meta("demo_001", sid)
+    assert meta["term_mode"] == "auto"
+    assert meta["default_term"] == "2027 Winter"
+    assert meta["recent_query_focus"]["terms"] == ["2026 Fall"]
+
+
 def test_chat_ignores_frontend_term_and_uses_backend_default_term(monkeypatch):
     captured: dict = {}
 
@@ -233,7 +264,7 @@ def test_multi_term_query_does_not_change_conversation_term(runtime_paths, monke
     assert persisted["term_mode"] == "auto"
 
 
-def test_q1_q2_q3_followup_uses_structured_focus_and_keeps_manual_default(
+def test_q1_q2_q3_keeps_discussion_focus_while_migrating_manual_default(
     monkeypatch,
 ):
     session_id = sessions_data.create_session(
@@ -276,10 +307,10 @@ def test_q1_q2_q3_followup_uses_structured_focus_and_keeps_manual_default(
         ["2024 Fall", "2025 Fall"],
     ]
     assert all(item["response_language"] == "zh" for item in captured)
-    assert all(item["default_term"] == "2025 Fall" for item in captured)
+    assert all(item["default_term"] == "2025 Spring" for item in captured)
     persisted = sessions_data.get_session_meta("demo_001", session_id)
-    assert persisted["default_term"] == "2025 Fall"
-    assert persisted["term_mode"] == "manual"
+    assert persisted["default_term"] == "2025 Spring"
+    assert persisted["term_mode"] == "auto"
 
 
 def test_followup_reuses_latest_complete_discussion_term_without_changing_planning_term(
@@ -333,25 +364,26 @@ def test_followup_reuses_latest_complete_discussion_term_without_changing_planni
     assert meta["default_term"] == "2025 Spring"
 
 
-def test_ambiguous_term_reaches_agent_with_history_and_current_context(monkeypatch):
+def test_missing_year_reaches_agent_with_inferred_term(monkeypatch):
     captured = {}
 
     async def fake_handle(_message, state, _memory, *, queue, recent_turns, **_kwargs):
         captured["term"] = state["term"]
         captured["recent_turns"] = recent_turns
-        await queue.put({"type": "token", "text": "Which Fall term do you mean?"})
-        return "Which Fall term do you mean?", [], [], None
+        await queue.put({"type": "token", "text": "按 2025 Fall 查询。"})
+        return "按 2025 Fall 查询。", [], [], None
 
     monkeypatch.setattr(chat_router, "_handle_agent", fake_handle)
     events = asyncio.run(
         _collect_events(ChatRequest(message="show Fall courses", session_id=""))
     )
 
-    assert events[0]["text"] == "Which Fall term do you mean?"
-    assert captured["term"] == "2025 Spring"
+    assert events[0]["text"] == "按 2025 Fall 查询。"
+    assert captured["term"] == "2025 Fall"
     assert captured["recent_turns"] == []
     assert _meta(events)["default_term"] == "2025 Spring"
-    assert _meta(events)["query_terms"] == []
+    assert _meta(events)["query_terms"] == ["2025 Fall"]
+    assert _meta(events)["inferred_year"] is True
 
 
 def test_tool_arguments_use_canonical_effective_term():

@@ -1,5 +1,5 @@
 /* ── Sidebar (left panel) ───────────────────────────────
-   Fetches the same /api/memory endpoint and renders the profile +
+   Fetches the same /api/memory/me endpoint and renders the profile +
    completed/enrolled lists. Called on boot and after each chat reply
    in case Channel A extracted new facts that updated the profile.
 */
@@ -17,7 +17,7 @@ async function loadSidebar(forceRefresh = false) {
   if (!sidebarLoadPromise) {
     sidebarLoadPromise = (async () => {
       try {
-        const r = await fetch(`${API}/api/memory/${uid}`);
+        const r = await fetch(`${API}/api/memory/me`);
         if (!r.ok) {
           // Fallback: leave the placeholder text so the UI isn't blank.
           return;
@@ -49,7 +49,7 @@ async function loadSessionList() {
   if (!sessionListLoadPromise) {
     sessionListLoadPromise = (async () => {
       try {
-        const r = await fetch(`${API}/api/sessions/${USER_ID}?limit=20`);
+        const r = await fetch(`${API}/api/sessions/me?limit=20`);
         if (!r.ok) {
           listEl.innerHTML = '<div class="sessions-empty">No conversations yet</div>';
           return;
@@ -175,16 +175,14 @@ async function loadSession(sessionId) {
   if (currentAbortController) currentAbortController.abort();
 
   try {
-    const r = await fetch(`${API}/api/sessions/${USER_ID}/${sessionId}?include_turns=true`);
+    const r = await fetch(`${API}/api/sessions/me/${sessionId}?include_turns=true`);
     if (!r.ok) {
       console.warn('failed to load session', sessionId, r.status);
       return;
     }
     const data = await r.json();
     currentSessionId = sessionId;
-    // Update only after the selected session has resolved. Keeping the old
-    // label during the request prevents a pinned conversation from flashing
-    // back to the automatic term.
+    // The server refreshes every session to the same automatic default.
     applyTermPayload(data);
 
     // Replace the chat scroll with the historical turns. Assistant
@@ -279,7 +277,7 @@ async function deleteSession(sessionId) {
   if (!sessionId) return;
   if (!confirm('Delete this conversation? This cannot be undone.')) return;
   try {
-    const r = await fetch(`${API}/api/sessions/${USER_ID}/${sessionId}`, {
+    const r = await fetch(`${API}/api/sessions/me/${sessionId}`, {
       method: 'DELETE',
     });
     if (!r.ok) {

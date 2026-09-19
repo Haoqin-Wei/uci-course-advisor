@@ -10,12 +10,12 @@ Dispatchers thinly wrap `app.data.db`. db.py is the layer that does
 DB-first → API-fallback → {found, source, reason}; tools just pass
 results back to the LLM. Term-strict: tools that read term-scoped
 data require a `term` argument from the model; if the model forgets,
-we inject the student's currently-selected term from the tool
+we inject the backend-resolved query term from the tool
 context as a safety net so we never silently return data from the
 wrong term.
 
 `dispatch(name, args, context)` is the single entry point. `context`
-carries per-request state: user_id + selected term.
+carries per-request state: user_id + validated query scope.
 """
 
 from __future__ import annotations
@@ -55,6 +55,32 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "get_course_offerings",
+            "description": (
+                "Check whether a course was/is offered and its lecture professors across "
+                "one or multiple query terms. Preferred for cross-term comparisons, "
+                "offering patterns and future-term offering questions. Returns one row "
+                "per term, distinguishing not_offered, unpublished and unavailable. "
+                "Automatically checks official WebSoc on every local miss or stale "
+                "snapshot, then the secondary API on official lookup failure. "
+                "Only an authoritative official no-match establishes not_offered. "
+                "For an unpublished future term, automatically checks the previous two "
+                "same-season terms as historical reference and gives a possible-offering "
+                "prediction; never predicts the future professor. Pass all query_terms."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "course_id": {"type": "string"},
+                    "terms": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 12},
+                },
+                "required": ["course_id", "terms"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_course_info",
             "description": (
                 "Get a UCI course's catalog metadata (title, units, "
@@ -82,14 +108,15 @@ TOOL_SCHEMAS: list[dict] = [
                 "List sections of a course in a SPECIFIC term: section "
                 "code, lecture/discussion type, days, time, location, "
                 "instructors, capacity, enrolled count, seats_open. "
-                "When local coverage is unavailable, this tool uses the fixed "
+                "When local sections are missing or stale, this tool uses the fixed "
                 "official Registrar WebSoc POST workflow for historical offering "
                 "facts. `offering_status=not_offered` with `authoritative=true` "
                 "is a definitive official no-match; do not follow it with "
                 "web_search or a model-built WebSoc URL. "
                 "ALWAYS pass `term` — never assume the term from "
-                "context. Returns sections=[] with found=false if the "
-                "course isn't offered that term."
+                "context. Empty sections alone do not establish no offering: "
+                "inspect offering_status and authoritative. Network or parse "
+                "failures return unavailable, never not_offered."
             ),
             "parameters": {
                 "type": "object",
@@ -723,7 +750,7 @@ TOOL_SCHEMAS: list[dict] = [
                         "type": "string",
                         "description": (
                             "Term the recommendation targets, e.g. 'Fall 2026'. "
-                            "If omitted, the session's selected term is used."
+                            "If omitted, the single backend-resolved query term is used."
                         ),
                     },
                 },
@@ -742,6 +769,11 @@ def _tool_get_course_info(course_id: str) -> dict:
     return db.get_course_info(course_id)
 
 
+async def _tool_get_course_offerings(course_id: str, terms: list[str], *, context: dict) -> dict:
+    from app.data.offerings import get_course_offerings
+    return await get_course_offerings(course_id, terms)
+
+
 def _tool_get_sections(
     course_id: str,
     *,
@@ -749,7 +781,7 @@ def _tool_get_sections(
     term: Optional[str] = None,
 ) -> dict:
     # Safety net: if the model forgot to pass term, fall back to the
-    # session's selected term rather than returning unscoped data.
+    # resolved query term rather than returning unscoped data.
     effective_term = term or context.get("term")
     if not effective_term:
         return {"found": False, "source": "none", "sections": [],
@@ -835,7 +867,7 @@ def _tool_check_prerequisites_met(
         if prof.get("found"):
             p = prof["profile"]
             if completed_courses is None:
-                completed_courses = p.get("completed_courses", [])
+                completed_courses = p.get("completed_course_attempts", p.get("completed_courses", []))
             if in_progress_courses is None:
                 in_progress_courses = p.get("selected_courses", [])
     return db.check_prerequisites_met(
@@ -1284,14 +1316,14 @@ def _tool_propose_recommendation(
         }
     # expired is None (unknown term — Summer, mistyped, etc.) → allow.
     # Better to stage cards with possibly-stale dates than to silently
-    # refuse and confuse the user. The student's term selector is the
+    # refuse and confuse the user. The resolved query scope is the
     # source of truth for whether they can actually enroll.
 
     # Student profile drives the prereq check. If we can't read it we
     # don't fail the whole call — just skip the prereq enrichment.
     prof_resp = db.get_student_profile(context.get("user_id", ""))
     profile = (prof_resp.get("profile") if prof_resp.get("found") else {}) or {}
-    completed = profile.get("completed_courses", []) or []
+    completed = profile.get("completed_course_attempts", profile.get("completed_courses", [])) or []
     in_progress = profile.get("selected_courses", []) or []
     student_units = _estimate_student_units(profile.get("year"))
 
@@ -1989,6 +2021,7 @@ def _split_primary_secondary(active_sections: list[dict]) -> tuple[list[dict], l
 DISPATCH: dict[str, Callable[..., dict]] = {
     "get_course_info":          _tool_get_course_info,
     "get_sections":             _tool_get_sections,
+    "get_course_offerings":     _tool_get_course_offerings,
     "get_live_sections":        _tool_get_live_sections,
     "get_grade_distribution":   _tool_get_grade_distribution,
     "get_professor_rating":     _tool_get_professor_rating,
@@ -2012,6 +2045,7 @@ DISPATCH: dict[str, Callable[..., dict]] = {
 # ══════════════════════════════════════════════════════════
 
 TERM_SCOPED_TOOLS = {
+    "get_course_offerings",
     "get_sections",
     "get_live_sections",
     "search_courses",
@@ -2043,6 +2077,23 @@ def enforce_query_term_scope(
     if not allowed:
         observability.increment("term.guard_reject", tool=name)
         return resolved, "no query term is authorized for this tool call"
+
+    if name == "get_course_offerings":
+        requested = resolved.get("terms")
+        if not isinstance(requested, list) or not 1 <= len(requested) <= 12:
+            return resolved, "terms must contain 1 to 12 canonical query terms"
+        canonical_terms = []
+        for raw in requested:
+            parsed = parse_term_key(str(raw))
+            if parsed.kind != "single" or not parsed.terms[0].is_regular:
+                return resolved, "only Fall, Winter and Spring are supported"
+            canonical = parsed.terms[0].canonical_name
+            if canonical not in allowed:
+                return resolved, f"{canonical} is outside the allowed query-term scope"
+            if canonical not in canonical_terms:
+                canonical_terms.append(canonical)
+        resolved["terms"] = canonical_terms
+        return resolved, None
 
     model_term = resolved.get("term")
     if len(allowed) == 1:
@@ -2174,6 +2225,8 @@ def humanize_tool_call(name: str, args: dict) -> str:
     term_suffix = f" · {a['term']}" if a.get("term") else ""
     if name == "get_course_info":
         return f"查询 {a.get('course_id', '')} 课程信息"
+    if name == "get_course_offerings":
+        return f"查询开课与教授 · {a.get('course_id', '')} · {', '.join(a.get('terms') or [])}"
     if name == "get_sections":
         return f"查询 {a.get('course_id', '')} 排课{term_suffix}"
     if name == "get_live_sections":

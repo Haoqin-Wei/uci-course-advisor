@@ -10,7 +10,7 @@ Resolution order is DB-first, then the most authoritative applicable source:
     1. Local CatalogView (data/uci/*.csv, loaded by UCIRelationalLoader)
        — fast, deterministic, covers the terms we've crawled
     2. Registrar WebSoc fixed POST workflow (app.data.websoc_workflow)
-       — official historical course-offering evidence when local coverage is absent
+       — official offering evidence whenever local sections are missing or stale
     3. Anteater API (app.data.anteater)
        — secondary live fallback for terms UCI still publishes through the API
     4. Not found — return {"found": False, "source": "none", "reason": "..."}
@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Optional
 
 from app.catalog.cache import get_catalog
@@ -41,6 +42,7 @@ from app.data import anteater, websoc_workflow
 from app.data import professors as profs
 from app.data.prerequisites import evaluate_prerequisite_tree
 from app.memory import get_memory_manager
+from app.academic import get_ai_academic_context
 
 logger = logging.getLogger(__name__)
 
@@ -299,6 +301,20 @@ def get_student_profile(student_id: str) -> dict:
     if not profile:
         return {"found": False, "source": "none",
                 "reason": f"no profile recorded for {student_id}"}
+    profile = dict(profile)
+    academic = get_ai_academic_context(student_id)
+    graded = {
+        item["course_id"]: {
+            "course_id": item["course_id"],
+            "grade": item.get("effective_grade"),
+        }
+        for item in academic.get("courses") or []
+        if isinstance(item, dict) and item.get("course_id")
+    }
+    profile["completed_course_attempts"] = [
+        graded.get(course_id, course_id)
+        for course_id in profile.get("completed_courses") or []
+    ]
     return {"found": True, "source": "db", "profile": profile}
 
 
@@ -417,6 +433,13 @@ def get_sections(course_id: str, term: str) -> dict:
                 "reason": f"could not parse term {term!r} (expected e.g. 'Spring 2026')"}
     coverage = get_term_coverage(t)
     coverage_status = coverage.get("coverage_status")
+    checked_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    base = {
+        "term": t.display(), "course_id": ref.display(),
+        "coverage_status": coverage_status, "data_coverage": coverage,
+        "checked_at": checked_at,
+    }
+    attempts = []
     if coverage_status in {"partial", "stale", "unavailable"}:
         observability.increment("data.coverage_status", status=coverage_status)
         observability.log_event(
@@ -434,45 +457,19 @@ def get_sections(course_id: str, term: str) -> dict:
     cv = get_catalog(t)
     if cv:
         records = cv.get_sections(ref)
-        if records:
+        if records and coverage_status != "stale":
             return {
+                **base,
                 "found": True,
                 "source": "db",
-                "term": t.display(),
-                "course_id": ref.display(),
-                "coverage_status": coverage.get("coverage_status"),
-                "data_coverage": coverage,
+                "offering_status": "offered",
+                "authoritative": False,
+                "retrieved_at": coverage.get("updated_at"),
                 "sections": [_section_record_to_dict(s) for s in records],
             }
 
-        if coverage_status in {"complete", "partial", "stale"}:
-            if coverage_status == "complete":
-                return {
-                    "found": False,
-                    "source": "db",
-                    "term": t.display(),
-                    "course_id": ref.display(),
-                    "coverage_status": coverage_status,
-                    "data_coverage": coverage,
-                    "sections": [],
-                    "reason": f"no sections published for {ref.display()} in {t.display()}",
-                }
-            return {
-                "found": False,
-                "source": "db",
-                "term": t.display(),
-                "course_id": ref.display(),
-                "coverage_status": coverage_status,
-                "data_coverage": coverage,
-                "sections": [],
-                "reason": (
-                    f"local data for {t.display()} is {coverage_status}; "
-                    f"cannot confirm whether {ref.display()} has no sections"
-                ),
-            }
-
     # The Registrar's fixed POST workflow is the authoritative fallback for
-    # historical/offering facts when the local term has no section coverage.
+    # every local miss, even if a legacy manifest calls the term "complete".
     # It can distinguish a verified no-match from transport/parse failure;
     # the agent must not attempt to reproduce this with an ad-hoc GET URL.
     registrar_result: Optional[dict] = None
@@ -496,29 +493,52 @@ def get_sections(course_id: str, term: str) -> dict:
             "error_code": type(e).__name__,
             "message": str(e),
         }
-    if registrar_result.get("ok") and registrar_result.get("authoritative"):
+    attempts.append({
+        "source": "registrar_websoc", "checked_at": checked_at,
+        "retrieved_at": registrar_result.get("retrieved_at"),
+        "source_url": registrar_result.get("source_url") or websoc_workflow.WEBSOC_URL,
+        "offering_status": registrar_result.get("offering_status", "unavailable"),
+        "error_code": registrar_result.get("error_code"),
+        "message": registrar_result.get("message") or registrar_result.get("reason"),
+    })
+    if (registrar_result.get("ok") and registrar_result.get("authoritative")
+            and registrar_result.get("offering_status") in {"offered", "not_offered"}):
         sections = list(registrar_result.get("sections") or [])
         return {
+            **base,
             "ok": True,
             "found": bool(sections),
             "source": "registrar_websoc",
-            "term": t.display(),
-            "course_id": ref.display(),
-            "coverage_status": coverage.get("coverage_status"),
-            "data_coverage": coverage,
             "offering_status": registrar_result.get("offering_status"),
             "authoritative": True,
             "source_url": registrar_result.get("source_url"),
             "retrieved_at": registrar_result.get("retrieved_at"),
             "workflow_id": registrar_result.get("workflow_id"),
             "fetches": registrar_result.get("fetches") or [],
+            "lookup_attempts": attempts,
             "sections": sections,
             "reason": registrar_result.get("reason"),
         }
 
-    # Anteater is a secondary fallback only when local data and the official
-    # Registrar workflow are unavailable. Complete local terms should not need
-    # live confirmation; partial/stale terms deliberately returned above.
+    if registrar_result.get("error_code") == "websoc_term_unavailable":
+        # The official form was read successfully. Preserve that evidence so
+        # future-term callers can distinguish unpublished from a request error.
+        return {
+            **base,
+            "found": False, "source": "registrar_websoc", "sections": [],
+            "authoritative": False,
+            "offering_status": "unavailable",
+            "error_code": "websoc_term_unavailable",
+            "source_url": registrar_result.get("source_url"),
+            "retrieved_at": registrar_result.get("retrieved_at"),
+            "reason": registrar_result.get("message"),
+            "lookup_attempts": attempts,
+        }
+
+    # Secondary data can establish an offering, but an empty aggregate result
+    # after an official failure cannot establish a definitive no-offering.
+    secondary_checked_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    secondary_error = None
     try:
         sections_raw = anteater.fetch_sections(
             department=ref.department,
@@ -539,48 +559,46 @@ def get_sections(course_id: str, term: str) -> dict:
             error=f"{type(e).__name__}: {e}",
         )
         sections_raw = None
+        secondary_error = {"error_code": type(e).__name__, "message": str(e)}
+    attempts.append({
+        "source": "api", "source_url": anteater.WEBSOC_URL,
+        "checked_at": secondary_checked_at,
+        "offering_status": "offered" if sections_raw else "unavailable",
+        **(secondary_error or ({} if sections_raw else {
+            "error_code": "secondary_lookup_unconfirmed",
+            "message": "Secondary API returned no usable sections; this does not establish no offering.",
+        })),
+    })
     if sections_raw:
         return {
+            **base,
             "found": True,
             "source": "api",
-            "term": t.display(),
-            "course_id": ref.display(),
-            "coverage_status": coverage.get("coverage_status"),
-            "data_coverage": coverage,
+            "offering_status": "offered",
+            "authoritative": False,
+            "source_url": anteater.WEBSOC_URL,
+            # fetch_sections may return a cached result without a fetch date.
+            # checked_at is the lookup time, not a fabricated retrieval date.
+            "retrieved_at": None,
+            "lookup_attempts": attempts,
             "sections": [_api_section_to_dict(s) for s in sections_raw],
         }
 
-    if coverage.get("coverage_status") == "unavailable":
-        return {
-            "found": False,
-            "source": "none",
-            "term": t.display(),
-            "course_id": ref.display(),
-            "coverage_status": "unavailable",
-            "data_coverage": coverage,
-            "sections": [],
-            "registrar_websoc": {
-                "offering_status": registrar_result.get("offering_status"),
-                "error_code": registrar_result.get("error_code"),
-                "message": registrar_result.get("message"),
-                "source_url": registrar_result.get("source_url"),
-                "retrieved_at": registrar_result.get("retrieved_at"),
-            },
-            "reason": (
-                f"no local catalog data for {t.display()}; Registrar WebSoc and "
-                f"the secondary API could not confirm sections for {ref.display()}"
-            ),
-        }
-
     return {
+        **base,
         "found": False,
         "source": "none",
-        "term": t.display(),
-        "course_id": ref.display(),
-        "coverage_status": coverage.get("coverage_status"),
-        "data_coverage": coverage,
+        "offering_status": "unavailable",
+        "authoritative": False,
+        "error_code": "offering_lookup_unavailable",
         "sections": [],
-        "reason": f"no sections published for {ref.display()} in {t.display()}",
+        "registrar_websoc": attempts[0],
+        "lookup_attempts": attempts,
+        "reason": (
+            f"cannot confirm whether {ref.display()} is offered in {t.display()}; "
+            "local sections are missing or stale, and neither Registrar WebSoc "
+            "nor the secondary API supplied a verified result"
+        ),
     }
 
 
@@ -731,8 +749,8 @@ def get_live_sections(
 
 def check_prerequisites_met(
     course_id: str,
-    completed_courses: Optional[list[str]] = None,
-    in_progress_courses: Optional[list[str]] = None,
+    completed_courses: Optional[list] = None,
+    in_progress_courses: Optional[list] = None,
     allow_in_progress: bool = True,
 ) -> dict:
     """

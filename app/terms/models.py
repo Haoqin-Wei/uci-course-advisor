@@ -105,6 +105,7 @@ class ResolvedTerm:
     source: TermSource
     status: TermStatus
     checked_at: datetime
+    week8_cutoff: Optional[datetime] = None
 
     @classmethod
     def from_key(
@@ -117,6 +118,7 @@ class ResolvedTerm:
         source: TermSource = "explicit",
         status: TermStatus = "unknown",
         checked_at: datetime,
+        week8_cutoff: Optional[datetime] = None,
     ) -> "ResolvedTerm":
         return cls(
             year=key.year,
@@ -128,6 +130,7 @@ class ResolvedTerm:
             source=source,
             status=status,
             checked_at=checked_at,
+            week8_cutoff=week8_cutoff,
         )
 
     @property

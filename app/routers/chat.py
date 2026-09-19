@@ -28,6 +28,7 @@ from app.modules.state import (
     load_student_into_session, get_known_fields,
 )
 from app.memory import get_memory_manager
+from app.academic import get_ai_academic_context
 from app.scheduling import (
     build_pending_schedule_bundle_items,
     calendar_day_names,
@@ -47,6 +48,7 @@ from app.catalog.departments import colloquial_course_id
 from app.catalog.normalization import iter_course_mentions, parse_course_mention
 from app.terms import next_recent_focus_terms, parse_term_key, resolve_query_scope
 from app.terms.conversation import sync_automatic_default
+from app.terms.intent import refine_query_scope
 from app.terms.service import get_term_resolution_service
 # ─────────────────────────────────────────────────────────
 
@@ -335,7 +337,16 @@ _PREFERENCE_FIELDS_AS_FACTS = {
 }
 
 
-def _capture_hard_facts(session: dict, extracted: dict, user_id: str, mem) -> None:
+def _capture_hard_facts(
+    session: dict,
+    extracted: dict,
+    user_id: str,
+    mem,
+    *,
+    session_id: str | None = None,
+    source_turn_index: int | None = None,
+    source_message: str | None = None,
+) -> None:
     """
     Channel A: pull every explicitly-stated fact out of `extracted`,
     route it to session/profile/facts as appropriate, and emit INFO logs
@@ -349,14 +360,32 @@ def _capture_hard_facts(session: dict, extracted: dict, user_id: str, mem) -> No
         new_courses = _merge_into_list(session, "selected_courses", currently_taking)
         if new_courses:
             for c in new_courses:
-                mem.add_fact(user_id, f"Currently taking {c}")
+                mem.add_fact(
+                    user_id,
+                    f"Currently taking {c}",
+                    topic=f"course_status:{str(c).replace(' ', '').upper()}",
+                    source_type="user_explicit",
+                    source_session_id=session_id,
+                    source_turn_index=source_turn_index,
+                    source_quote=source_message,
+                    confidence=1.0,
+                )
             logger.info("[Channel A] currently_taking captured → %s", new_courses)
 
     if completed:
         new_courses = _merge_into_list(session, "completed_courses", completed)
         if new_courses:
             for c in new_courses:
-                mem.add_fact(user_id, f"Completed {c}")
+                mem.add_fact(
+                    user_id,
+                    f"Completed {c}",
+                    topic=f"course_status:{str(c).replace(' ', '').upper()}",
+                    source_type="user_explicit",
+                    source_session_id=session_id,
+                    source_turn_index=source_turn_index,
+                    source_quote=source_message,
+                    confidence=1.0,
+                )
             logger.info("[Channel A] completed captured → %s", new_courses)
 
     # ── Identity → MemoryManager profile ──
@@ -366,7 +395,13 @@ def _capture_hard_facts(session: dict, extracted: dict, user_id: str, mem) -> No
         if v not in (None, "", []):
             profile_updates[f] = v
     if profile_updates:
-        mem.update_profile(user_id, profile_updates)
+        mem.update_profile(
+            user_id,
+            profile_updates,
+            source_type="user_explicit",
+            source_session_id=session_id,
+            source_turn_index=source_turn_index,
+        )
         logger.info("[Channel A] profile updated → %s", profile_updates)
 
     # ── Stated preferences → MemoryManager facts ──
@@ -374,13 +409,26 @@ def _capture_hard_facts(session: dict, extracted: dict, user_id: str, mem) -> No
         v = extracted.get(field)
         if v in (None, "", []):
             continue
-        mem.add_fact(user_id, template.format(value=v))
+        mem.add_fact(
+            user_id,
+            template.format(value=v),
+            topic=f"profile:{field}",
+            source_type="user_explicit",
+            source_session_id=session_id,
+            source_turn_index=source_turn_index,
+            source_quote=source_message,
+            confidence=1.0,
+        )
         logger.info("[Channel A] preference fact → %s=%s", field, v)
 
 
 # ── Channel B: background reflection (every N turns) ─────
 
-async def _run_reflection_task(user_id: str, history: list[dict]) -> None:
+async def _run_reflection_task(
+    user_id: str,
+    history: list[dict],
+    session_id: str | None = None,
+) -> None:
     """Fired as a FastAPI BackgroundTask AFTER the response is sent."""
     from app.llm.adapter import reflect_on_history_llm
     mem = get_memory_manager()
@@ -394,7 +442,38 @@ async def _run_reflection_task(user_id: str, history: list[dict]) -> None:
         len(history), len(existing), len(new_prefs), new_prefs,
     )
     for pref in new_prefs:
-        mem.add_preference(user_id, pref)
+        if isinstance(pref, dict):
+            text = str(pref.get("text") or "").strip()
+            quote = str(pref.get("evidence_quote") or "").strip() or None
+            try:
+                confidence = float(pref.get("confidence", 0.65))
+            except (TypeError, ValueError):
+                confidence = 0.65
+        else:
+            # Compatibility with older adapters and test doubles.
+            text = str(pref).strip()
+            quote = None
+            confidence = 0.60
+        if not text:
+            continue
+        source_turn = None
+        if quote:
+            quote_folded = quote.casefold()
+            for message in history:
+                if message.get("role") != "user":
+                    continue
+                if quote_folded in str(message.get("content") or "").casefold():
+                    source_turn = message.get("turn_index")
+                    break
+        mem.add_preference(
+            user_id,
+            text,
+            source_type="llm_inferred",
+            source_session_id=session_id,
+            source_turn_index=source_turn,
+            source_quote=quote,
+            confidence=max(0.0, min(confidence, 1.0)),
+        )
 
 
 def _course_ids_in_order(text: str) -> list[str]:
@@ -453,6 +532,7 @@ def _maybe_schedule_reflection(
             _run_reflection_task,
             user_id=user_id,
             history=history_snapshot,
+            session_id=session_id,
         )
 
 
@@ -461,43 +541,15 @@ def _tool_terms_from_agent_meta(agent_meta: dict) -> list[str]:
     terms: list[str] = []
     for call in agent_meta.get("successful_tool_calls") or []:
         args = call.get("args") if isinstance(call, dict) else None
-        parsed = parse_term_key(str((args or {}).get("term") or ""))
-        if parsed.kind == "single":
-            canonical = parsed.terms[0].canonical_name
-            if canonical not in terms:
-                terms.append(canonical)
+        args = args or {}
+        for raw in ([args.get("term")] if args.get("term") else args.get("terms") or []):
+            parsed = parse_term_key(str(raw))
+            if parsed.kind == "single":
+                canonical = parsed.terms[0].canonical_name
+                if canonical not in terms:
+                    terms.append(canonical)
     return terms
 
-
-def _suggest_term_change(message: str, query_terms: list[str]) -> Optional[dict]:
-    """Translate durable-language intent into a confirmable UI suggestion."""
-    if len(query_terms) != 1:
-        return None
-    pattern = re.compile(
-        r"以后(?:都|默认)?(?:看|查|用)|设为默认|默认学期|"
-        r"from\s+now\s+on|make\s+.+\s+the\s+default|default\s+term",
-        re.I,
-    )
-    if not pattern.search(message or ""):
-        return None
-    return {"term": query_terms[0], "requires_confirmation": True}
-
-
-# ══════════════════════════════════════════════════════════
-#  Streaming endpoint  /api/chat/stream
-# ══════════════════════════════════════════════════════════
-#
-# cards/followups are sent as one final `meta` event.
-#
-# Wire format:
-#   data: {"type": "token", "text": "<chunk>"}
-#   data: {"type": "token", "text": "<chunk>"}
-#   ...
-#   data: {"type": "meta",  "cards": [...], "followups": [...], ...}
-#   data: {"type": "done"}
-
-
-# ── Agent-loop handler ───────────────────────────────────
 
 def _response_language(
     user_message: str,
@@ -509,7 +561,9 @@ def _response_language(
     if re.search(r"[\u3400-\u9fff]", message):
         return "zh"
     words = re.findall(r"[A-Za-z]+", message)
-    ambiguous = len(words) <= 2 or bool(
+    # Short English questions (e.g. "Recommend courses") still establish the
+    # current turn's language. Only language-neutral input inherits history.
+    ambiguous = not words or bool(
         re.fullmatch(r"[\s\W]*(?:[A-Za-z&]+\s*)?\d+[A-Za-z]*[\s\W]*", message)
     )
     if ambiguous:
@@ -918,6 +972,9 @@ async def _handle_agent(
                     "iterations": event.get("iterations"),
                     "tool_calls": event.get("tool_calls"),
                     "continuation_id": event.get("continuation_id"),
+                    "response_language": event.get("response_language")
+                    or state.get("response_language")
+                    or _response_language(user_message, recent_turns),
                 })
             elif t == "final":
                 # Tokens were already streamed; nothing extra to forward.
@@ -1069,6 +1126,11 @@ async def _stream_chat(
             persistent_sid = _resolve_session_id(req.session_id, user_id, None)
             active_session_id = persistent_sid
 
+            # Establish the provider lifecycle before any profile/fact read or
+            # write. Rich providers use this boundary for lazy migration and
+            # per-session resources; simple providers keep it as a cheap load.
+            mem.initialize_session(active_session_id, user_id)
+
             session = get_or_create_session(active_session_id, user_id=user_id)
             if not session.get("major"):
                 load_student_into_session(active_session_id, user_id, user_id=user_id)
@@ -1084,13 +1146,31 @@ async def _stream_chat(
             # facts captured here are deterministic regex-only updates.
             extracted = _extract_deterministic_hard_facts(req.message)
             if extracted:
-                _capture_hard_facts(session, extracted, user_id, mem)
+                try:
+                    source_turn_index = sessions_data.count_turns(
+                        user_id,
+                        active_session_id,
+                    ) + 1
+                except sessions_data.SessionNotFound:
+                    source_turn_index = None
+                _capture_hard_facts(
+                    session,
+                    extracted,
+                    user_id,
+                    mem,
+                    session_id=active_session_id,
+                    source_turn_index=source_turn_index,
+                    source_message=req.message,
+                )
                 session = update_session(active_session_id, session, user_id=user_id)
                 session = update_session(active_session_id, extracted, user_id=user_id)
 
             memory_context = {
                 "system_prompt_block": mem.system_prompt_block(user_id),
                 "prefetched_context": mem.prefetch(req.message, user_id),
+                # Strict allow-list produced by the academic store. It never
+                # contains email, user id, transcript text, or PDF metadata.
+                "academic_context": get_ai_academic_context(user_id),
             }
 
             # ── Phase 3.4: load structured context layers from sessions.py ──
@@ -1129,12 +1209,21 @@ async def _stream_chat(
                 automatic_term,
             )
             default_term = term_service.effective_for_conversation(session_meta)
+            current_term = term_service.current_term()
             query_scope = resolve_query_scope(
                 req.message,
                 default_term.canonical_name,
                 automatic_term.canonical_name,
                 session_meta.get("recent_query_focus"),
                 term_service.clock.now(),
+                current_term=current_term.canonical_name if current_term else None,
+                relative_base=term_service.relative_base().canonical_name,
+            )
+            query_scope = await refine_query_scope(
+                query_scope, message=req.message, default_term=default_term.canonical_name,
+                current_term=current_term.canonical_name if current_term else None,
+                focus=session_meta.get("recent_query_focus"), recent_turns=recent_turns,
+                uci_now=term_service.clock.now(),
             )
             query_terms = list(query_scope.canonical_terms)
             # Legacy Agent helpers still accept one representative term. The
@@ -1169,6 +1258,13 @@ async def _stream_chat(
             state["term"] = query_term
             state["default_term"] = default_term.canonical_name
             state["query_terms"] = query_terms
+            state["current_term"] = current_term.canonical_name if current_term else None
+            state["query_intent"] = query_scope.intent
+            state["inferred_year"] = query_scope.inferred_year
+            state["query_course_ids"] = list(query_scope.course_ids) or (
+                list((session_meta.get("recent_query_focus") or {}).get("course_ids") or [])
+                if query_scope.source in {"followup", "comparison", "history"} else []
+            )
             state["query_term_source"] = query_scope.source
             state["query_scope_error"] = (
                 query_scope.error.message if query_scope.error else None
@@ -1247,6 +1343,7 @@ async def _stream_chat(
                     recent_query_focus={
                         "course_ids": focus_course_ids[:8],
                         "terms": list(focus_terms),
+                        "intent": query_scope.intent,
                         "updated_at": datetime.now(timezone.utc).isoformat(
                             timespec="seconds"
                         ),
@@ -1266,6 +1363,7 @@ async def _stream_chat(
                 "cards": cards,
                 "followups": followups,
                 "final_answer": reply,
+                "response_language": response_language,
                 "default_term": default_term.canonical_name,
                 "term_mode": session_meta.get("term_mode", "auto"),
                 "term_source": session_meta.get(
@@ -1274,14 +1372,14 @@ async def _stream_chat(
                 ),
                 "query_terms": query_terms,
                 "query_term_source": query_scope.source,
+                "query_intent": query_scope.intent,
+                "current_term": current_term.canonical_name if current_term else None,
+                "inferred_year": query_scope.inferred_year,
                 "default_term_changed": False,
                 "available_terms": term_service.available_terms(
                     include=default_term.canonical_name,
                 ),
             }
-            suggestion = _suggest_term_change(req.message, query_terms)
-            if suggestion:
-                meta_event["suggest_term_change"] = suggestion
             if agent_meta.get("web_fetches"):
                 meta_event["web_fetches"] = agent_meta["web_fetches"]
             await queue.put(meta_event)

@@ -5,7 +5,7 @@
    panel is toggled via display:block. The user advances by clicking
    Continue (gated until the step is "complete" — e.g. a school is
    picked). Save (Step 4) POSTs the accumulated wizardState to
-   /api/memory/{user_id}/profile, which the backend merge-writes.
+   /api/memory/me/profile, which the backend merge-writes.
 
    Triggered from the boot init when:
      - The user is authenticated (currentAuthUser != null)
@@ -36,7 +36,7 @@ const WIZARD_STEP_META = {
   3: {name: 'Your major',        headline: 'Which major are you pursuing?',
       sub: 'I will pull the required-course list for this major so you can mark off what you have already taken.'},
   4: {name: 'Coursework taken',  headline: 'Which courses have you already completed?',
-      sub: 'Click a card to mark it as done. The list is grouped alphabetically — scroll through. You can refine this later in your profile editor.'},
+      sub: 'Import a current UCI unofficial transcript locally, or select courses manually. You can update this later from Student Profile.'},
 };
 
 const WIZARD_YEARS = [
@@ -51,7 +51,7 @@ async function maybeShowWizard() {
   if (!currentAuthUser) return;                 // guests skip
   if (sessionStorage.getItem(WIZARD_SKIPPED_KEY) === '1') return;
   try {
-    const r = await fetch(`${API}/api/memory/${USER_ID}`);
+    const r = await fetch(`${API}/api/memory/me`);
     if (!r.ok) return;
     const data = await r.json();
     const profile = data.profile || {};
@@ -207,7 +207,7 @@ async function reopenWizardFromProfile() {
   // Re-fetch the freshest profile (sidebar cache could be stale)
   let profile = {};
   try {
-    const r = await fetch(`${API}/api/memory/${USER_ID}`);
+    const r = await fetch(`${API}/api/memory/me`);
     if (r.ok) profile = (await r.json()).profile || {};
   } catch (err) {
     console.warn('reopen: profile fetch failed:', err);
@@ -351,7 +351,7 @@ async function wizardSavePartial() {
   if (Object.keys(payload).length === 0) return;   // nothing to save yet
 
   try {
-    await fetch(`${API}/api/memory/${USER_ID}/profile`, {
+    await fetch(`${API}/api/memory/me/profile`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload),
@@ -873,7 +873,7 @@ async function wizardSave() {
   Object.keys(payload).forEach(k => (payload[k] == null) && delete payload[k]);
 
   try {
-    const r = await fetch(`${API}/api/memory/${USER_ID}/profile`, {
+    const r = await fetch(`${API}/api/memory/me/profile`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify(payload),

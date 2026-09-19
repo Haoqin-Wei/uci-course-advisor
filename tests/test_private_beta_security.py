@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import pytest
+from types import SimpleNamespace
+
+from starlette.requests import Request
 
 
 def test_production_requires_explicit_auth_secret(monkeypatch, tmp_path):
@@ -18,6 +21,8 @@ def test_production_requires_explicit_auth_secret(monkeypatch, tmp_path):
 def test_production_guest_uses_isolated_expiring_identity(monkeypatch, app_client):
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("AUTH_SESSION_SECRET", "production-test-secret")
+    monkeypatch.setenv("ALLOW_SHARED_DEMO", "false")
+    monkeypatch.setenv("ALLOW_GUEST_USERS", "true")
 
     response = app_client.get("/api/memory/demo_001")
 
@@ -26,6 +31,47 @@ def test_production_guest_uses_isolated_expiring_identity(monkeypatch, app_clien
     assert payload["user_id"].startswith("guest_")
     assert payload["user_id"] != "demo_001"
     assert "zotadvisor_guest" in response.cookies
+
+
+def test_private_beta_defaults_reject_anonymous_users(monkeypatch, app_client):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("ALLOW_SHARED_DEMO", raising=False)
+    monkeypatch.delenv("ALLOW_GUEST_USERS", raising=False)
+
+    response = app_client.get("/api/memory/demo_001")
+
+    assert response.status_code == 401
+
+
+def test_security_headers_are_applied(app_client):
+    response = app_client.get("/privacy")
+
+    assert response.status_code == 200
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+    assert response.headers["permissions-policy"] == "camera=(), microphone=(), geolocation=()"
+
+
+def test_request_log_label_never_uses_user_controlled_path_identifier():
+    from main import _request_route_label
+
+    unmatched = Request({
+        "type": "http",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/api/memory/private-address@example.com",
+        "raw_path": b"/api/memory/private-address@example.com",
+        "query_string": b"",
+        "headers": [],
+        "server": ("testserver", 80),
+        "client": ("testclient", 123),
+        "root_path": "",
+    })
+    assert _request_route_label(unmatched) == "/api/memory"
+
+    unmatched.scope["route"] = SimpleNamespace(path="/api/memory/{user_id}")
+    assert _request_route_label(unmatched) == "/api/memory/{user_id}"
 
 
 def test_production_blocks_unsafe_cross_origin_requests(monkeypatch, app_client):

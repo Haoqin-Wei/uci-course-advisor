@@ -54,8 +54,8 @@ def test_unpaired_two_digit_year_never_falls_back_to_default() -> None:
 
 
 def test_relative_term_rules_use_their_documented_bases() -> None:
-    assert resolve("下学期呢？").canonical_terms == ("2026 Winter",)
-    assert resolve("上个 quarter").canonical_terms == ("2025 Spring",)
+    assert resolve("下学期呢？").canonical_terms == ("2027 Winter",)
+    assert resolve("上个 quarter").canonical_terms == ("2026 Spring",)
     assert resolve("当前学期").canonical_terms == ("2026 Fall",)
     assert resolve("今年有吗？").canonical_terms == ("2026 Fall",)
     assert resolve("去年 Spring").canonical_terms == ("2025 Spring",)
@@ -72,22 +72,20 @@ def test_followup_uses_only_structured_recent_focus() -> None:
     assert last.source == "followup"
 
 
-def test_ambiguous_quarter_and_missing_focus_require_clarification() -> None:
+def test_missing_year_is_inferred_but_missing_discussion_requires_clarification() -> None:
     quarter = resolve("show Fall courses")
     focus = resolve("比较这两个学期", focus=None)
-    assert quarter.ambiguous is True
-    assert quarter.error and quarter.error.code == "ambiguous"
+    assert quarter.canonical_terms == ("2026 Fall",)
+    assert quarter.inferred_year is True
     assert focus.ambiguous is True
     assert focus.error and focus.error.code == "ambiguous"
 
 
-def test_summer_is_explicit_only_for_relative_derivation() -> None:
-    explicit = resolve("2026 Summer1 有什么课？")
-    adjacent = resolve("下学期", default="2026 Summer1")
-    inherited_year = resolve("今年", default="2026 Summer1")
-    assert explicit.canonical_terms == ("2026 Summer1",)
-    assert adjacent.ambiguous is True
-    assert inherited_year.ambiguous is True
+def test_summer_is_not_supported_in_chat() -> None:
+    for message in ("2026 Summer1 有什么课？", "summer courses", "2026 暑期"):
+        scope = resolve(message)
+        assert scope.canonical_terms == ()
+        assert scope.error.code == "invalid"
 
 
 def test_q1_q2_q3_structured_focus_keeps_pair_without_changing_default() -> None:

@@ -35,6 +35,10 @@ async function sendMessage(text) {
 
   // Create the AI message bubble up-front; tokens stream into its body.
   const aiMsg = startAiMessage();
+  aiMsg._responseLanguage = /[\u3400-\u9fff]/u.test(msg) ? 'zh' : 'en';
+  aiMsg._queryKind = /推荐|recommend|suggest|what (?:courses|classes).*take/iu.test(msg)
+    ? 'recommendation'
+    : /比较|对比|compare|comparison|versus|\bvs\.?\b/iu.test(msg) ? 'comparison' : 'query';
 
   let fullText = '';
   let meta = null;
@@ -89,6 +93,7 @@ async function sendMessage(text) {
         console.log('[chat] limit_reached:', event);
         aiMsg._continuationId = event.continuation_id;
         aiMsg._limitReason    = event.reason;
+        if (event.response_language) aiMsg._responseLanguage = event.response_language;
       },
       error(event) {
         console.error('Stream error event:', event.message);
@@ -367,6 +372,11 @@ function appendStreamingToken(wrap, fullText) {
 }
 
 function finalizeAiMessage(wrap, fullText, meta, stopped) {
+  if (meta.response_language) wrap._responseLanguage = meta.response_language;
+  if (meta.query_intent === 'comparison' && wrap._queryKind !== 'recommendation') {
+    wrap._queryKind = 'comparison';
+  }
+  wrap._recommendationCount = Array.isArray(meta.cards) ? meta.cards.length : 0;
   // Flush any pending frame so we render the final text definitively
   if (wrap._pendingFrame) {
     cancelAnimationFrame(wrap._pendingFrame);
@@ -407,24 +417,6 @@ function finalizeAiMessage(wrap, fullText, meta, stopped) {
     wrap.appendChild(fuDiv);
   }
 
-  if (!stopped && meta.suggest_term_change?.term) {
-    const suggestion = document.createElement('div');
-    suggestion.className = 'term-change-suggestion';
-    const text = document.createElement('span');
-    text.textContent = `Set ${meta.suggest_term_change.term} as this conversation’s default?`;
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.textContent = 'Confirm';
-    button.addEventListener('click', async () => {
-      button.disabled = true;
-      const ok = await confirmSuggestedTerm(meta.suggest_term_change.term);
-      if (ok) suggestion.remove();
-      else button.disabled = false;
-    });
-    suggestion.append(text, button);
-    wrap.appendChild(suggestion);
-  }
-
   // Continue button — only when the agent loop hit a budget limit
   // and stashed a continuation_id during this stream. Skip when the
   // user explicitly stopped generation (would re-bill on resume).
@@ -437,15 +429,51 @@ function finalizeAiMessage(wrap, fullText, meta, stopped) {
 
 function renderQueryTermBadge(wrap, meta) {
   const terms = Array.isArray(meta?.query_terms) ? meta.query_terms : [];
-  const defaultTerm = meta?.default_term || currentTermContext?.term;
-  if (!terms.length || (terms.length === 1 && terms[0] === defaultTerm)) return;
+  if (!terms.length) return;
   const badge = document.createElement('div');
   badge.className = 'query-term-badge';
-  badge.textContent = terms.length > 1
-    ? `本次比较：${terms.join(' ↔ ')}`
-    : `本次查询：${terms[0]}`;
+  badge.textContent = meta.query_term_source === 'history'
+    ? `开课规律：${terms.join(' · ')}`
+    : terms.length > 1
+      ? `本次比较：${terms.join(' ↔ ')}`
+      : `本次查询：${terms[0]}${meta.inferred_year || meta.query_term_source === 'inferred' ? '（年份自动推断）' : ''}`;
   const body = wrap.querySelector('.msg-ai-body');
   wrap.insertBefore(badge, body);
+}
+
+function continuationCopy(wrap) {
+  const zh = wrap._responseLanguage === 'zh';
+  const count = wrap._recommendationCount || 0;
+  const kind = count > 0 ? 'recommendation' : wrap._queryKind;
+  const common = zh
+    ? {loading: '正在核实…', error: '暂时无法继续查询，请稍后重新提问。'}
+    : {loading: 'Checking…', error: 'Unable to continue right now. Please try asking again shortly.'};
+  if (kind === 'recommendation') {
+    return {...common,
+      message: zh
+        ? (count > 0
+          ? `已整理出 ${count} 门课程的查询结果。其余候选课程的信息尚未核实完整，你可以先查看现有结果，或继续核实剩余课程。`
+          : '目前的信息还不足以给出完整的课程推荐，部分课程的开课情况或选课条件仍需核实。你可以继续查询。')
+        : (count > 0
+          ? `Results for ${count} ${count === 1 ? 'course are' : 'courses are'} ready to review. Other candidates still need checking. You can review the current results or continue checking the remaining courses.`
+          : 'There is not enough information yet to complete your course recommendations. Some course offerings or enrollment requirements still need checking. You can continue the search.'),
+      button: zh ? '继续核实剩余课程' : 'Check remaining courses',
+    };
+  }
+  if (kind === 'comparison') {
+    return {...common,
+      message: zh
+        ? '对比中还有部分信息需要核实。你可以先查看现有结果，或继续补全对比。'
+        : 'Some details still need checking to complete the comparison. You can review the current results or continue the comparison.',
+      button: zh ? '继续完成对比' : 'Continue comparison',
+    };
+  }
+  return {...common,
+    message: zh
+      ? '还有部分信息需要进一步核实。你可以先查看本次结果，或继续查询。'
+      : 'Some information still needs checking. You can review the current results or continue the search.',
+    button: zh ? '继续查询' : 'Continue search',
+  };
 }
 
 function renderContinueBanner(wrap, continuationId, reason) {
@@ -454,16 +482,18 @@ function renderContinueBanner(wrap, continuationId, reason) {
   const existing = wrap.querySelector(':scope > .limit-notice');
   if (existing) existing.remove();
 
-  const reasonText = reason === 'max_tool_calls'
-    ? '已达到工具调用上限，下面是基于已收集信息的回答。'
-    : '已达到推理步数上限，下面是基于已收集信息的回答。';
+  // Technical reasons remain in SSE/logs; the notice describes the user's task.
+  const copy = continuationCopy(wrap);
 
   const notice = document.createElement('div');
   notice.className = 'limit-notice';
+  notice.setAttribute('role', 'status');
   notice.innerHTML = `
-    <div class="limit-notice-text">${reasonText}</div>
-    <button class="continue-btn" type="button">继续探索</button>
+    <div class="limit-notice-text"></div>
+    <button class="continue-btn" type="button"></button>
   `;
+  notice.querySelector('.limit-notice-text').textContent = copy.message;
+  notice.querySelector('.continue-btn').textContent = copy.button;
   notice.querySelector('.continue-btn').addEventListener('click', (ev) => {
     continueAgent(wrap, continuationId, ev.currentTarget);
   });
@@ -474,7 +504,7 @@ async function continueAgent(wrap, continuationId, btn) {
   // Lock the button so a double-click can't fire two resumes (and the
   // backend pops the continuation_id anyway, but better UX to disable).
   btn.disabled = true;
-  btn.textContent = '继续中…';
+  btn.textContent = continuationCopy(wrap).loading;
 
   // Append a fresh body section for the resumed answer so the original
   // fallback reply stays visible above. Without this the new tokens
@@ -543,9 +573,11 @@ async function continueAgent(wrap, continuationId, btn) {
       limit_reached(event) {
         newContinuationId = event.continuation_id;
         newReason = event.reason;
+        if (event.response_language) wrap._responseLanguage = event.response_language;
       },
       error(event) {
-        resumedText += `\n\n_(continue error: ${event.message})_`;
+        console.error('Continue error event:', event.message);
+        resumedText += `\n\n${continuationCopy(wrap).error}`;
         appendStreamingToken(resumeShell, resumedText);
       },
       done() {
@@ -554,7 +586,7 @@ async function continueAgent(wrap, continuationId, btn) {
     });
   } catch (err) {
     console.error('continue failed:', err);
-    resumedText += `\n\n_(continue failed: ${err.message || err})_`;
+    resumedText += `\n\n${continuationCopy(wrap).error}`;
     appendStreamingToken(resumeShell, resumedText);
   } finally {
     // Flush any pending frame and remove the streaming class

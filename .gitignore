@@ -1,4 +1,5 @@
 .env
+node_modules/
 
 # Python bytecode
 __pycache__/
@@ -19,6 +20,12 @@ data/memory/
 data/grades_cache/
 data/logs/
 data/runtime/
+data/deep_search_history.db
+data/deep_search_history.db-shm
+data/deep_search_history.db-wal
 data/auth.db
+data/academic.db
+data/academic.db-shm
+data/academic.db-wal
 data/auth.secret
 data/professor/summaries/

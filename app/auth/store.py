@@ -34,7 +34,11 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             email           TEXT NOT NULL UNIQUE,
             password_hash   TEXT NOT NULL,
             verified_at     TEXT NOT NULL,
-            created_at      TEXT NOT NULL
+            created_at      TEXT NOT NULL,
+            age_18_attested_at TEXT,
+            terms_accepted_at TEXT,
+            terms_version   TEXT,
+            privacy_version TEXT
         );
 
         CREATE TABLE IF NOT EXISTS verification_codes (
@@ -47,6 +51,19 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS ix_codes_email_created
             ON verification_codes (email, created_at DESC);
     """)
+    # Existing private-beta databases predate the consent receipt columns.
+    # SQLite has no ADD COLUMN IF NOT EXISTS, so migrate defensively.
+    existing_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()
+    }
+    for name in (
+        "age_18_attested_at",
+        "terms_accepted_at",
+        "terms_version",
+        "privacy_version",
+    ):
+        if name not in existing_columns:
+            conn.execute(f"ALTER TABLE users ADD COLUMN {name} TEXT")
     conn.commit()
 
 
@@ -89,22 +106,51 @@ def find_user_by_id(user_id: str) -> Optional[dict]:
         return dict(row) if row else None
 
 
-def create_user(email: str, password_hash: str) -> dict:
+def create_user(
+    email: str,
+    password_hash: str,
+    *,
+    age_18_attested: bool = False,
+    terms_version: Optional[str] = None,
+    privacy_version: Optional[str] = None,
+) -> dict:
     """Insert a new user. Caller MUST have verified the email already."""
     email = email.strip().lower()
     uid = uuid.uuid4().hex
     now = _now_iso()
+    attested_at = now if age_18_attested else None
+    accepted_at = now if terms_version and privacy_version else None
     with _conn() as conn:
         conn.execute(
-            """INSERT INTO users (id, email, password_hash, verified_at, created_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            (uid, email, password_hash, now, now),
+            """INSERT INTO users (
+                   id, email, password_hash, verified_at, created_at,
+                   age_18_attested_at, terms_accepted_at,
+                   terms_version, privacy_version
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                uid, email, password_hash, now, now,
+                attested_at, accepted_at, terms_version, privacy_version,
+            ),
         )
         conn.commit()
     return {
         "id": uid, "email": email, "password_hash": password_hash,
         "verified_at": now, "created_at": now,
+        "age_18_attested_at": attested_at,
+        "terms_accepted_at": accepted_at,
+        "terms_version": terms_version,
+        "privacy_version": privacy_version,
     }
+
+
+def delete_user(user_id: str) -> bool:
+    if not user_id:
+        return False
+    with _conn() as conn:
+        conn.execute("DELETE FROM verification_codes WHERE email IN (SELECT email FROM users WHERE id = ?)", (user_id,))
+        cursor = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.commit()
+        return cursor.rowcount > 0
 
 
 # ── Verification codes ───────────────────────────────────

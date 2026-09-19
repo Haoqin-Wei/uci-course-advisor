@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 
+import pytest
+
 from app.agent import loop as agent_loop
 from tests.fakes.llm import (
     ScriptedLLMClient,
@@ -268,19 +270,35 @@ def test_run_agent_surfaces_llm_create_error():
     client.assert_exhausted()
 
 
-def test_limit_reached_fallback_and_continue(monkeypatch):
+@pytest.mark.parametrize("language", ["zh", "en"])
+@pytest.mark.parametrize("reason", ["max_iterations", "max_tool_calls"])
+def test_limit_reached_fallback_and_continue(monkeypatch, language, reason):
+    language_instruction = f"Respond in {'Chinese' if language == 'zh' else 'English'}."
+
     def fallback_response(call):
         assert call.tools is not None
         assert [
             schema["function"]["name"] for schema in call.tools
         ] == ["propose_recommendation"]
         assert "tool-call budget" in call.messages[-1]["content"]
+        assert language_instruction in call.messages[-1]["content"]
         return text_response("Best effort.")
 
+    calls = [tool_call("get_policy", {}, call_id="call_policy")]
+    if reason == "max_tool_calls":
+        monkeypatch.setattr(agent_loop, "MAX_TOTAL_TOOLS", 1)
+        calls.append(tool_call("get_policy", {}, call_id="call_policy_extra", index=1))
+
+    def continue_response(call):
+        assert language_instruction in call.messages[-1]["content"]
+        return text_response("Resumed answer.")
+
     client = ScriptedLLMClient(
-        tool_response(tool_call("get_policy", {}, call_id="call_policy")),
+        tool_response(*calls),
         fallback_response,
-        text_response("Resumed answer."),
+        tool_response(*calls),
+        fallback_response,
+        continue_response,
     )
     monkeypatch.setattr(agent_loop, "MAX_ITERATIONS", 1)
 
@@ -292,6 +310,7 @@ def test_limit_reached_fallback_and_continue(monkeypatch):
                 model="fake-model",
                 user_id="student_001",
                 term="Spring 2025",
+                response_language=language,
             )
         )
     )
@@ -304,7 +323,8 @@ def test_limit_reached_fallback_and_continue(monkeypatch):
         "final",
     ]
     limit_event = events[2]
-    assert limit_event["reason"] == "max_iterations"
+    assert limit_event["reason"] == reason
+    assert limit_event["response_language"] == language
     assert limit_event["iterations"] == 1
     assert limit_event["tool_calls"] == 1
     assert limit_event["continuation_id"]
@@ -316,6 +336,18 @@ def test_limit_reached_fallback_and_continue(monkeypatch):
         _collect(
             agent_loop.resume_agent(
                 continuation_id,
+                client=client,
+                model="fake-model",
+            )
+        )
+    )
+    second_limit = next(event for event in resumed if event["type"] == "limit_reached")
+    assert second_limit["response_language"] == language
+    assert second_limit["reason"] == reason
+    resumed = asyncio.run(
+        _collect(
+            agent_loop.resume_agent(
+                second_limit["continuation_id"],
                 client=client,
                 model="fake-model",
             )

@@ -157,3 +157,20 @@ def test_nonblocking_process_lock_prevents_duplicate_sync() -> None:
         assert acquired is True
         result = synchronizer.sync_if_due(force=True)
     assert result.action == "skipped_locked"
+
+
+def test_failed_course_probe_does_not_discard_successful_calendar_refresh():
+    store = InMemoryTermStateStore()
+
+    def unavailable(term):
+        return TermAvailabilityResult(term=term, available=False, course_count=0,
+            section_count=0, status="timeout", source_url="https://anteater.test/websoc",
+            checked_at=iso(NOW))
+
+    result = TermStateSynchronizer(store, clock=FixedClock(NOW),
+        calendar_fetcher=lambda: api_result(calendar_data()),
+        terms_fetcher=lambda: api_result(terms_data()),
+        availability_checker=unavailable).sync_if_due()
+    assert result.action == "synced"
+    assert result.state.calendar_records == calendar_data()
+    assert result.state.availability["2027 Winter"]["available"] is None

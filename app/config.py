@@ -29,12 +29,12 @@ def bool_env(name: str, default: bool) -> bool:
 
 
 def allow_shared_demo() -> bool:
-    # Development keeps the old demo_001 flow; public/prod does not.
-    return bool_env("ALLOW_SHARED_DEMO", default=not is_production())
+    # Explicit opt-in only. The private beta requires a verified account.
+    return bool_env("ALLOW_SHARED_DEMO", default=False)
 
 
 def allow_guest_users() -> bool:
-    return bool_env("ALLOW_GUEST_USERS", default=True)
+    return bool_env("ALLOW_GUEST_USERS", default=False)
 
 
 def cookie_secure() -> bool:
@@ -100,3 +100,36 @@ def web_search_timeout_seconds() -> float:
 
 def term_state_path() -> Path:
     return Path(os.environ.get("TERM_STATE_PATH", "data/runtime/term_state.json"))
+
+
+def memory_provider() -> str:
+    """Select the long-term memory backend.
+
+    SQLite is the deployment default because it supplies indexed retrieval,
+    provenance, temporal versioning, and soft deletion without adding an
+    external service. ``json`` remains available as a rollback/demo backend.
+    """
+    value = os.environ.get("MEMORY_PROVIDER", "sqlite").strip().lower()
+    return value if value in {"sqlite", "json"} else "sqlite"
+
+
+def memory_root_path() -> Path:
+    return Path(os.environ.get("MEMORY_ROOT", "data/memory"))
+
+
+def memory_db_path() -> Path:
+    return Path(
+        os.environ.get(
+            "MEMORY_DB_PATH",
+            str(memory_root_path() / "long_term_memory.db"),
+        )
+    )
+
+
+def memory_max_active_items() -> int:
+    return max(50, min(int_env("MEMORY_MAX_ACTIVE_ITEMS", 1000), 100_000))
+
+
+def academic_db_path() -> Path:
+    """Server-side structured academic record store for the private beta."""
+    return Path(os.environ.get("ACADEMIC_DB_PATH", "data/academic.db"))

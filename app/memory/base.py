@@ -98,13 +98,28 @@ class MemoryProvider(ABC):
 
     # ── Optional write API ──────────────────────────────────
 
-    def add_preference(self, user_id: str, text: str) -> None:
+    def add_preference(
+        self,
+        user_id: str,
+        text: str,
+        **provenance,
+    ) -> None:
         """Append a learned preference (e.g. 'prefers morning classes')."""
 
-    def add_fact(self, user_id: str, text: str) -> None:
+    def add_fact(
+        self,
+        user_id: str,
+        text: str,
+        **provenance,
+    ) -> None:
         """Append a hard fact (e.g. 'completed ICS33 in Fall 2024')."""
 
-    def update_profile(self, user_id: str, updates: dict) -> None:
+    def update_profile(
+        self,
+        user_id: str,
+        updates: dict,
+        **provenance,
+    ) -> None:
         """Update structured profile fields (major, year, etc.)."""
 
     def get_profile(self, user_id: str) -> dict:
@@ -134,3 +149,60 @@ class MemoryProvider(ABC):
     def forget_all_preferences(self, user_id: str) -> int:
         """Remove all learned preferences. Return the number removed."""
         return 0
+
+    # ── Evidence-memory API (MemoryBear-inspired providers) ───────
+
+    def remember(
+        self,
+        user_id: str,
+        text: str,
+        *,
+        kind: str = "fact",
+        topic: str | None = None,
+        source_type: str = "user_explicit",
+        source_session_id: str | None = None,
+        source_turn_index: int | None = None,
+        source_quote: str | None = None,
+        confidence: float = 1.0,
+        metadata: dict | None = None,
+    ) -> dict | None:
+        """Store one memory with provenance.
+
+        The default adapter preserves compatibility with simple providers.
+        Rich providers should override this method and retain every supplied
+        provenance field.
+        """
+        if kind == "preference":
+            self.add_preference(user_id, text)
+        else:
+            self.add_fact(user_id, text)
+        return None
+
+    def recall(
+        self,
+        query: str,
+        user_id: str,
+        *,
+        limit: int = 5,
+    ) -> list[dict]:
+        """Return query-relevant memories as evidence records."""
+        return []
+
+    def list_memories(
+        self,
+        user_id: str,
+        *,
+        kind: str | None = None,
+        status: str = "active",
+        limit: int = 100,
+    ) -> list[dict]:
+        """Return inspectable memory records for the user."""
+        return []
+
+    def forget_memory(self, user_id: str, memory_id: str) -> dict | None:
+        """Soft-forget one memory record and return removal metadata."""
+        return None
+
+    def memory_stats(self, user_id: str) -> dict:
+        """Return provider-specific lifecycle counts."""
+        return {}

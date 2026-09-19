@@ -24,6 +24,11 @@ def test_course_parser_handles_two_token_social_science_department():
     assert parse_course_mention("SOC SCI 178C") == CourseRef("SOC SCI", "178C")
 
 
+def test_course_parser_uses_catalog_department_and_special_course_number():
+    assert parse_course_mention("AC ENG 22A") == CourseRef("AC ENG", "22A")
+    assert parse_course_mention("HUMAN 1AS/A") == CourseRef("HUMAN", "1AS/A")
+
+
 def test_chat_course_ids_use_canonical_parser_and_colloquial_output():
     assert chat_router._course_ids_in_order(
         "我想选CS122A这门课，也想问 ICS 33 / I&C SCI 33 和 SOC SCI 178C"

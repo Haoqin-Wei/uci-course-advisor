@@ -92,12 +92,9 @@ from app.agent.workflow_router import (
 logger = logging.getLogger(__name__)
 
 MAX_ITERATIONS = 12
-# Bumped 12 → 16 after Phase E1 landed. A typical recommendation flow
-# is 1 enumeration call (search_courses) + propose_recommendation +
-# ~3 enrichment calls per recommended course (grades / prereq /
-# professor) → ~13-15 tools. 12 was too tight; the LLM would burn the
-# budget on enrichment and never reach propose_recommendation.
-MAX_TOTAL_TOOLS = 16
+# Allow course searches, eligibility checks, and professor lookups enough
+# room to reach recommendation cards and the final explanation.
+MAX_TOTAL_TOOLS = 50
 IDEMPOTENT_TERM_READ_TOOLS = frozenset(
     agent_tools.TERM_SCOPED_TOOLS - {"propose_recommendation"}
 )
@@ -180,6 +177,23 @@ def _record_definitive_course_offering(
     args: dict,
     result: dict,
 ) -> None:
+    if name == "get_course_offerings":
+        rows = result.get("offerings") or []
+        # Only stop supplemental research when every requested row is resolved.
+        # One definitive term must not suppress research for another term whose
+        # lookup failed. Historical references do not resolve the future target.
+        if rows and all(
+            row.get("authoritative") is True
+            and row.get("source") == "registrar_websoc"
+            and row.get("offering_status") in {"offered", "not_offered"}
+            for row in rows
+        ):
+            for row in rows:
+                _record_definitive_course_offering(
+                    context, "get_sections", args,
+                    {**row, "course_id": result.get("course_id") or args.get("course_id")},
+                )
+        return
     if (
         name != "get_sections"
         or result.get("source") != "registrar_websoc"
@@ -259,12 +273,8 @@ def _add_offering_event_fields(event: dict, name: str, result: dict) -> None:
     if name != "get_sections":
         return
     offering_status = result.get("offering_status")
-    if not offering_status and result.get("found") is False:
-        offering_status = (
-            "not_offered"
-            if result.get("coverage_status") == "complete"
-            else "unavailable"
-        )
+    if not offering_status:
+        offering_status = "offered" if result.get("sections") else "unavailable"
     event.update(
         {
             "source": result.get("source"),
@@ -291,6 +301,8 @@ def _summarize_tool_result(result: dict) -> dict:
         "final_url": result.get("final_url"),
         "status_code": result.get("status_code"),
         "extraction_status": result.get("extraction_status"),
+        "offering_status": result.get("offering_status"),
+        "lookup_attempts": result.get("lookup_attempts"),
         "search_criteria": result.get("search_criteria"),
         "registration_ends": result.get("registration_ends"),
     }
@@ -372,6 +384,8 @@ def _result_has_term_data(result: dict) -> bool:
     """Whether a term-scoped tool found at least one course with a section."""
     if not isinstance(result, dict) or result.get("found") is False:
         return False
+    if isinstance(result.get("offerings"), list):
+        return any(row.get("offering_status") == "offered" for row in result["offerings"])
     sections = result.get("sections")
     if isinstance(sections, list) and sections:
         return True
@@ -563,6 +577,7 @@ async def run_agent(
     query_term_source: str = "default",
     response_language: str = "en",
     pending_schedule: Optional[list[dict]] = None,
+    offering_course_ids: Optional[list[str]] = None,
 ) -> AsyncIterator[dict]:
     """
     Run the agent loop on a prebuilt messages list. `messages` is
@@ -590,6 +605,7 @@ async def run_agent(
         query_term_source=query_term_source,
         response_language=response_language,
         pending_schedule=pending_schedule,
+        offering_course_ids=offering_course_ids,
         start_iteration=0, start_tool_count=0,
         user_query=user_query,
         deep_search_state=deep_search_state,
@@ -629,7 +645,8 @@ async def resume_agent(
             "information you've already gathered (visible in the "
             "tool results above) to finalize your answer. Only call "
             "more tools if there's a specific gap you still need to "
-            "fill."
+            "fill. "
+            f"Respond in {'Chinese' if snap.get('response_language') == 'zh' else 'English'}."
         ),
     }]
     logger.info("[agent] resuming continuation %s (was %d iters / %d tools)",
@@ -668,6 +685,7 @@ async def _run_loop(
     user_query: str,
     deep_search_state: DeepSearchRunState,
     history_hint_message: Optional[dict[str, str]],
+    offering_course_ids: Optional[list[str]] = None,
 ) -> AsyncIterator[dict]:
     """The actual iteration body, shared by run_agent and resume_agent."""
     tool_context = {
@@ -683,6 +701,15 @@ async def _run_loop(
     }
     workflow_route = route_solution(user_query, term=term)
     primary_plan = build_primary_workflow_plan(workflow_route)
+    if (offering_course_ids and allowed_query_terms and not primary_plan.get("calls")
+            and not primary_plan.get("clarification")
+            and (query_term_source in {"comparison", "history"}
+                 or re.search(r"开课|开设|有开|开过|谁教|教授|offered|teaches|taught|instructors", user_query, re.I))):
+        primary_plan["calls"] = [
+            {"tool": "get_course_offerings", "workflow_id": "course_offerings",
+             "args": {"course_id": course, "terms": list(allowed_query_terms)}}
+            for course in list(dict.fromkeys(offering_course_ids))[:8]
+        ]
     clarification = primary_plan.get("clarification")
     if clarification:
         clarification_text = _clarification_text(
@@ -1269,6 +1296,7 @@ async def _emit_limit_reached_and_fallback(
         "iterations": iterations_used,
         "tool_calls": tool_calls_used,
         "continuation_id": cid,
+        "response_language": response_language,
     }
 
     # Build a fallback prompt that nudges the model to wrap up with
@@ -1280,6 +1308,14 @@ async def _emit_limit_reached_and_fallback(
             "[System notice: the tool-call budget for this turn has "
             "been reached. Write your best final answer NOW using only "
             "the information already gathered above. "
+            f"Respond in {'Chinese' if response_language == 'zh' else 'English'}. "
+            "Do not mention tool-call budgets, iteration limits, tokens, or "
+            "internal system limits in the user-facing answer. Explain what "
+            "the evidence supports and what still needs checking. Never invent "
+            "a verified course count, eligibility, or missing information. "
+            "If evidence is insufficient, say so plainly. The interface will "
+            "offer a button to continue; do not claim checks are still running "
+            "or will resume automatically. "
             "ONE exception: if this is a course-recommendation turn and "
             "you have not yet called `propose_recommendation`, you may "
             "(and SHOULD) call it once now to stage the card list — "

@@ -44,7 +44,7 @@ from typing import Optional, Any
 MEMORY_ROOT = Path("data/memory")
 SESSION_ID_PREFIX = "sess_"
 SESSION_ID_BYTES = 3                  # 6 hex chars → 16M possibilities
-TERM_SCHEMA_VERSION = 2
+TERM_SCHEMA_VERSION = 3
 # Compatibility name used by the standalone migration script and old callers.
 TERM_METADATA_MIGRATION_VERSION = TERM_SCHEMA_VERSION
 
@@ -253,9 +253,9 @@ def create_session(
 
 
 def migrate_term_metadata(memory_root: Optional[Path] = None) -> dict:
-    """Migrate legacy auto/pinned metadata to the M16 default-term schema.
+    """Migrate legacy defaults to automatic-only term metadata.
 
-    A legacy pin is trusted only when it has explicit ``user_ui`` provenance.
+    Manual pins are retired; opening a conversation refreshes its default.
     Invalid legacy terms are backed up before the conversation falls back to
     automatic mode. Turns, cards, state, and schedules are never rewritten.
     """
@@ -281,11 +281,6 @@ def migrate_term_metadata(memory_root: Optional[Path] = None) -> dict:
             if parsed.kind == "single"
             else None
         )
-        explicit_ui_pin = (
-            raw.get("term_mode") in {"pinned", "manual"}
-            and raw.get("term_updated_by") == "user_ui"
-            and canonical is not None
-        )
         if legacy_value and canonical is None:
             backup_path = meta_path.with_name("meta.pre-m16.json")
             if not backup_path.exists():
@@ -301,10 +296,10 @@ def migrate_term_metadata(memory_root: Optional[Path] = None) -> dict:
         updated.update(
             {
                 "default_term": canonical,
-                "term_mode": "manual" if explicit_ui_pin else "auto",
-                "term_source": "user_ui" if explicit_ui_pin else "migration",
+                "term_mode": "auto",
+                "term_source": "migration",
                 "term_updated_at": _now_iso(),
-                "term_updated_by": "user_ui" if explicit_ui_pin else "migration",
+                "term_updated_by": "migration",
                 "term_schema_version": TERM_SCHEMA_VERSION,
             }
         )

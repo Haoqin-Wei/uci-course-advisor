@@ -42,6 +42,7 @@ class RuntimePaths:
     memory_root: Path
     auth_db: Path
     auth_secret: Path
+    academic_db: Path
     grades_cache: Path
     professor_summaries: Path
     logs: Path
@@ -78,6 +79,7 @@ def runtime_paths(tmp_path: Path) -> RuntimePaths:
         memory_root=root / "memory",
         auth_db=root / "auth.db",
         auth_secret=root / "auth.secret",
+        academic_db=root / "academic.db",
         grades_cache=root / "grades_cache",
         professor_summaries=root / "professor_summaries",
         logs=root / "logs",
@@ -174,6 +176,13 @@ def isolated_test_environment(
         "test-only-session-secret-not-for-production",
     )
     monkeypatch.setenv("TERM_STATE_PATH", str(runtime_paths.term_state))
+    monkeypatch.setenv("MEMORY_ROOT", str(runtime_paths.memory_root))
+    monkeypatch.setenv("MEMORY_DB_PATH", str(runtime_paths.memory_root / "long_term_memory.db"))
+    monkeypatch.setenv("ACADEMIC_DB_PATH", str(runtime_paths.academic_db))
+    # Legacy characterization tests still exercise the old demo/guest routes.
+    # Product defaults are auth-only; tests opt into compatibility explicitly.
+    monkeypatch.setenv("ALLOW_SHARED_DEMO", "true")
+    monkeypatch.setenv("ALLOW_GUEST_USERS", "true")
 
     if not live_test:
         monkeypatch.setattr(requests.sessions.Session, "request", _blocked_network)

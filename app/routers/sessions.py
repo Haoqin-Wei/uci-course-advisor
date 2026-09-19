@@ -184,7 +184,7 @@ def update_default_term(
     user_id: Optional[str] = None,
     user: dict = Depends(current_user_optional),
 ):
-    """Change the conversation default only through an explicit UI action."""
+    """Compatibility endpoint: auto refresh only; manual selection is retired."""
     del user_id  # URL compatibility only; authenticated identity is authoritative.
     real_user_id = user["id"]
     check_rate_limit(request, TERM_WRITE_LIMIT, real_user_id)

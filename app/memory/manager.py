@@ -14,8 +14,10 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from app import config
 from app.memory.base import MemoryProvider
 from app.memory.json_provider import JSONFileMemoryProvider
+from app.memory.sqlite_provider import SQLiteMemoryProvider
 
 logger = logging.getLogger(__name__)
 
@@ -164,31 +166,90 @@ class MemoryManager:
             logger.warning("get_preferences failed: %s", e)
             return []
 
-    def update_profile(self, user_id: str, updates: dict) -> dict:
+    def update_profile(self, user_id: str, updates: dict, **provenance) -> dict:
         if not self._provider:
             return {}
         try:
-            updated = self._provider.update_profile(user_id, updates)
+            updated = self._provider.update_profile(user_id, updates, **provenance)
             return updated if isinstance(updated, dict) else self.get_profile(user_id)
         except Exception as e:
             logger.warning("update_profile failed: %s", e)
             return self.get_profile(user_id)
 
-    def add_fact(self, user_id: str, text: str) -> None:
+    def add_fact(self, user_id: str, text: str, **provenance) -> dict | None:
         if not self._provider:
-            return
+            return None
         try:
-            self._provider.add_fact(user_id, text)
+            return self._provider.add_fact(user_id, text, **provenance)
         except Exception as e:
             logger.warning("add_fact failed: %s", e)
+            return None
 
-    def add_preference(self, user_id: str, text: str) -> None:
+    def add_preference(self, user_id: str, text: str, **provenance) -> dict | None:
         if not self._provider:
-            return
+            return None
         try:
-            self._provider.add_preference(user_id, text)
+            return self._provider.add_preference(user_id, text, **provenance)
         except Exception as e:
             logger.warning("add_preference failed: %s", e)
+            return None
+
+    def remember(self, user_id: str, text: str, **kwargs) -> dict | None:
+        if not self._provider:
+            return None
+        try:
+            return self._provider.remember(user_id, text, **kwargs)
+        except Exception as e:
+            logger.warning("remember failed: %s", e)
+            return None
+
+    def recall(self, query: str, user_id: str, *, limit: int = 5) -> list[dict]:
+        if not self._provider:
+            return []
+        try:
+            return self._provider.recall(query, user_id, limit=limit)
+        except Exception as e:
+            logger.warning("recall failed: %s", e)
+            return []
+
+    def list_memories(
+        self,
+        user_id: str,
+        *,
+        kind: str | None = None,
+        status: str = "active",
+        limit: int = 100,
+    ) -> list[dict]:
+        if not self._provider:
+            return []
+        try:
+            return self._provider.list_memories(
+                user_id,
+                kind=kind,
+                status=status,
+                limit=limit,
+            )
+        except Exception as e:
+            logger.warning("list_memories failed: %s", e)
+            return []
+
+    def forget_memory(self, user_id: str, memory_id: str) -> dict | None:
+        if not self._provider:
+            return None
+        try:
+            return self._provider.forget_memory(user_id, memory_id)
+        except Exception as e:
+            logger.warning("forget_memory failed: %s", e)
+            return None
+
+    def memory_stats(self, user_id: str) -> dict:
+        if not self._provider:
+            return {}
+        try:
+            return self._provider.memory_stats(user_id)
+        except Exception as e:
+            logger.warning("memory_stats failed: %s", e)
+            return {}
 
     def forget_preference(self, user_id: str, pref_id: str) -> dict | None:
         if not self._provider:
@@ -213,8 +274,18 @@ class MemoryManager:
 
 # ── Module-level singleton ───────────────────────────────────
 
+def _default_provider() -> MemoryProvider:
+    if config.memory_provider() == "json":
+        return JSONFileMemoryProvider(base_dir=str(config.memory_root_path()))
+    return SQLiteMemoryProvider(
+        db_path=config.memory_db_path(),
+        legacy_base_dir=config.memory_root_path(),
+        max_active_items=config.memory_max_active_items(),
+    )
+
+
 _manager = MemoryManager()
-_manager.set_provider(JSONFileMemoryProvider())
+_manager.set_provider(_default_provider())
 
 
 def get_memory_manager() -> MemoryManager:

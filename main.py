@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from app.routers import chat, system_info, memory, sessions, onboarding, auth, health
+from app.routers import academic, auth, chat, health, memory, onboarding, sessions, system_info
 from app.memory import get_memory_manager
 from app import config, observability
 from app.auth import security
@@ -39,11 +39,23 @@ async def lifespan(app: FastAPI):
                 phase="startup",
                 error=f"{type(e).__name__}: {e}",
             )
-    threading.Thread(target=_sync_terms, daemon=True, name="term-state-sync").start()
+    stop_term_sync = threading.Event()
 
-    yield
-    # On shutdown, flush any in-memory state to disk.
-    get_memory_manager().shutdown()
+    def _refresh_terms_periodically():
+        while not stop_term_sync.is_set():
+            _sync_terms()
+            # sync_if_due owns the cache interval. Long-running deployments
+            # must refresh calendars without requiring an application restart.
+            if stop_term_sync.wait(3600):
+                break
+
+    threading.Thread(target=_refresh_terms_periodically, daemon=True, name="term-state-sync").start()
+
+    try:
+        yield
+    finally:
+        stop_term_sync.set()
+        get_memory_manager().shutdown()
 
 
 app = FastAPI(
@@ -66,6 +78,40 @@ def _origin_allowed(origin: str | None, host: str | None) -> bool:
     return normalized in allowed
 
 
+def _set_security_headers(response) -> None:
+    """Apply browser protections to API, HTML, and static responses."""
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-ancestors 'none'; "
+        "img-src 'self' data:; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "connect-src 'self'; "
+        "worker-src 'self' blob:"
+    )
+    if config.is_production():
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+
+def _request_route_label(request: Request) -> str:
+    """Return a low-cardinality route label without user-controlled IDs."""
+    route_template = getattr(request.scope.get("route"), "path", None)
+    if route_template:
+        return str(route_template)
+    path = request.url.path
+    if path.startswith("/api/"):
+        group = path.split("/", 3)[2]
+        return f"/api/{group}"
+    return path
+
+
 @app.middleware("http")
 async def security_middleware(request: Request, call_next):
     """Production CSRF/origin guard and isolated guest-cookie bootstrap."""
@@ -85,6 +131,7 @@ async def security_middleware(request: Request, call_next):
                     content={"detail": "Cross-origin request blocked"},
                 )
                 status_code = response.status_code
+                _set_security_headers(response)
                 response.headers["X-Trace-Id"] = trace_id
                 return response
 
@@ -116,29 +163,31 @@ async def security_middleware(request: Request, call_next):
             response.headers["Cache-Control"] = "no-store, max-age=0"
         elif request.url.path.startswith("/static/"):
             response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        _set_security_headers(response)
         response.headers["X-Trace-Id"] = trace_id
         status_code = response.status_code
         return response
     finally:
         duration_ms = observability.elapsed_ms(started_at)
+        route_label = _request_route_label(request)
         observability.increment(
             "http.requests",
             method=request.method,
             status=status_code,
-            route=request.url.path,
+            route=route_label,
         )
         observability.observe_ms(
             "http.request_ms",
             duration_ms,
             method=request.method,
-            route=request.url.path,
+            route=route_label,
         )
         observability.log_event(
             logger,
             logging.INFO,
             "http_request",
             method=request.method,
-            path=request.url.path,
+            path=route_label,
             status=status_code,
             duration_ms=duration_ms,
         )
@@ -152,6 +201,7 @@ app.include_router(sessions.router)
 app.include_router(onboarding.router)
 app.include_router(auth.router)
 app.include_router(health.router)
+app.include_router(academic.router)
 
 # ── Static files ─────────────────────────────────────────
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -163,3 +213,13 @@ async def serve_frontend():
         "static/index.html",
         headers={"Cache-Control": "no-store, max-age=0"},
     )
+
+
+@app.get("/privacy", include_in_schema=False)
+async def serve_privacy_notice():
+    return FileResponse("static/privacy.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/terms", include_in_schema=False)
+async def serve_terms():
+    return FileResponse("static/terms.html", headers={"Cache-Control": "no-cache"})

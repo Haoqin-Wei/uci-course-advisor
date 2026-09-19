@@ -58,6 +58,31 @@ def test_authenticated_memory_routes_ignore_path_user_id(
     assert payload["profile"]["major"] != "Data Science"
 
 
+def test_me_routes_resolve_identity_only_from_session_cookie(app_client):
+    alice = _create_user("alice-me@example.edu")
+    _login_as(app_client, alice["id"])
+
+    saved = app_client.post(
+        "/api/memory/me/profile",
+        json={"major": "Computer Science"},
+    )
+    memory = app_client.get("/api/memory/me")
+    created = app_client.post(
+        "/api/sessions/me",
+        json={"title": "Private plan"},
+    )
+    sessions = app_client.get("/api/sessions/me")
+
+    assert saved.status_code == 200
+    assert memory.status_code == 200
+    assert memory.json()["user_id"] == alice["id"]
+    assert memory.json()["profile"]["major"] == "Computer Science"
+    assert created.status_code == 200
+    assert sessions.status_code == 200
+    assert sessions.json()["user_id"] == alice["id"]
+    assert sessions.json()["sessions"][0]["title"] == "Private plan"
+
+
 def test_authenticated_session_routes_ignore_path_user_id_and_enforce_owner(
     app_client,
 ):
