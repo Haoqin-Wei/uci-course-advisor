@@ -77,6 +77,8 @@ def test_request_log_label_never_uses_user_controlled_path_identifier():
 def test_production_blocks_unsafe_cross_origin_requests(monkeypatch, app_client):
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("AUTH_SESSION_SECRET", "production-test-secret")
+    # Exercise the production default, independent of caller/CI overrides.
+    monkeypatch.delenv("CSRF_PROTECTION", raising=False)
 
     blocked = app_client.post(
         "/api/auth/login",
@@ -95,6 +97,7 @@ def test_production_blocks_unsafe_cross_origin_requests(monkeypatch, app_client)
 def test_system_prompt_endpoint_disabled_by_default_in_production(monkeypatch, app_client):
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("AUTH_SESSION_SECRET", "production-test-secret")
+    monkeypatch.delenv("ALLOW_CUSTOM_SYSTEM_PROMPT", raising=False)
 
     response = app_client.get("/api/system_prompt")
 
@@ -124,6 +127,7 @@ def test_custom_system_prompt_is_ignored_in_production(monkeypatch, app_client):
 
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("AUTH_SESSION_SECRET", "production-test-secret")
+    monkeypatch.delenv("ALLOW_CUSTOM_SYSTEM_PROMPT", raising=False)
     captured = {}
 
     async def fake_handle_agent(

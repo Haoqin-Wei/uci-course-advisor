@@ -14,8 +14,6 @@ jobs:
       APP_ENV: test
       ALLOW_SHARED_DEMO: "true"
       ALLOW_GUEST_USERS: "true"
-      ALLOW_CUSTOM_SYSTEM_PROMPT: "true"
-      CSRF_PROTECTION: "false"
 
     steps:
       - name: Check out repository
