@@ -14,11 +14,15 @@ Endpoints exposed here, with the Anteater path they wrap:
     ge_requirements()                   /programs/ugradRequirements?id=GE
     extra_requirements(kind)            /programs/ugradRequirements?id=UC|CHC4|CHC2
 
-All calls:
+Remote calls:
   - return None on miss / network error / non-200 (caller decides)
   - never raise; log warnings instead
   - use a per-process in-memory cache because this data is stable on
-    the order of quarters; one process restart is fresh enough.
+    the order of quarters.
+
+The whole-course picker is different: it first uses the versioned local UCI
+CSV, then a restart-safe runtime snapshot, so process restarts do not trigger
+the old 90-page API crawl.
 
 The User-Agent header matters — Anteater's edge returns 403 to
 clients sending the default "Python-urllib/x.y" UA.
@@ -26,11 +30,18 @@ clients sending the default "Python-urllib/x.y" UA.
 
 from __future__ import annotations
 
+import csv
+import json
 import logging
 import re
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 import requests
+
+from app import observability
+from app.catalog.departments import colloquial_course_id
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +56,19 @@ _major_detail_cache: dict[str, Optional[dict]] = {}
 _ext_req_cache:     dict[str, Optional[dict]] = {}
 _courses_cache:     dict[str, list[dict]] = {}   # dept code → list of slim courses
 _all_courses_cache: Optional[list[dict]] = None  # whole UCI catalog (slim rows)
+_all_courses_source: Optional[str] = None
+
+LOCAL_COURSES_PATH = Path("data/uci/courses.csv")
+ALL_COURSES_DISK_CACHE_PATH = Path("data/runtime/onboarding_courses.json")
+ALL_COURSES_CACHE_SCHEMA_VERSION = 1
 
 
-def _get(path: str, params: Optional[dict] = None) -> Optional[dict]:
+def _get(
+    path: str,
+    params: Optional[dict] = None,
+    *,
+    timeout_s: Optional[float] = None,
+) -> Optional[dict]:
     """Thin GET. Returns parsed JSON `data` field or None."""
     url = f"{ANTEATER_BASE_URL}{path}"
     try:
@@ -55,9 +76,28 @@ def _get(path: str, params: Optional[dict] = None) -> Optional[dict]:
             url,
             params=params,
             headers={"User-Agent": _UA, "Accept": "application/json"},
-            timeout=REQUEST_TIMEOUT_S,
+            timeout=timeout_s if timeout_s is not None else REQUEST_TIMEOUT_S,
         )
         if r.status_code != 200:
+            if r.status_code == 429:
+                observability.increment(
+                    "external_api.rate_limited",
+                    service="anteater_programs",
+                )
+                observability.log_event(
+                    logger,
+                    logging.WARNING,
+                    "external_api_rate_limited",
+                    service="anteater_programs",
+                    url=url,
+                    params=params,
+                )
+            else:
+                observability.increment(
+                    "external_api.non_200",
+                    service="anteater_programs",
+                    status=r.status_code,
+                )
             logger.warning("anteater %s → %d (%s)", url, r.status_code, r.text[:120])
             return None
         body = r.json()
@@ -119,7 +159,11 @@ def majors(
     return list(out)
 
 
-def major(program_id: str) -> Optional[dict]:
+def major(
+    program_id: str,
+    *,
+    request_timeout_s: Optional[float] = None,
+) -> Optional[dict]:
     """
     Full requirement tree for one major. Returns dict with
     `requirements: [...]` where each leaf has `courses: [...]`.
@@ -129,7 +173,11 @@ def major(program_id: str) -> Optional[dict]:
         return None
     if program_id in _major_detail_cache:
         return _major_detail_cache[program_id]
-    data = _get("/programs/major", params={"programId": program_id})
+    data = _get(
+        "/programs/major",
+        params={"programId": program_id},
+        timeout_s=request_timeout_s,
+    )
     _major_detail_cache[program_id] = data
     return data
 
@@ -252,14 +300,27 @@ def list_courses_by_department(dept_code: str) -> list[dict]:
 
 def list_all_courses() -> list[dict]:
     """
-    Fetch the entire UCI course catalog via Anteater's coursesCursor
-    endpoint (the only one that paginates cleanly without dept filter).
-    Cached after first successful call — ~9000 rows × the slim shape
-    is ~1.5 MB in JSON, comfortable to hold in process memory and to
-    ship to the client once per session.
+    Return the whole slim course catalogue without a cold-start API crawl.
+
+    The versioned local ``data/uci/courses.csv`` is the primary source.  If a
+    deployment omits that file, a runtime JSON snapshot survives process
+    restarts.  Only when neither local source exists do we paginate Anteater's
+    ``coursesCursor`` endpoint, then persist the successful result.
     """
-    global _all_courses_cache
+    global _all_courses_cache, _all_courses_source
     if _all_courses_cache is not None:
+        return list(_all_courses_cache)
+
+    local = _load_local_courses()
+    if local:
+        _all_courses_cache = local
+        _all_courses_source = "local_csv"
+        return list(_all_courses_cache)
+
+    persisted = _load_all_courses_disk_cache()
+    if persisted:
+        _all_courses_cache = persisted
+        _all_courses_source = "runtime_cache"
         return list(_all_courses_cache)
 
     all_rows: list[dict] = []
@@ -282,17 +343,124 @@ def list_all_courses() -> list[dict]:
             logger.warning("list_all_courses() hit page-safety cap")
             break
 
-    slim = [{
-        "id":           row.get("id"),
-        "department":   row.get("department"),
-        "courseNumber": row.get("courseNumber"),
-        "courseNumeric": row.get("courseNumeric"),
-        "title":        row.get("title"),
-        "courseLevel":  row.get("courseLevel"),
-        "minUnits":     row.get("minUnits"),
-        "maxUnits":     row.get("maxUnits"),
-    } for row in all_rows if row.get("id")]
+    slim = [_slim_network_course(row) for row in all_rows if row.get("id")]
 
     slim.sort(key=lambda c: c.get("id") or "")
-    _all_courses_cache = slim
+    if slim:
+        _all_courses_cache = slim
+        _all_courses_source = "anteater_api"
+        _save_all_courses_disk_cache(slim)
     return list(slim)
+
+
+def all_courses_source() -> str:
+    """Describe the source used by the most recent whole-catalogue read."""
+    return _all_courses_source or "none"
+
+
+def _slim_network_course(row: dict) -> dict:
+    return {
+        "id": row.get("id"),
+        "department": row.get("department"),
+        "courseNumber": row.get("courseNumber"),
+        "courseNumeric": row.get("courseNumeric"),
+        "title": row.get("title"),
+        "courseLevel": row.get("courseLevel"),
+        "minUnits": row.get("minUnits"),
+        "maxUnits": row.get("maxUnits"),
+    }
+
+
+def _csv_number(value: object) -> Optional[int | float]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        number = float(raw)
+    except ValueError:
+        return None
+    return int(number) if number.is_integer() else number
+
+
+def _load_local_courses() -> list[dict]:
+    """Build the profile picker payload from the checked-in UCI catalogue."""
+    if not LOCAL_COURSES_PATH.exists():
+        return []
+    try:
+        with LOCAL_COURSES_PATH.open("r", encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+    except (OSError, csv.Error):
+        logger.warning(
+            "failed to read local onboarding catalogue: %s",
+            LOCAL_COURSES_PATH,
+            exc_info=True,
+        )
+        return []
+
+    slim: list[dict] = []
+    for row in rows:
+        department = str(row.get("department") or "").strip()
+        number = str(row.get("course_number") or "").strip()
+        course_id = colloquial_course_id(department, number)
+        if not course_id:
+            continue
+        slim.append({
+            "id": course_id,
+            "department": department,
+            "courseNumber": number,
+            "courseNumeric": _csv_number(row.get("course_numeric")),
+            "title": row.get("title"),
+            "courseLevel": row.get("course_level"),
+            "minUnits": _csv_number(row.get("min_units")),
+            "maxUnits": _csv_number(row.get("max_units")),
+        })
+    slim.sort(key=lambda course: course.get("id") or "")
+    return slim
+
+
+def _load_all_courses_disk_cache() -> list[dict]:
+    if not ALL_COURSES_DISK_CACHE_PATH.exists():
+        return []
+    try:
+        payload = json.loads(
+            ALL_COURSES_DISK_CACHE_PATH.read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return []
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != ALL_COURSES_CACHE_SCHEMA_VERSION
+        or not isinstance(payload.get("courses"), list)
+    ):
+        return []
+    return [
+        row for row in payload["courses"]
+        if isinstance(row, dict) and row.get("id")
+    ]
+
+
+def _save_all_courses_disk_cache(courses: list[dict]) -> None:
+    try:
+        ALL_COURSES_DISK_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary = ALL_COURSES_DISK_CACHE_PATH.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(
+                {
+                    "schema_version": ALL_COURSES_CACHE_SCHEMA_VERSION,
+                    "generated_at": datetime.now(timezone.utc).isoformat(
+                        timespec="seconds"
+                    ),
+                    "courses": courses,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+        temporary.replace(ALL_COURSES_DISK_CACHE_PATH)
+    except OSError:
+        logger.warning(
+            "failed to persist onboarding catalogue cache: %s",
+            ALL_COURSES_DISK_CACHE_PATH,
+            exc_info=True,
+        )

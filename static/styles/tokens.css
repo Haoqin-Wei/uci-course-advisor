@@ -1,0 +1,173 @@
+/* ═══════════════════════════════════════════════════════
+   DESIGN TOKENS
+   ═══════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Stitch palette (Material-style surface scale) ──
+     Pulled directly from the Stitch tailwind config the user
+     shared: warm-neutral grays (NOT slate). Sidebars now sit
+     on `surface-container` so they're noticeably tinted vs
+     the main chat canvas. Cards inside chat stay pure white
+     (surface-container-lowest) so they pop. */
+  --gray-50:  #f9f9f9;
+  --gray-100: #f2f4f4;
+  --gray-150: #ebeeef;
+  --gray-200: #e4e9ea;
+  --gray-300: #dde4e5;
+  --gray-500: #adb3b4;
+  --gray-700: #757c7d;
+  --gray-800: #5a6061;
+  --gray-850: #2d3435;
+  --gray-900: #1a1f20;
+  --gray-950: #0c0f0f;
+
+  /* ── Surfaces (Stitch surface scale, mapped 1:1) ──────
+     The three-layer scale is intentional and load-bearing:
+       bg-shell  (chrome)  is the most-tinted   — sidebars stand apart
+       bg-app    (canvas)  is mildly-tinted     — chat backdrop
+       bg-panel  (cards)   is pure white        — cards pop against canvas
+     Don't collapse layers — that's what made E0-v1 look flat. */
+  --bg-app:       #f9f9f9;     /* surface — chat canvas (warm off-white) */
+  --bg-shell:     #ebeeef;     /* surface-container — sidebars / topbar */
+  --bg-panel:     #ffffff;     /* surface-container-lowest — AI msg / cards */
+  --bg-panel-2:   #f2f4f4;     /* surface-container-low — user msg */
+  --bg-elevated:  #e4e9ea;     /* surface-container-high — chips */
+  --bg-hover:     #f2f4f4;
+
+  /* ── Borders: subtle warm-gray hairlines ─────────── */
+  --border-subtle:  rgba(45, 52, 53, 0.05);
+  --border-default: rgba(45, 52, 53, 0.10);
+  --border-strong:  rgba(45, 52, 53, 0.20);
+
+  /* ── Text: darker than Stitch defaults so prose / labels / chips
+        all read with stronger contrast against the warm-white
+        surfaces. Each step roughly doubles the contrast against
+        --bg-app vs the original Stitch palette. */
+  --text-primary:   #14191a;   /* near-black warm-gray */
+  --text-secondary: #2d3435;   /* old --text-primary — now used for body prose */
+  --text-tertiary:  #4a5051;   /* darker outline */
+  --text-muted:     #6d7374;   /* secondary labels / icons */
+  --text-disabled:  #8a9091;   /* placeholder / TBA */
+
+  /* ── Overlay tints (warm-gray tinted) ─────────────
+     Reusable "wash" alpha values for hover backgrounds / faint
+     fills, all derived from on-surface so they blend with the
+     warm Stitch palette instead of looking cold-blue. */
+  --overlay-soft:    rgba(45, 52, 53, 0.04);
+  --overlay-medium:  rgba(45, 52, 53, 0.08);
+  --overlay-strong:  rgba(45, 52, 53, 0.14);
+
+  /* ── Accent: Stitch primary slate-blue ───────────── */
+  --accent:        #456085;
+  --accent-soft:   rgba(69, 96, 133, 0.10);
+  --accent-medium: rgba(69, 96, 133, 0.20);
+  --accent-strong: #395478;
+  /* Stitch primary-container — used for "tag highlight" / soft
+     bg badges where we want the accent flavor + more saturation
+     than --accent-soft. */
+  --accent-container:     #d4e3ff;
+  --on-accent-container:  #385377;
+
+  /* ── Status (Stitch's error palette, plus tuned success/
+        warning to match the warm-gray surface palette) ── */
+  --success:      #2e7d52;
+  --success-soft: rgba(46, 125, 82, 0.10);
+  --warning:      #b45309;
+  --warning-soft: rgba(180, 83, 9, 0.10);
+  --danger:       #9f403d;
+  --danger-soft:  rgba(159, 64, 61, 0.10);
+
+  /* ── RMP rating tier (vivid traffic-light palette) ────
+     The status tokens above are intentionally muted to fit the
+     overall Stitch warm-gray surface. But for the prof-rating
+     chip the user needs to discriminate red / yellow / green
+     at a glance, which means saturated fills + white text (or
+     dark text on the yellow band where white wouldn't pass
+     AA contrast). These are used ONLY by .cc-sg-rmp-*. */
+  --rmp-positive:    #16a34a;   /* green — Tailwind green-600 (≥ 4.5:1 vs white) */
+  --rmp-mixed:       #eab308;   /* yellow — Tailwind yellow-500 (paired w/ dark text) */
+  --rmp-mixed-text:  #1a1300;   /* near-black for contrast on yellow */
+  --rmp-negative:    #dc2626;   /* red — Tailwind red-600 (≥ 4.5:1 vs white) */
+
+  /* ── Recommendation card categories (Phase E2) ───
+     Retuned for white-surface contrast. Saturation bumped vs
+     the dark-theme values; -soft alpha lowered to 10% so the
+     badge backgrounds don't look muddy against white. */
+  --cat-core:           #3b82f6;   /* blue-500 */
+  --cat-core-soft:      rgba(59, 130, 246, 0.10);
+  --cat-practical:      #10b981;   /* emerald-500 */
+  --cat-practical-soft: rgba(16, 185, 129, 0.10);
+  --cat-career:         #f59e0b;   /* amber-500 */
+  --cat-career-soft:    rgba(245, 158, 11, 0.12);
+  --cat-advanced:       #8b5cf6;   /* violet-500 */
+  --cat-advanced-soft:  rgba(139, 92, 246, 0.10);
+  --cat-elective:       #6b7280;   /* gray-500 */
+  --cat-elective-soft:  rgba(107, 114, 128, 0.10);
+
+  /* ── Course block colors (schedule) ───────────────
+     Darker / more saturated than the dark-theme versions so
+     each course block remains legible against the white-ish
+     schedule rail. */
+  --course-1: #4f5d80;  --course-1s: rgba(79, 93, 128, 0.12);
+  --course-2: #10a37f;  --course-2s: rgba(16, 163, 127, 0.12);
+  --course-3: #8b5cf6;  --course-3s: rgba(139, 92, 246, 0.12);
+  --course-4: #db2777;  --course-4s: rgba(219, 39, 119, 0.12);
+  --course-5: #d97706;  --course-5s: rgba(217, 119, 6, 0.12);
+  --course-6: #0891b2;  --course-6s: rgba(8, 145, 178, 0.12);
+
+  /* ── Spacing: 4px system ─────────────────────────── */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ── Typography ──────────────────────────────────── */
+  /* Stitch uses Inter for every role (display / body / label).
+     Mono kept for code blocks only — falls through to the OS
+     monospace stack since we no longer ship JetBrains Mono. */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Type sizes bumped one step across the board. Body is now 16px
+     (browser default), labels 13px, micro 12px — better readability
+     and matches what the user asked for ("更大一些"). */
+  --text-title:    32px;       /* hero (Step 0 intro / page titles) */
+  --text-h1:       18px;
+  --text-h2:       16px;
+  --text-body:     16px;
+  --text-secondary-size: 14px; /* card titles, reasons, deadline footer */
+  --text-label:    13px;       /* chips, badges */
+  --text-micro:    12px;       /* smallest UI text — must still be legible */
+
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+
+  --leading-tight:   1.2;
+  --leading-snug:    1.3;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.6;
+
+  /* ── Radius ──────────────────────────────────────── */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+
+  /* ── Shadows ─────────────────────────────────────── */
+  --shadow-soft:  0 1px 2px rgba(45, 52, 53, 0.05);
+  --shadow-panel: 0 8px 24px rgba(45, 52, 53, 0.12);
+
+  /* ── Motion ──────────────────────────────────────── */
+  --transition: 160ms ease;
+  --transition-slow: 240ms ease;
+
+  /* ── Schedule panel sizing ───────────────────────── */
+  --sched-default: 520px;
+  --sched-min: 420px;
+  --sched-max: 760px;
+}

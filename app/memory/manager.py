@@ -14,8 +14,10 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from app import config
 from app.memory.base import MemoryProvider
 from app.memory.json_provider import JSONFileMemoryProvider
+from app.memory.sqlite_provider import SQLiteMemoryProvider
 
 logger = logging.getLogger(__name__)
 
@@ -109,11 +111,11 @@ class MemoryManager:
         except Exception as e:
             logger.warning("sync_turn failed: %s", e)
 
-    def on_session_end(self, user_id: str, session_id: str, history: list[dict]) -> None:
+    def on_session_end(self, user_id: str, session_id: str) -> None:
         if not self._provider:
             return
         try:
-            self._provider.on_session_end(user_id, session_id, history)
+            self._provider.on_session_end(user_id, session_id)
         finally:
             self._turn_counts.pop(session_id, None)
             self._initialized_sessions.discard(session_id)
@@ -127,31 +129,163 @@ class MemoryManager:
 
     # ── Channel-B helpers ──────────────────────────────────
 
-    def get_preferences(self, user_id: str) -> list[str]:
-        """Read current preferences (used by the reflection task to dedup)."""
+    def get_profile(self, user_id: str) -> dict:
+        if not self._provider:
+            return {}
+        try:
+            return self._provider.get_profile(user_id)
+        except Exception as e:
+            logger.warning("get_profile failed: %s", e)
+            return {}
+
+    def get_facts(self, user_id: str) -> list[str]:
         if not self._provider:
             return []
         try:
-            return self._provider.get_preferences(user_id) if hasattr(
-                self._provider, "get_preferences"
-            ) else []
+            return self._provider.get_facts(user_id)
+        except Exception as e:
+            logger.warning("get_facts failed: %s", e)
+            return []
+
+    def get_memory_snapshot(self, user_id: str) -> dict:
+        if not self._provider:
+            return {"profile": {}, "facts": [], "preferences": []}
+        try:
+            return self._provider.get_memory_snapshot(user_id)
+        except Exception as e:
+            logger.warning("get_memory_snapshot failed: %s", e)
+            return {"profile": {}, "facts": [], "preferences": []}
+
+    def get_preferences(self, user_id: str) -> list[dict]:
+        """Read current preferences as full preference dicts."""
+        if not self._provider:
+            return []
+        try:
+            return self._provider.get_preferences(user_id)
         except Exception as e:
             logger.warning("get_preferences failed: %s", e)
             return []
 
-    def add_preference(self, user_id: str, text: str) -> None:
+    def update_profile(self, user_id: str, updates: dict, **provenance) -> dict:
         if not self._provider:
-            return
+            return {}
         try:
-            self._provider.add_preference(user_id, text)
+            updated = self._provider.update_profile(user_id, updates, **provenance)
+            return updated if isinstance(updated, dict) else self.get_profile(user_id)
+        except Exception as e:
+            logger.warning("update_profile failed: %s", e)
+            return self.get_profile(user_id)
+
+    def add_fact(self, user_id: str, text: str, **provenance) -> dict | None:
+        if not self._provider:
+            return None
+        try:
+            return self._provider.add_fact(user_id, text, **provenance)
+        except Exception as e:
+            logger.warning("add_fact failed: %s", e)
+            return None
+
+    def add_preference(self, user_id: str, text: str, **provenance) -> dict | None:
+        if not self._provider:
+            return None
+        try:
+            return self._provider.add_preference(user_id, text, **provenance)
         except Exception as e:
             logger.warning("add_preference failed: %s", e)
+            return None
+
+    def remember(self, user_id: str, text: str, **kwargs) -> dict | None:
+        if not self._provider:
+            return None
+        try:
+            return self._provider.remember(user_id, text, **kwargs)
+        except Exception as e:
+            logger.warning("remember failed: %s", e)
+            return None
+
+    def recall(self, query: str, user_id: str, *, limit: int = 5) -> list[dict]:
+        if not self._provider:
+            return []
+        try:
+            return self._provider.recall(query, user_id, limit=limit)
+        except Exception as e:
+            logger.warning("recall failed: %s", e)
+            return []
+
+    def list_memories(
+        self,
+        user_id: str,
+        *,
+        kind: str | None = None,
+        status: str = "active",
+        limit: int = 100,
+    ) -> list[dict]:
+        if not self._provider:
+            return []
+        try:
+            return self._provider.list_memories(
+                user_id,
+                kind=kind,
+                status=status,
+                limit=limit,
+            )
+        except Exception as e:
+            logger.warning("list_memories failed: %s", e)
+            return []
+
+    def forget_memory(self, user_id: str, memory_id: str) -> dict | None:
+        if not self._provider:
+            return None
+        try:
+            return self._provider.forget_memory(user_id, memory_id)
+        except Exception as e:
+            logger.warning("forget_memory failed: %s", e)
+            return None
+
+    def memory_stats(self, user_id: str) -> dict:
+        if not self._provider:
+            return {}
+        try:
+            return self._provider.memory_stats(user_id)
+        except Exception as e:
+            logger.warning("memory_stats failed: %s", e)
+            return {}
+
+    def forget_preference(self, user_id: str, pref_id: str) -> dict | None:
+        if not self._provider:
+            return None
+        try:
+            return self._provider.forget_preference(user_id, pref_id)
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.warning("forget_preference failed: %s", e)
+            return None
+
+    def forget_all_preferences(self, user_id: str) -> int:
+        if not self._provider:
+            return 0
+        try:
+            return self._provider.forget_all_preferences(user_id)
+        except Exception as e:
+            logger.warning("forget_all_preferences failed: %s", e)
+            return 0
 
 
 # ── Module-level singleton ───────────────────────────────────
 
+def _default_provider() -> MemoryProvider:
+    if config.memory_provider() == "json":
+        return JSONFileMemoryProvider(base_dir=str(config.memory_root_path()))
+    return SQLiteMemoryProvider(
+        db_path=config.memory_db_path(),
+        legacy_base_dir=config.memory_root_path(),
+        max_active_items=config.memory_max_active_items(),
+    )
+
+
 _manager = MemoryManager()
-_manager.set_provider(JSONFileMemoryProvider())
+_manager.set_provider(_default_provider())
 
 
 def get_memory_manager() -> MemoryManager:

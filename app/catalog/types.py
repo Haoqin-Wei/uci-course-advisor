@@ -35,7 +35,7 @@ class Provenance:
     """
     source_term: str          # e.g. "2025_Spring"
     target_term: str          # e.g. "2025_Spring" or "2026_Spring"
-    loader: str               # e.g. "uci_relational" / "mock_data"
+    loader: str               # e.g. "uci_relational"
     source_file: Optional[str] = None
 
     @property
@@ -93,12 +93,24 @@ class CourseRecord:
     """
     ref: CourseRef
     course_numeric: Optional[int] = None         # for upper/lower division filtering
-    title: Optional[str] = None                  # from catalog API (not yet available)
+    title: Optional[str] = None
     units: Optional[float] = None
+    min_units: Optional[float] = None
+    max_units: Optional[float] = None
     description: Optional[str] = None
     prerequisites: tuple[CourseRef, ...] = field(default_factory=tuple)
+    prerequisite_text: Optional[str] = None
+    prerequisite_tree: Optional[dict] = None
     major_requirements: tuple[str, ...] = field(default_factory=tuple)
     ge_categories: tuple[str, ...] = field(default_factory=tuple)
+    course_level: Optional[str] = None
+    school: Optional[str] = None
+    department_name: Optional[str] = None
+    same_as: Optional[str] = None
+    restriction: Optional[str] = None
+    dependencies: tuple[CourseRef, ...] = field(default_factory=tuple)
+    terms_offered: tuple[str, ...] = field(default_factory=tuple)
+    all_known_instructors: tuple[str, ...] = field(default_factory=tuple)
     provenance: Optional[Provenance] = None
 
 
@@ -122,6 +134,7 @@ class SectionRecord:
     ge_categories: tuple[str, ...] = field(default_factory=tuple)
     # Schedule + capacity (optional — loader dependent)
     section_type: Optional[str] = None           # "Lec" / "Dis" / "Lab" / "Sem"
+    section_num: Optional[str] = None            # "A" / "A1" / "B" / "C3" — letter prefix is the pairing-group key (Lec A ↔ Dis A1)
     days: Optional[str] = None                   # "TuTh" / "MWF" / "F"
     start_time: Optional[str] = None             # "11:00" (24h "HH:MM")
     end_time: Optional[str] = None               # "12:20"
@@ -131,6 +144,8 @@ class SectionRecord:
     num_on_waitlist: Optional[int] = None
     status: Optional[str] = None                 # "OPEN" / "Waitl" / "FULL" / "NewOnly"
     is_cancelled: bool = False
+    restrictions: Optional[str] = None           # SOC 'Rstr' column, e.g. "A" / "BX" / "EJL"
+    final_exam: Optional[dict] = None            # Anteater finalExam shape — examStatus + (if SCHEDULED) dayOfWeek/month/day/startTime/endTime/bldg
     provenance: Optional[Provenance] = None
 
     @property

@@ -5,13 +5,15 @@ Every public function here returns a uniform envelope:
 
     {"found": bool, "source": "db" | "api" | "none", ...payload..., "reason": str?}
 
-Resolution order is always DB-first, then API:
+Resolution order is DB-first, then the most authoritative applicable source:
 
     1. Local CatalogView (data/uci/*.csv, loaded by UCIRelationalLoader)
        — fast, deterministic, covers the terms we've crawled
-    2. Anteater API (app.data.anteater)
-       — live, authoritative, covers anything UCI publishes right now
-    3. Not found — return {"found": False, "source": "none", "reason": "..."}
+    2. Registrar WebSoc fixed POST workflow (app.data.websoc_workflow)
+       — official offering evidence whenever local sections are missing or stale
+    3. Anteater API (app.data.anteater)
+       — secondary live fallback for terms UCI still publishes through the API
+    4. Not found — return {"found": False, "source": "none", "reason": "..."}
 
 Term-strict: every term-scoped function requires a `term` parameter
 and never returns data from a different term. If the student selected
@@ -26,17 +28,25 @@ the LLM is expected to say so honestly.
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Optional
 
 from app.catalog.cache import get_catalog
+from app.catalog.coverage import get_term_coverage
 from app.catalog.normalization import parse_course_mention
 from app.catalog.term import Term
-from app.catalog.types import CourseRef, SectionRecord
-from app.data import anteater
+from app.catalog.types import CourseRef, CourseRecord, SectionRecord
+from app import observability
+from app.data import anteater, websoc_workflow
 from app.data import professors as profs
+from app.data.prerequisites import evaluate_prerequisite_tree
 from app.memory import get_memory_manager
+from app.academic import get_ai_academic_context
 
 logger = logging.getLogger(__name__)
+
+_course_info_cache: dict[str, dict] = {}
 
 
 # ══════════════════════════════════════════════════════════
@@ -57,11 +67,113 @@ def _anteater_course_key(ref: CourseRef) -> str:
     return f"{ref.department.replace(' ', '')}{ref.course_number}"
 
 
+def _course_cache_key(ref: CourseRef) -> str:
+    return ref.display().replace(" ", "").upper()
+
+
+def _course_number_sort_key(value: str) -> tuple[int, str, str]:
+    import re
+
+    text = (value or "").upper()
+    match = re.match(r"([A-Z]*)(\d+)([A-Z]*)$", text)
+    if not match:
+        return (10_000, text, "")
+    prefix, number, suffix = match.groups()
+    return (int(number), prefix, suffix)
+
+
+def _format_units(course: CourseRecord):
+    if course.units is not None:
+        return int(course.units) if float(course.units).is_integer() else course.units
+    if course.min_units is None and course.max_units is None:
+        return None
+    if course.min_units == course.max_units:
+        value = course.min_units
+        return int(value) if value is not None and float(value).is_integer() else value
+
+    def fmt(value):
+        if value is None:
+            return "?"
+        return str(int(value)) if float(value).is_integer() else str(value)
+
+    return f"{fmt(course.min_units)}–{fmt(course.max_units)}"
+
+
+def _course_has_local_metadata(course: CourseRecord) -> bool:
+    return any(
+        value not in (None, "", (), [])
+        for value in (
+            course.title,
+            course.units,
+            course.min_units,
+            course.max_units,
+            course.description,
+            course.course_level,
+            course.restriction,
+            course.prerequisite_text,
+            course.prerequisite_tree,
+            course.prerequisites,
+        )
+    )
+
+
+def _course_record_to_dict(course: CourseRecord) -> dict:
+    provenance = course.provenance
+    provenance_dict = (
+        {
+            "source_term": provenance.source_term,
+            "target_term": provenance.target_term,
+            "loader": provenance.loader,
+            "source_file": provenance.source_file,
+            "is_historical_proxy": provenance.is_historical_proxy,
+        }
+        if provenance
+        else None
+    )
+    return {
+        "course_id": course.ref.display(),
+        "title": course.title,
+        "units": _format_units(course),
+        "min_units": course.min_units,
+        "max_units": course.max_units,
+        "level": course.course_level,
+        "school": course.school,
+        "department": course.department_name or course.ref.department,
+        "description": course.description,
+        "same_as": course.same_as,
+        "restriction": course.restriction,
+        "prerequisite_text": course.prerequisite_text,
+        "prerequisite_tree": course.prerequisite_tree,
+        "prerequisites": [ref.display() for ref in course.prerequisites],
+        "dependencies": [ref.display() for ref in course.dependencies],
+        "ge_categories": list(course.ge_categories),
+        "terms_offered": list(course.terms_offered),
+        "all_known_instructors": list(course.all_known_instructors),
+        "provenance": provenance_dict,
+    }
+
+
+def _find_local_course_record(ref: CourseRef) -> Optional[CourseRecord]:
+    from app.catalog.term import get_term_registry
+
+    for term in get_term_registry().all():
+        cv = get_catalog(term)
+        if not cv:
+            continue
+        record = cv.get_course(ref)
+        if record and _course_has_local_metadata(record):
+            return record
+    return None
+
+
 def _section_record_to_dict(s: SectionRecord) -> dict:
     """Shape that agent tools serialize back to the LLM. Plain primitives
     only — no dataclasses, no None vs missing ambiguity for the LLM."""
+    # `restrictions` may not be on older SectionRecord dataclasses
+    # (CSV loader hasn't been re-cut). Tolerate missing attribute.
     return {
         "section_code":  s.section_code,
+        "section_num":   getattr(s, "section_num", None),  # "A" / "A1" / "B" / "C3"
         "section_type":  s.section_type,
         "days":          s.days,
         "start_time":    s.start_time,
@@ -77,6 +189,10 @@ def _section_record_to_dict(s: SectionRecord) -> dict:
         "status":        s.status,
         "is_cancelled":  s.is_cancelled,
         "ge_categories": list(s.ge_categories),
+        "restrictions":  getattr(s, "restrictions", None),
+        # CSV loader doesn't carry finalExam — None is fine, frontend
+        # gracefully shows "TBA" in that case.
+        "final_exam":    getattr(s, "final_exam", None),
     }
 
 
@@ -100,6 +216,7 @@ def _api_section_to_dict(sec: dict) -> dict:
                   else None)
     return {
         "section_code":  sec.get("sectionCode"),
+        "section_num":   sec.get("sectionNum"),       # "A" / "A1" / "B" / "C3" — the group letter is the prefix
         "section_type":  sec.get("sectionType"),
         "days":          days,
         "start_time":    st,
@@ -114,6 +231,45 @@ def _api_section_to_dict(sec: dict) -> dict:
         "status":        sec.get("status"),
         "is_cancelled":  False,
         "ge_categories": [],
+        # Anteater returns `restrictions` as a concatenated string like
+        # "A" or "AB" or "EJL" — the SOC Rstr column. Surface as-is
+        # so the dispatcher can decode against RESTRICTION_CODES.
+        "restrictions":  sec.get("restrictions"),
+        # finalExam: dict with examStatus + (if scheduled) dayOfWeek,
+        # month, day, startTime/endTime {hour, minute}, bldg.
+        # Pass through verbatim so the frontend can format.
+        "final_exam":    sec.get("finalExam"),
+    }
+
+
+def _api_live_section_to_dict(sec: dict, *, retrieved_at: Optional[str]) -> dict:
+    """Anteater WebSoc section → live availability schema."""
+
+    base = _api_section_to_dict(sec)
+    waitlist_capacity = _safe_int(sec.get("numWaitlistCap"))
+    new_only_reserved = _safe_int(sec.get("numNewOnlyReserved"))
+    updated_at = sec.get("updatedAt")
+    return {
+        **base,
+        "waitlist_capacity": waitlist_capacity,
+        "new_only_reserved": new_only_reserved,
+        "updated_at": updated_at,
+        "retrieved_at": retrieved_at,
+        "source": "live_anteater_websoc",
+        "is_live": True,
+    }
+
+
+def _local_not_live_section_to_dict(s: SectionRecord, *, reason: str) -> dict:
+    return {
+        **_section_record_to_dict(s),
+        "waitlist_capacity": None,
+        "new_only_reserved": None,
+        "updated_at": None,
+        "retrieved_at": None,
+        "source": "local_not_live",
+        "is_live": False,
+        "not_live_reason": reason,
     }
 
 
@@ -137,8 +293,7 @@ def get_student_profile(student_id: str) -> dict:
     fallback — if the user has never been seen, returns found=False."""
     try:
         mem = get_memory_manager()
-        provider = mem.provider
-        profile = provider.get_profile(student_id) if provider else {}
+        profile = mem.get_profile(student_id)
     except Exception as e:
         logger.warning("get_student_profile failed: %s", e)
         return {"found": False, "source": "none",
@@ -146,6 +301,20 @@ def get_student_profile(student_id: str) -> dict:
     if not profile:
         return {"found": False, "source": "none",
                 "reason": f"no profile recorded for {student_id}"}
+    profile = dict(profile)
+    academic = get_ai_academic_context(student_id)
+    graded = {
+        item["course_id"]: {
+            "course_id": item["course_id"],
+            "grade": item.get("effective_grade"),
+        }
+        for item in academic.get("courses") or []
+        if isinstance(item, dict) and item.get("course_id")
+    }
+    profile["completed_course_attempts"] = [
+        graded.get(course_id, course_id)
+        for course_id in profile.get("completed_courses") or []
+    ]
     return {"found": True, "source": "db", "profile": profile}
 
 
@@ -154,32 +323,32 @@ def get_student_profile(student_id: str) -> dict:
 def get_course_info(course_id: str) -> dict:
     """
     Catalog metadata (title, units, description, prerequisites) for one
-    course. DB only has IDs that are offered in a known term; for
-    everything else we go straight to Anteater /courses/{id}.
+    course. Local courses.csv metadata is authoritative when present;
+    Anteater is only a fallback for courses absent from the local build.
     """
     ref = _to_ref(course_id)
     if not ref:
         return {"found": False, "source": "none",
                 "reason": f"could not parse course id {course_id!r}"}
 
-    # DB layer first: see if any cached CatalogView knows this course
-    from app.catalog.term import get_term_registry
-    for term in get_term_registry().all():
-        cv = get_catalog(term)
-        if not cv:
-            continue
-        cr = cv.get_course(ref)
-        if cr:
-            # CSV records lack title/units/description — only worth
-            # returning if we ALSO got it from a richer source. For
-            # now treat as a hint and still call Anteater for the
-            # human-readable fields.
-            break
+    cache_key = _course_cache_key(ref)
+    if cache_key in _course_info_cache:
+        return deepcopy(_course_info_cache[cache_key])
+
+    record = _find_local_course_record(ref)
+    if record:
+        result = {
+            "found": True,
+            "source": "db",
+            "course": _course_record_to_dict(record),
+        }
+        _course_info_cache[cache_key] = deepcopy(result)
+        return result
 
     # API: Anteater /courses
     data = anteater.fetch_course(_anteater_course_key(ref))
     if data:
-        return {
+        result = {
             "found": True,
             "source": "api",
             "course": {
@@ -196,9 +365,52 @@ def get_course_info(course_id: str) -> dict:
                 "all_known_instructors": data.get("instructors") or [],
             },
         }
+        _course_info_cache[cache_key] = deepcopy(result)
+        return result
 
     return {"found": False, "source": "none",
             "reason": f"{ref.display()} not found in DB or Anteater"}
+
+
+def batch_get_course_info(course_ids: list[str]) -> dict:
+    """Batch metadata enrichment for callers that already enumerated courses.
+
+    Results use the exact same course payload as get_course_info(). Duplicate
+    inputs are collapsed by canonical CourseRef while preserving first-seen
+    output order.
+    """
+    courses: list[dict] = []
+    missing: list[dict] = []
+    seen: set[str] = set()
+
+    for raw_course_id in course_ids or []:
+        ref = _to_ref(raw_course_id)
+        if not ref:
+            missing.append({
+                "course_id": raw_course_id,
+                "reason": f"could not parse course id {raw_course_id!r}",
+            })
+            continue
+        key = _course_cache_key(ref)
+        if key in seen:
+            continue
+        seen.add(key)
+        info = get_course_info(raw_course_id)
+        if info.get("found") and info.get("course"):
+            courses.append(info["course"])
+        else:
+            missing.append({
+                "course_id": ref.display(),
+                "reason": info.get("reason", "not found"),
+            })
+
+    return {
+        "found": bool(courses),
+        "source": "db_or_api" if courses else "none",
+        "courses": courses,
+        "missing": missing,
+        "total_found": len(courses),
+    }
 
 
 # ── Sections (term-strict) ───────────────────────────────
@@ -206,9 +418,10 @@ def get_course_info(course_id: str) -> dict:
 def get_sections(course_id: str, term: str) -> dict:
     """
     Sections for a course in a specific term. DB first (CatalogView for
-    that term), then Anteater websoc. Returns an EMPTY list if neither
-    has data — distinct from found=False which means we could not even
-    interpret the request.
+    that term), then the official Registrar WebSoc POST workflow, then
+    Anteater only if the official workflow is unavailable. An authoritative
+    empty Registrar result means the course was not offered in that term;
+    an unavailable result remains distinct from that conclusion.
     """
     ref = _to_ref(course_id)
     if not ref:
@@ -218,43 +431,317 @@ def get_sections(course_id: str, term: str) -> dict:
     if not t:
         return {"found": False, "source": "none", "sections": [],
                 "reason": f"could not parse term {term!r} (expected e.g. 'Spring 2026')"}
+    coverage = get_term_coverage(t)
+    coverage_status = coverage.get("coverage_status")
+    checked_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    base = {
+        "term": t.display(), "course_id": ref.display(),
+        "coverage_status": coverage_status, "data_coverage": coverage,
+        "checked_at": checked_at,
+    }
+    attempts = []
+    if coverage_status in {"partial", "stale", "unavailable"}:
+        observability.increment("data.coverage_status", status=coverage_status)
+        observability.log_event(
+            logger,
+            logging.WARNING,
+            "data_coverage",
+            term=t.display(),
+            course_id=ref.display(),
+            status=coverage_status,
+            source="catalog",
+            updated_at=coverage.get("updated_at"),
+        )
 
     # DB
     cv = get_catalog(t)
     if cv:
         records = cv.get_sections(ref)
-        if records:
+        if records and coverage_status != "stale":
             return {
+                **base,
                 "found": True,
                 "source": "db",
-                "term": t.display(),
-                "course_id": ref.display(),
+                "offering_status": "offered",
+                "authoritative": False,
+                "retrieved_at": coverage.get("updated_at"),
                 "sections": [_section_record_to_dict(s) for s in records],
             }
 
-    # API fallback
-    sections_raw = anteater.fetch_sections(
-        department=ref.department,
-        course_number=ref.course_number,
-        year=str(t.year),
-        quarter=t.quarter,
-    )
+    # The Registrar's fixed POST workflow is the authoritative fallback for
+    # every local miss, even if a legacy manifest calls the term "complete".
+    # It can distinguish a verified no-match from transport/parse failure;
+    # the agent must not attempt to reproduce this with an ad-hoc GET URL.
+    registrar_result: Optional[dict] = None
+    try:
+        registrar_result = websoc_workflow.fetch_websoc_course_offering(
+            term=t.display(),
+            department=ref.department,
+            course_number=ref.course_number,
+        )
+    except Exception as e:
+        logger.warning(
+            "Registrar WebSoc offering lookup failed for %s %s: %s",
+            ref.display(),
+            t.display(),
+            e,
+        )
+        observability.increment("data.refresh_failures", source="registrar_websoc")
+        registrar_result = {
+            "ok": False,
+            "offering_status": "unavailable",
+            "error_code": type(e).__name__,
+            "message": str(e),
+        }
+    attempts.append({
+        "source": "registrar_websoc", "checked_at": checked_at,
+        "retrieved_at": registrar_result.get("retrieved_at"),
+        "source_url": registrar_result.get("source_url") or websoc_workflow.WEBSOC_URL,
+        "offering_status": registrar_result.get("offering_status", "unavailable"),
+        "error_code": registrar_result.get("error_code"),
+        "message": registrar_result.get("message") or registrar_result.get("reason"),
+    })
+    if (registrar_result.get("ok") and registrar_result.get("authoritative")
+            and registrar_result.get("offering_status") in {"offered", "not_offered"}):
+        sections = list(registrar_result.get("sections") or [])
+        return {
+            **base,
+            "ok": True,
+            "found": bool(sections),
+            "source": "registrar_websoc",
+            "offering_status": registrar_result.get("offering_status"),
+            "authoritative": True,
+            "source_url": registrar_result.get("source_url"),
+            "retrieved_at": registrar_result.get("retrieved_at"),
+            "workflow_id": registrar_result.get("workflow_id"),
+            "fetches": registrar_result.get("fetches") or [],
+            "lookup_attempts": attempts,
+            "sections": sections,
+            "reason": registrar_result.get("reason"),
+        }
+
+    if registrar_result.get("error_code") == "websoc_term_unavailable":
+        # The official form was read successfully. Preserve that evidence so
+        # future-term callers can distinguish unpublished from a request error.
+        return {
+            **base,
+            "found": False, "source": "registrar_websoc", "sections": [],
+            "authoritative": False,
+            "offering_status": "unavailable",
+            "error_code": "websoc_term_unavailable",
+            "source_url": registrar_result.get("source_url"),
+            "retrieved_at": registrar_result.get("retrieved_at"),
+            "reason": registrar_result.get("message"),
+            "lookup_attempts": attempts,
+        }
+
+    # Secondary data can establish an offering, but an empty aggregate result
+    # after an official failure cannot establish a definitive no-offering.
+    secondary_checked_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    secondary_error = None
+    try:
+        sections_raw = anteater.fetch_sections(
+            department=ref.department,
+            course_number=ref.course_number,
+            year=str(t.year),
+            quarter=t.quarter,
+        )
+    except Exception as e:
+        logger.warning("live section fallback failed for %s %s: %s", ref.display(), t.display(), e)
+        observability.increment("data.refresh_failures", source="anteater")
+        observability.log_event(
+            logger,
+            logging.WARNING,
+            "data_refresh_failure",
+            source="anteater",
+            term=t.display(),
+            course_id=ref.display(),
+            error=f"{type(e).__name__}: {e}",
+        )
+        sections_raw = None
+        secondary_error = {"error_code": type(e).__name__, "message": str(e)}
+    attempts.append({
+        "source": "api", "source_url": anteater.WEBSOC_URL,
+        "checked_at": secondary_checked_at,
+        "offering_status": "offered" if sections_raw else "unavailable",
+        **(secondary_error or ({} if sections_raw else {
+            "error_code": "secondary_lookup_unconfirmed",
+            "message": "Secondary API returned no usable sections; this does not establish no offering.",
+        })),
+    })
     if sections_raw:
         return {
+            **base,
             "found": True,
             "source": "api",
-            "term": t.display(),
-            "course_id": ref.display(),
+            "offering_status": "offered",
+            "authoritative": False,
+            "source_url": anteater.WEBSOC_URL,
+            # fetch_sections may return a cached result without a fetch date.
+            # checked_at is the lookup time, not a fabricated retrieval date.
+            "retrieved_at": None,
+            "lookup_attempts": attempts,
             "sections": [_api_section_to_dict(s) for s in sections_raw],
         }
 
     return {
+        **base,
         "found": False,
         "source": "none",
+        "offering_status": "unavailable",
+        "authoritative": False,
+        "error_code": "offering_lookup_unavailable",
+        "sections": [],
+        "registrar_websoc": attempts[0],
+        "lookup_attempts": attempts,
+        "reason": (
+            f"cannot confirm whether {ref.display()} is offered in {t.display()}; "
+            "local sections are missing or stale, and neither Registrar WebSoc "
+            "nor the secondary API supplied a verified result"
+        ),
+    }
+
+
+def get_live_sections(
+    course_id: str,
+    term: str,
+    section_codes: Optional[list[str]] = None,
+    force_refresh: bool = False,
+    request_timeout_s: Optional[float] = None,
+) -> dict:
+    """
+    Live availability/status for a course in a specific term.
+
+    This is intentionally separate from `get_sections()`: ordinary
+    planning can use deterministic local catalog data, but questions
+    about current seats, waitlists, OPEN/FULL/Waitl status, NOR, or
+    restriction codes should use this live WebSoc path first.
+    """
+
+    ref = _to_ref(course_id)
+    if not ref:
+        return {"found": False, "source": "none", "sections": [],
+                "is_live": False,
+                "reason": f"could not parse course id {course_id!r}"}
+    t = _to_term(term)
+    if not t:
+        return {"found": False, "source": "none", "sections": [],
+                "is_live": False,
+                "reason": f"could not parse term {term!r} (expected e.g. 'Spring 2026')"}
+
+    normalized_codes = [
+        str(code).strip()
+        for code in (section_codes or [])
+        if str(code).strip()
+    ]
+    coverage = get_term_coverage(t)
+
+    try:
+        live_kwargs = dict(
+            year=str(t.year),
+            quarter=t.quarter,
+            department=ref.department,
+            course_number=ref.course_number,
+            section_codes=normalized_codes or None,
+            force_refresh=force_refresh,
+        )
+        if request_timeout_s is not None:
+            live_kwargs["request_timeout_s"] = request_timeout_s
+        live = anteater.fetch_live_sections(**live_kwargs)
+    except Exception as e:
+        logger.warning("live WebSoc availability failed for %s %s: %s", ref.display(), t.display(), e)
+        observability.increment("data.refresh_failures", source="anteater_live_websoc")
+        observability.log_event(
+            logger,
+            logging.WARNING,
+            "data_refresh_failure",
+            source="anteater_live_websoc",
+            term=t.display(),
+            course_id=ref.display(),
+            error=f"{type(e).__name__}: {e}",
+        )
+        live = None
+
+    if live is not None:
+        sections_raw = live.get("sections") or []
+        stale = bool(live.get("stale"))
+        sections = [
+            _api_live_section_to_dict(s, retrieved_at=live.get("retrieved_at"))
+            for s in sections_raw
+        ]
+        return {
+            "found": bool(sections),
+            "source": "last_known_live" if stale else "live_anteater_websoc",
+            "is_live": not stale,
+            "stale": stale,
+            "stale_age_seconds": live.get("stale_age_seconds"),
+            "term": t.display(),
+            "course_id": ref.display(),
+            "coverage_status": coverage.get("coverage_status"),
+            "data_coverage": coverage,
+            "retrieved_at": live.get("retrieved_at"),
+            "cache_hit": bool(live.get("cache_hit")),
+            "sections": sections,
+            "reason": None if sections else (
+                f"live WebSoc returned no sections for {ref.display()} in {t.display()}"
+            ),
+        }
+
+    fallback_reason = "live Anteater WebSoc unavailable; local data is not current availability"
+    observability.increment(
+        "live_websoc.fallback",
+        reason="anteater_unavailable",
+        result="attempt_local",
+    )
+    cv = get_catalog(t)
+    if cv:
+        records = cv.get_sections(ref)
+        if normalized_codes:
+            code_set = set(normalized_codes)
+            records = [s for s in records if s.section_code in code_set]
+        if records:
+            observability.increment(
+                "live_websoc.fallback",
+                reason="anteater_unavailable",
+                result="local_not_live",
+            )
+            return {
+                "found": True,
+                "source": "local_not_live",
+                "is_live": False,
+                "term": t.display(),
+                "course_id": ref.display(),
+                "coverage_status": coverage.get("coverage_status"),
+                "data_coverage": coverage,
+                "retrieved_at": None,
+                "cache_hit": False,
+                "sections": [
+                    _local_not_live_section_to_dict(s, reason=fallback_reason)
+                    for s in records
+                ],
+                "reason": fallback_reason,
+            }
+
+    observability.increment(
+        "live_websoc.fallback",
+        reason="anteater_unavailable",
+        result="no_fallback",
+    )
+    return {
+        "found": False,
+        "source": "none",
+        "is_live": False,
         "term": t.display(),
         "course_id": ref.display(),
+        "coverage_status": coverage.get("coverage_status"),
+        "data_coverage": coverage,
+        "retrieved_at": None,
+        "cache_hit": False,
         "sections": [],
-        "reason": f"no sections published for {ref.display()} in {t.display()}",
+        "reason": (
+            f"live WebSoc could not verify current availability for "
+            f"{ref.display()} in {t.display()}"
+        ),
     }
 
 
@@ -262,41 +749,52 @@ def get_sections(course_id: str, term: str) -> dict:
 
 def check_prerequisites_met(
     course_id: str,
-    completed_courses: Optional[list[str]] = None,
-    in_progress_courses: Optional[list[str]] = None,
+    completed_courses: Optional[list] = None,
+    in_progress_courses: Optional[list] = None,
+    allow_in_progress: bool = True,
 ) -> dict:
     """
-    Resolve prereqs via get_course_info then compare against the
-    student's completed + in-progress lists. Both lists count toward
-    satisfaction (a course currently being taken will be done before
-    the term the user is planning).
+    Resolve prereqs via get_course_info then evaluate the structured
+    prerequisite tree against the student's completed + in-progress
+    lists. In-progress courses count by default because this tool is
+    used for future-term planning; the response makes that policy
+    explicit via `in_progress_policy`.
     """
     info = get_course_info(course_id)
     if not info.get("found"):
         return {"found": False, "source": "none",
+                "status": "unknown",
+                "met": False,
+                "missing": [],
+                "unknown": [info.get("reason", f"unknown course {course_id!r}")],
                 "reason": info.get("reason", f"unknown course {course_id!r}")}
-    prereqs_raw = info["course"].get("prerequisites") or []
-    # Normalize both sides through parse_course_mention → CourseRef so
-    # 'ICS33' (alias) matches 'I&C_SCI_33' (Anteater canonical) and
-    # 'I&C SCI 33' (CSV form). Comparing raw strings doesn't work
-    # across these formats.
-    prereqs_refs = [_to_ref(p) for p in prereqs_raw if p]
-    satisfied_refs: set[CourseRef] = set()
-    for c in (completed_courses or []) + (in_progress_courses or []):
-        ref = _to_ref(c or "")
-        if ref:
-            satisfied_refs.add(ref)
-    missing = [r.display() for r in prereqs_refs
-               if r and r not in satisfied_refs]
-    required = [r.display() for r in prereqs_refs if r]
+
+    course = info["course"]
+    result = evaluate_prerequisite_tree(
+        course.get("prerequisite_tree"),
+        completed_courses=completed_courses or [],
+        in_progress_courses=in_progress_courses or [],
+        flat_prerequisites=course.get("prerequisites") or [],
+        prerequisite_text=course.get("prerequisite_text"),
+        allow_in_progress=allow_in_progress,
+    )
+    required = course.get("prerequisites") or []
     return {
         "found": True,
         "source": info["source"],
-        "course_id": info["course"].get("course_id"),
-        "met": len(missing) == 0,
-        "missing": missing,
+        "course_id": course.get("course_id"),
+        "status": result.status,
+        "met": result.met,
+        "missing": result.missing,
+        "unknown": result.unknown,
+        "satisfied": result.satisfied,
+        "in_progress_used": result.in_progress_used,
         "required": required,
-        "prerequisite_text": info["course"].get("prerequisite_text"),
+        "prerequisite_text": course.get("prerequisite_text"),
+        "prerequisite_tree": course.get("prerequisite_tree"),
+        "in_progress_policy": (
+            "counts_for_future_term" if allow_in_progress else "ignored"
+        ),
     }
 
 
@@ -327,7 +825,10 @@ def search_courses(
                 "reason": f"no local catalog data for {t.display()}"}
     excluded = {(c or "").replace(" ", "").replace("_", "").upper()
                 for c in (exclude_ids or [])}
-    refs = cv.all_course_refs()
+    refs = sorted(
+        cv.all_course_refs(),
+        key=lambda r: (r.department, _course_number_sort_key(r.course_number), r.course_number),
+    )
     out = []
     for r in refs:
         if department and r.department != department.upper():
@@ -338,7 +839,16 @@ def search_courses(
             cr = cv.get_course(r)
             if not cr or ge_category not in (cr.ge_categories or ()):
                 continue
-        out.append({"course_id": r.display()})
+        cr = cv.get_course(r)
+        entry = {"course_id": r.display()}
+        if cr:
+            entry.update({
+                "title": cr.title,
+                "units": _format_units(cr),
+                "level": cr.course_level,
+                "ge_categories": list(cr.ge_categories),
+            })
+        out.append(entry)
     return {
         "found": True,
         "source": "db",

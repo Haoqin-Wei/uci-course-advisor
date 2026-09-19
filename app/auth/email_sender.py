@@ -1,9 +1,9 @@
 """
 Email sender abstraction.
 
-In dev (default), prints the email body to stdout / the uvicorn log
-so you can copy the 6-digit code into the verify form without
-needing any real mail infrastructure.
+In dev (default), records that a code was issued without logging the
+actual 6-digit code. Tests can inspect the SQLite verification table;
+real private-beta deployments should configure RESEND_API_KEY.
 
 When you're ready for real email, set RESEND_API_KEY in the env and
 the same send_verification_code() call will route through Resend's
@@ -49,20 +49,13 @@ def send_verification_code(email: str, code: str) -> bool:
 
 def _send_via_console(email: str, code: str) -> bool:
     """
-    Print a clearly delimited block to the log. The Box drawing
-    characters make it grep-able when the uvicorn log is busy
-    streaming agent-loop output.
+    Development fallback. Do not log the actual code; verification
+    codes are authentication secrets even in local logs.
     """
-    banner = (
-        "\n"
-        "┌──────────────────────────────────────────────┐\n"
-        "│  ZotAdvisor — verification code (dev mode)   │\n"
-        f"│  to:   {email:<37s} │\n"
-        f"│  code: {code:<37s} │\n"
-        "│  (set RESEND_API_KEY in env to send for real) │\n"
-        "└──────────────────────────────────────────────┘"
+    logger.info(
+        "Verification code issued for %s (dev console transport; code not logged)",
+        email,
     )
-    logger.info(banner)
     return True
 
 

@@ -5,73 +5,26 @@ Powers the Memory panel in the UI — lets users see what ZotAdvisor
 remembers about them (facts, preferences, major progress) and forget
 individual preferences or all of them.
 
-Endpoints:
-    GET  /api/memory/{user_id}                              snapshot
-    DELETE /api/memory/{user_id}/preferences/{pref_id}      forget one
-    POST /api/memory/{user_id}/preferences/forget_all       wipe prefs
-
-Memory layout on disk (one folder per user):
-    data/memory/{user_id}/
-      profile.json     hard facts (major, year, completed_courses, ...)
-      facts.json       Channel A extraction snapshots (often overlaps profile)
-      preferences.json [{id, text, learned_at}, ...]  Channel B output
-
-The DELETE/POST endpoints rewrite preferences.json. Concurrency isn't a
-concern for this demo (single user per file), but writes are atomic via
-read-modify-write on the whole array.
+Endpoints read and write through the active MemoryManager provider. The
+router intentionally does not touch JSON files directly, so provider
+caches stay coherent inside the current process.
 """
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.auth.deps import current_user_optional
+from app.catalog.normalization import parse_course_mention
+from app.memory import get_memory_manager
 from app.data.uci_general.major_requirements import (
     get_major, compute_progress,
 )
 
 
 router = APIRouter()
-
-MEMORY_ROOT = Path("data/memory")
-
-
-# ── Helpers ──────────────────────────────────────────────
-
-def _user_dir(user_id: str, *, create: bool = False) -> Path:
-    """
-    Resolve a user's memory dir. Path traversal is rejected. If
-    create=True, the dir is mkdir'd on demand — used by write
-    endpoints so a freshly-signed-up account doesn't have to seed
-    its directory before its first write. Read endpoints pass
-    create=False and handle the missing-dir case themselves.
-    """
-    if not user_id or "/" in user_id or "\\" in user_id or ".." in user_id:
-        raise HTTPException(status_code=400, detail="Invalid user_id")
-    path = MEMORY_ROOT / user_id
-    if create:
-        path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def _read_json(path: Path, default):
-    if not path.exists():
-        return default
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return default
-
-
-def _write_json(path: Path, data) -> None:
-    path.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
 
 
 # Names students might say → catalogue slug. Add entries as more majors
@@ -104,31 +57,20 @@ def _major_slug_from_profile(profile: dict) -> Optional[str]:
 @router.get("/api/memory/{user_id}")
 def get_memory(user_id: str, user: dict = Depends(current_user_optional)):
     real_user_id = user["id"]
-    user_dir = _user_dir(real_user_id)
-
-    # Brand-new authenticated account: dir hasn't been written yet.
-    # Return empty payload rather than 404 — the frontend treats this
-    # as "first-time user" and triggers onboarding (Phase C).
-    if not user_dir.exists() or not user_dir.is_dir():
-        return {
-            "user_id": real_user_id,
-            "profile": {},
-            "facts":   {},
-            "preferences": [],
-            "major_progress": None,
-        }
-
-    profile = _read_json(user_dir / "profile.json", default={}) or {}
-    prefs   = _read_json(user_dir / "preferences.json", default=[]) or []
-    facts   = _read_json(user_dir / "facts.json", default={}) or {}
+    snapshot = get_memory_manager().get_memory_snapshot(real_user_id)
+    profile = snapshot.get("profile") or {}
+    prefs = snapshot.get("preferences") or []
+    facts = snapshot.get("facts") or []
+    memories = snapshot.get("memories") or []
+    memory_stats = snapshot.get("memory_stats") or {}
 
     # Coerce shapes defensively (the JSON files are user-editable).
     if not isinstance(profile, dict):
         profile = {}
     if not isinstance(prefs, list):
         prefs = []
-    if not isinstance(facts, dict):
-        facts = {}
+    if not isinstance(facts, list):
+        facts = []
 
     # Compute major progress (only for hand-crafted majors).
     progress = None
@@ -150,7 +92,38 @@ def get_memory(user_id: str, user: dict = Depends(current_user_optional)):
         "profile": profile,
         "facts":   facts,
         "preferences": prefs,
+        "memories": memories if isinstance(memories, list) else [],
+        "memory_stats": memory_stats if isinstance(memory_stats, dict) else {},
         "major_progress": progress,
+    }
+
+
+@router.get("/api/memory/{user_id}/items")
+def list_memory_items(
+    user_id: str,
+    kind: Optional[str] = None,
+    status: str = "active",
+    limit: int = 100,
+    user: dict = Depends(current_user_optional),
+):
+    """Inspect evidence records, including superseded/forgotten versions."""
+    real_user_id = user["id"]
+    if kind not in (None, "fact", "preference"):
+        raise HTTPException(status_code=400, detail="kind must be fact or preference")
+    if status not in ("active", "superseded", "forgotten", "all"):
+        raise HTTPException(
+            status_code=400,
+            detail="status must be active, superseded, forgotten, or all",
+        )
+    return {
+        "user_id": real_user_id,
+        "items": get_memory_manager().list_memories(
+            real_user_id,
+            kind=kind,
+            status=status,
+            limit=max(1, min(limit, 500)),
+        ),
+        "stats": get_memory_manager().memory_stats(real_user_id),
     }
 
 
@@ -169,6 +142,7 @@ class ProfileUpdate(BaseModel):
     college:           Optional[str]       = None
     school_slug:       Optional[str]       = None
     program_id:        Optional[str]       = None  # Anteater id, e.g. "BS-201"
+    catalog_year:      Optional[str]       = None  # e.g. "2024-2025"
     completed_courses: Optional[list[str]] = None
     selected_courses:  Optional[list[str]] = None
 
@@ -179,18 +153,15 @@ def update_profile(
     user: dict = Depends(current_user_optional),
 ):
     real_user_id = user["id"]
-    user_dir = _user_dir(real_user_id, create=True)
-    path = user_dir / "profile.json"
-
-    profile = _read_json(path, default={}) or {}
-    if not isinstance(profile, dict):
-        profile = {}
+    manager = get_memory_manager()
+    profile = manager.get_profile(real_user_id)
 
     updates = body.model_dump(exclude_none=True)
     # Treat "" / [] as "skip" so partial submissions don't blank fields
     # the user didn't touch on this round. Lists are deduplicated +
     # stable-sorted so re-submits don't churn the file.
     cleaned: dict = {}
+    profile_warnings: list[str] = []
     for k, v in updates.items():
         if isinstance(v, str):
             v = v.strip()
@@ -202,18 +173,37 @@ def update_profile(
             for item in v:
                 if not isinstance(item, str): continue
                 item = item.strip().upper()
-                if item and item not in seen:
-                    seen.add(item)
-                    deduped.append(item)
+                if not item:
+                    continue
+                if item in seen:
+                    profile_warnings.append(
+                        f"Duplicate {k} entry {item} was submitted once; confirm your course list."
+                    )
+                    continue
+                seen.add(item)
+                deduped.append(item)
+                if parse_course_mention(item) is None:
+                    profile_warnings.append(
+                        f"{item} is not a recognized course-number format; it was kept for you to confirm."
+                    )
             if deduped:
                 cleaned[k] = deduped
 
     if not cleaned:
-        return {"ok": True, "profile": profile, "updated": []}
+        return {
+            "ok": True,
+            "profile": profile,
+            "updated": [],
+            "profile_warnings": profile_warnings,
+        }
 
-    profile.update(cleaned)
-    _write_json(path, profile)
-    return {"ok": True, "profile": profile, "updated": list(cleaned.keys())}
+    profile = manager.update_profile(real_user_id, cleaned)
+    return {
+        "ok": True,
+        "profile": profile,
+        "updated": list(cleaned.keys()),
+        "profile_warnings": profile_warnings,
+    }
 
 
 # ── DELETE one preference ────────────────────────────────
@@ -224,29 +214,18 @@ def forget_preference(
     user: dict = Depends(current_user_optional),
 ):
     real_user_id = user["id"]
-    user_dir = _user_dir(real_user_id)
-    pref_path = user_dir / "preferences.json"
-
-    if not pref_path.exists():
-        raise HTTPException(status_code=404, detail="No preferences stored")
-
-    prefs = _read_json(pref_path, default=[])
-    if not isinstance(prefs, list):
+    try:
+        result = get_memory_manager().forget_preference(real_user_id, pref_id)
+    except ValueError:
         raise HTTPException(status_code=500, detail="preferences.json is malformed")
 
-    before = len(prefs)
-    kept = [
-        p for p in prefs
-        if not (isinstance(p, dict) and p.get("id") == pref_id)
-    ]
-    if len(kept) == before:
+    if result is None:
         raise HTTPException(
             status_code=404,
             detail=f"No preference with id {pref_id!r}",
         )
 
-    _write_json(pref_path, kept)
-    return {"ok": True, "removed": pref_id, "remaining": len(kept)}
+    return {"ok": True, **result}
 
 
 # ── POST forget all preferences ──────────────────────────
@@ -257,11 +236,19 @@ def forget_all_preferences(
     user: dict = Depends(current_user_optional),
 ):
     real_user_id = user["id"]
-    user_dir = _user_dir(real_user_id, create=True)
-    pref_path = user_dir / "preferences.json"
-
-    prefs = _read_json(pref_path, default=[])
-    removed = len(prefs) if isinstance(prefs, list) else 0
-
-    _write_json(pref_path, [])
+    removed = get_memory_manager().forget_all_preferences(real_user_id)
     return {"ok": True, "removed": removed}
+
+
+@router.delete("/api/memory/{user_id}/items/{memory_id}")
+def forget_memory_item(
+    user_id: str,
+    memory_id: str,
+    user: dict = Depends(current_user_optional),
+):
+    """Soft-forget any evidence item; the audit/version record is retained."""
+    real_user_id = user["id"]
+    result = get_memory_manager().forget_memory(real_user_id, memory_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Active memory item not found")
+    return {"ok": True, **result}

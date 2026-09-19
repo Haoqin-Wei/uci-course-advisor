@@ -220,10 +220,13 @@ def list_courses(department: str = Query(..., description="Dept code (e.g. 'COMP
 @router.get("/courses/all")
 def list_all_courses():
     """
-    Full UCI catalog (~9000 entries), each row slim: id / department /
-    courseNumber / title / courseLevel / units. Used by the Step 4
-    course-picker so the user sees every offered course in one list.
-    Server-side cached after first fetch.
+    Full slim UCI catalog for the Step 4 course picker. The data module
+    prefers the checked-in local catalog, then a restart-safe runtime cache,
+    and only uses the paginated API as a last resort.
     """
     courses = anteater_programs.list_all_courses()
-    return {"count": len(courses), "courses": courses}
+    return {
+        "count": len(courses),
+        "source": anteater_programs.all_courses_source(),
+        "courses": courses,
+    }

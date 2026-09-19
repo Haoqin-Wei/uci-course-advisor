@@ -2,7 +2,7 @@
 CatalogCache — process-wide, term-keyed CatalogView store.
 
 Lifecycle:
-  - On import / startup: register configured loaders (Phase 1: just one)
+  - On import / startup: register configured loaders
   - On first request for a term: build the CatalogView, cache it
   - Repeat requests for the same term: O(1) lookup
 

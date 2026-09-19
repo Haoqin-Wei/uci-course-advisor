@@ -3,7 +3,7 @@ CatalogLoader — abstract base for any data source that produces
 Course/Section records for a given Term.
 
 Why separate base + impls:
-  - Multiple data feeds will coexist (registrar dump, RMP, mock)
+  - Multiple data feeds can coexist (registrar dump, API snapshots, etc.)
   - CatalogView merges output across loaders by field priority
   - Swapping a loader doesn't touch validators
 """
@@ -21,7 +21,7 @@ class CatalogLoader(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """Short identifier, e.g. 'uci_relational' or 'mock_data'."""
+        """Short identifier, e.g. 'uci_relational'."""
 
     @abstractmethod
     def available_terms(self) -> list[Term]:

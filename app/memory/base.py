@@ -10,8 +10,8 @@ Lifecycle (called by MemoryManager from chat.py):
     system_prompt_block() — static context injected into Claude's system prompt
     prefetch(query)       — dynamic recall before each LLM call
     on_turn_start(turn)   — per-turn nudge / counter
-    sync_turn(u, a)       — persist a completed turn (non-blocking)
-    on_session_end(hist)  — reflection + extraction at session end
+    sync_turn(u, a)       — completed-turn lifecycle hook
+    on_session_end()      — session cleanup hook
     shutdown()            — flush queues, close files
 
 Design intent:
@@ -75,8 +75,8 @@ class MemoryProvider(ABC):
         session_id: str,
     ) -> None:
         """
-        Persist a completed turn. Should be non-blocking — queue
-        for background processing if your backend has latency.
+        Completed-turn lifecycle hook. Chat transcripts are persisted
+        by app.data.sessions, not by MemoryProvider implementations.
         """
 
     # ── Session boundaries ──────────────────────────────────
@@ -85,12 +85,12 @@ class MemoryProvider(ABC):
         self,
         user_id: str,
         session_id: str,
-        history: list[dict],
     ) -> None:
         """
         Called when the session ends explicitly (browser closes,
-        /session/end called, gateway timeout). Use for end-of-session
-        fact extraction and consolidation.
+        /session/end called, gateway timeout). Do not persist chat
+        history here; sessions/{session_id}/turns.jsonl is the unique
+        transcript source.
         """
 
     def shutdown(self) -> None:
@@ -98,11 +98,111 @@ class MemoryProvider(ABC):
 
     # ── Optional write API ──────────────────────────────────
 
-    def add_preference(self, user_id: str, text: str) -> None:
+    def add_preference(
+        self,
+        user_id: str,
+        text: str,
+        **provenance,
+    ) -> None:
         """Append a learned preference (e.g. 'prefers morning classes')."""
 
-    def add_fact(self, user_id: str, text: str) -> None:
+    def add_fact(
+        self,
+        user_id: str,
+        text: str,
+        **provenance,
+    ) -> None:
         """Append a hard fact (e.g. 'completed ICS33 in Fall 2024')."""
 
-    def update_profile(self, user_id: str, updates: dict) -> None:
+    def update_profile(
+        self,
+        user_id: str,
+        updates: dict,
+        **provenance,
+    ) -> None:
         """Update structured profile fields (major, year, etc.)."""
+
+    def get_profile(self, user_id: str) -> dict:
+        """Return structured profile fields for a user."""
+        return {}
+
+    def get_facts(self, user_id: str) -> list[str]:
+        """Return stored hard facts for a user as list[str]."""
+        return []
+
+    def get_preferences(self, user_id: str) -> list[dict]:
+        """Return stored learned preferences as full preference dicts."""
+        return []
+
+    def get_memory_snapshot(self, user_id: str) -> dict:
+        """Return profile, facts, and preferences through the provider."""
+        return {
+            "profile": self.get_profile(user_id),
+            "facts": self.get_facts(user_id),
+            "preferences": self.get_preferences(user_id),
+        }
+
+    def forget_preference(self, user_id: str, pref_id: str) -> dict | None:
+        """Remove one learned preference by id. Return removal metadata or None."""
+        return None
+
+    def forget_all_preferences(self, user_id: str) -> int:
+        """Remove all learned preferences. Return the number removed."""
+        return 0
+
+    # ── Evidence-memory API (MemoryBear-inspired providers) ───────
+
+    def remember(
+        self,
+        user_id: str,
+        text: str,
+        *,
+        kind: str = "fact",
+        topic: str | None = None,
+        source_type: str = "user_explicit",
+        source_session_id: str | None = None,
+        source_turn_index: int | None = None,
+        source_quote: str | None = None,
+        confidence: float = 1.0,
+        metadata: dict | None = None,
+    ) -> dict | None:
+        """Store one memory with provenance.
+
+        The default adapter preserves compatibility with simple providers.
+        Rich providers should override this method and retain every supplied
+        provenance field.
+        """
+        if kind == "preference":
+            self.add_preference(user_id, text)
+        else:
+            self.add_fact(user_id, text)
+        return None
+
+    def recall(
+        self,
+        query: str,
+        user_id: str,
+        *,
+        limit: int = 5,
+    ) -> list[dict]:
+        """Return query-relevant memories as evidence records."""
+        return []
+
+    def list_memories(
+        self,
+        user_id: str,
+        *,
+        kind: str | None = None,
+        status: str = "active",
+        limit: int = 100,
+    ) -> list[dict]:
+        """Return inspectable memory records for the user."""
+        return []
+
+    def forget_memory(self, user_id: str, memory_id: str) -> dict | None:
+        """Soft-forget one memory record and return removal metadata."""
+        return None
+
+    def memory_stats(self, user_id: str) -> dict:
+        """Return provider-specific lifecycle counts."""
+        return {}
