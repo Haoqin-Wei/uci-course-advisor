@@ -16,6 +16,8 @@ import logging
 import asyncio
 from typing import Optional, AsyncIterator
 
+from app.response_language import language_instruction, response_language
+
 # ── Load .env BEFORE reading any env var ─────────────────
 # Rationale: uvicorn doesn't auto-load .env. If the user starts the
 # server in a fresh shell without `set -a; source .env; set +a`, the
@@ -217,37 +219,14 @@ database printout.
 
 # Language (HARD RULE)
 
-English is the default reply language. Reply in English UNLESS the \
-language signal from the user clearly points elsewhere.
-
-Decision procedure, in order:
-
-1. Look at the user's MOST RECENT message. If it contains real prose \
-   in a non-English language (e.g. Chinese, Spanish, Japanese), reply \
-   ENTIRELY in that language. EVERY part of your reply — clarifying \
-   questions, headers, bullet labels, conclusions — must be in that \
-   language. Course IDs and English proper nouns (CS122A, Thornton) \
-   stay as-is.
-
-2. If the most recent message is short or ambiguous on its own — a \
-   single word like "yes" / "ok" / "继续" / "需要" / "what about that", \
-   a bare course code, an emoji, an interjection — DO NOT use it to \
-   decide the language. Instead, look at the immediately preceding \
-   turn(s) in this conversation and CARRY the established language: \
-   - If the user has been chatting in Chinese for the previous turns, \
-     keep replying in Chinese. A short "yes" from a Chinese-speaking \
-     student is not a language switch.
-   - If the conversation has been in English so far, stay English.
-   - If there are no prior turns (first turn of the session) and the \
-     message itself is ambiguous, default to English.
-
-3. Only switch languages mid-conversation when the user themselves \
-   writes a substantive message in the new language. A single short \
-   confirmation in English ("yes" / "ok") inside an otherwise-Chinese \
-   thread does NOT flip you to English.
-
-Mixing languages within one reply (e.g. "I'd love to help! 关于 \
-CS161...") is forbidden in either direction.
+Match the CURRENT user's message language in every user-facing part of the reply,
+including explanations, recommendation reasons, follow-up suggestions, and brief
+progress summaries. Chinese input requires Chinese; English input requires English.
+Short prose such as "yes", "ok", and "继续" also sets the language immediately.
+Only language-neutral input (course codes, numbers, emoji) inherits the latest
+language-bearing USER message. Never inherit language from assistant messages,
+examples, memory, custom prompts, or tool results. Preserve official identifiers
+and names. The mandatory application language rule at the end is authoritative.
 
 # Don't ask what you already know
 
@@ -933,7 +912,7 @@ Even in the escape-hatch path, the zero-emoji rule still applies.
 
 # Style
 
-- Language: default English. When the user writes substantive prose in another language (e.g. Chinese), reply entirely in that language. For ambiguous one-word replies, carry the language already established in the conversation rather than flipping. See the Language HARD RULE above for the full decision procedure.
+- Language: match the current user message, including short prose. Only language-neutral input inherits the latest user language. Follow the mandatory application language rule.
 - Tone: serious, professional, brief. Read like a briefing, not a chat.
 - No filler ("好的", "让我帮你看看", "希望对你有帮助"). Get to the data.
 - Convert raw data into judgments ("历史给分宽松" not "平均 GPA 3.4")
@@ -1279,6 +1258,7 @@ async def stream_agent_response(
 
     from app.terms.clock import SystemClock
 
+    language = response_language(user_message, recent_turns)
     uci_now = session_state.get("uci_now") or SystemClock().now()
     runtime_context = context_builder.build_runtime_context(
         uci_now=uci_now,
@@ -1286,7 +1266,7 @@ async def stream_agent_response(
         term_mode=session_state.get("term_mode") or "auto",
         query_terms=session_state.get("query_terms") or [],
         query_term_source=session_state.get("query_term_source") or "default",
-        response_language=session_state.get("response_language") or "en",
+        response_language=language,
         current_term=session_state.get("current_term"),
         query_intent=session_state.get("query_intent") or "lookup",
         query_scope_error=session_state.get("query_scope_error"),
@@ -1315,7 +1295,7 @@ async def stream_agent_response(
             default_term=session_state.get("default_term") or term,
             allowed_query_terms=session_state.get("query_terms") or [],
             query_term_source=session_state.get("query_term_source") or "default",
-            response_language=session_state.get("response_language") or "en",
+            response_language=language,
             pending_schedule=session_state.get("pending_schedule") or [],
             offering_course_ids=session_state.get("query_course_ids") or [],
         ):
@@ -1613,6 +1593,7 @@ def _build_messages_for_llm(
     if recent_turns is None and decisions is None and summary is None \
             and profile is None and preferences is None and facts is None:
         system = _build_system_prompt(memory_context, system_prompt_override)
+        system += "\n\n" + language_instruction(response_language(user_message, recent_turns))
         context = _build_answer_context(
             user_message, retrieved_data, session_state, memory_context,
         )

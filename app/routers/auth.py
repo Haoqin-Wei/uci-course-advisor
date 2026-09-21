@@ -1,21 +1,18 @@
 """
-Auth router — email-code registration + password login.
+Auth router — UCI email/password registration + password login.
 
 Flow (frontend perspective):
 
-    1. POST /api/auth/request_code   { email }
-         → 6-digit code is "sent" (console-print in dev, Resend in prod)
+    1. POST /api/auth/register       { email, password, password_confirmation, consent }
+         → unverified account created + session cookie set
 
-    2. POST /api/auth/verify         { email, code, password }
-         → on success: user created + session cookie set
-
-    3. POST /api/auth/login          { email, password }
+    2. POST /api/auth/login          { email, password }
          → on success: session cookie set
 
-    4. POST /api/auth/logout
+    3. POST /api/auth/logout
          → cookie cleared
 
-    5. GET  /api/auth/me
+    4. GET  /api/auth/me
          → current user dict, or 401
 
 Private-beta controls include endpoint rate limiting, generic login failures,
@@ -26,38 +23,32 @@ from __future__ import annotations
 
 import logging
 import re
-import secrets
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from app import config
 from app.auth.rate_limit import RateLimit, check_rate_limit
-from app.auth import email_sender, security, store
+from app.auth import security, store
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-REQUEST_CODE_LIMIT = RateLimit("auth.request_code", limit=5, window_seconds=10 * 60)
-VERIFY_LIMIT = RateLimit("auth.verify", limit=8, window_seconds=10 * 60)
+REGISTER_LIMIT = RateLimit("auth.register", limit=5, window_seconds=10 * 60)
 LOGIN_LIMIT = RateLimit("auth.login", limit=10, window_seconds=10 * 60)
-CURRENT_TERMS_VERSION = "2026-09-03"
-CURRENT_PRIVACY_VERSION = "2026-09-03"
+CURRENT_TERMS_VERSION = "2026-09-21"
+CURRENT_PRIVACY_VERSION = "2026-09-21"
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 # ── Request models ───────────────────────────────────────
 
-class RequestCodeBody(BaseModel):
-    email: str
-
-
-class VerifyBody(BaseModel):
+class RegisterBody(BaseModel):
     email:    str
-    code:     str
-    password: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=8, max_length=128, repr=False)
+    password_confirmation: str = Field(min_length=1, max_length=128, repr=False)
     age_18_confirmed: bool
     terms_accepted: bool
     terms_version: str = Field(min_length=1, max_length=32)
@@ -87,7 +78,7 @@ def _require_uci_email(email: str) -> str:
     if not sep or not local or domain != "uci.edu":
         raise HTTPException(
             status_code=400,
-            detail="Private testing is limited to verified @uci.edu email addresses.",
+            detail="Private testing is limited to @uci.edu email addresses.",
         )
     return email
 
@@ -107,46 +98,16 @@ def _set_session_cookie(response: Response, user_id: str) -> None:
 
 # ── Endpoints ────────────────────────────────────────────
 
-@router.post("/request_code")
-def request_code(body: RequestCodeBody, request: Request):
-    """
-    Issue a fresh 6-digit verification code for `email` and dispatch
-    it. The code is hashed before storage; only the latest issued
-    code is valid (prior un-consumed codes for the same email are
-    marked consumed inside stash_verification_code).
-    """
+@router.post("/register")
+def register(body: RegisterBody, response: Response, request: Request):
+    """Create an unverified account and sign in without sending email."""
+    # One IP budget across all submitted emails, before costly password hashing.
+    check_rate_limit(request, REGISTER_LIMIT)
     email = _require_uci_email(_norm_email(body.email))
-    check_rate_limit(request, REQUEST_CODE_LIMIT, email)
-    code = f"{secrets.randbelow(1_000_000):06d}"
-
-    code_hash = security.hash_code(code)
-    expires = store.stash_verification_code(email, code_hash)
-
-    sent = email_sender.send_verification_code(email, code)
-    if not sent:
-        logger.error("[auth] email send failed")
-        # We still stashed the code; if the user retries, a new one
-        # is issued. Failing closed is fine.
-        raise HTTPException(status_code=502, detail="Email send failed; try again")
-
-    return {
-        "ok": True,
-        "email": email,
-        "expires_at": expires.isoformat(),
-        # NEVER include the code itself in the response.
-    }
-
-
-@router.post("/verify")
-def verify(body: VerifyBody, response: Response, request: Request):
-    """
-    Consume the latest active verification code for `email` and
-    create the account with the given password. On success the
-    session cookie is set, so the client is logged in immediately
-    — saves a round-trip vs forcing a separate /login after verify.
-    """
-    email = _require_uci_email(_norm_email(body.email))
-    check_rate_limit(request, VERIFY_LIMIT, email)
+    if body.password != body.password_confirmation:
+        raise HTTPException(status_code=400, detail="Passwords do not match")
+    if len(body.password.encode("utf-8")) > 72:
+        raise HTTPException(status_code=400, detail="Password must be at most 72 UTF-8 bytes")
 
     if not body.age_18_confirmed:
         raise HTTPException(status_code=400, detail="You must confirm that you are 18 or older.")
@@ -164,26 +125,20 @@ def verify(body: VerifyBody, response: Response, request: Request):
             detail="Email is already registered. Use /login instead.",
         )
 
-    code_row = store.pop_latest_active_code(email)
-    if not code_row:
-        raise HTTPException(
-            status_code=400,
-            detail="No active verification code. Request a new one.",
-        )
-    if not security.verify_code(body.code, code_row["code_hash"]):
-        # NOTE: pop_latest_active_code already marked the row
-        # consumed, so a wrong submission also invalidates the code.
-        # That makes brute-force harder without rate-limit infra.
-        raise HTTPException(status_code=400, detail="Incorrect code")
-
     password_hash = security.hash_password(body.password)
-    user = store.create_user(
-        email,
-        password_hash,
-        age_18_attested=True,
-        terms_version=body.terms_version,
-        privacy_version=body.privacy_version,
-    )
+    try:
+        user = store.create_user(
+            email,
+            password_hash,
+            age_18_attested=True,
+            terms_version=body.terms_version,
+            privacy_version=body.privacy_version,
+        )
+    except store.EmailAlreadyRegistered as exc:
+        # Another request may have registered this email since the lookup above.
+        raise HTTPException(
+            status_code=409, detail="Email is already registered. Use /login instead.",
+        ) from exc
 
     _set_session_cookie(response, user["id"])
     logger.info("[auth] registered + logged in")

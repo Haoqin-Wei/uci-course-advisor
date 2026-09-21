@@ -749,7 +749,7 @@ async def _run_loop(
             primary_call["args"],
             context=tool_context,
         )
-        label = agent_tools.humanize_tool_call(tool_name, args)
+        label = agent_tools.humanize_tool_call(tool_name, args, response_language)
         total_tool_calls += 1
         observability.log_event(
             logger,
@@ -767,6 +767,7 @@ async def _run_loop(
             "args": args,
             "label": label,
             "server_forced": True,
+            "response_language": response_language,
         }
         result = (
             {"error": f"invalid term for {tool_name}: {term_error}"}
@@ -1082,7 +1083,7 @@ async def _run_loop(
                 context=tool_context,
             )
 
-            label = agent_tools.humanize_tool_call(tc["name"], args)
+            label = agent_tools.humanize_tool_call(tc["name"], args, response_language)
             logger.info("[agent] iter=%d tool[%d/%d] %s args=%s",
                         iteration, total_tool_calls + 1, MAX_TOTAL_TOOLS,
                         tc["name"], {k: args.get(k) for k in list(args)[:4]})
@@ -1098,7 +1099,8 @@ async def _run_loop(
                 args=_summarize_tool_args(args),
             )
             yield {"type": "tool_call_start",
-                   "name": tc["name"], "args": args, "label": label}
+                   "name": tc["name"], "args": args, "label": label,
+                   "response_language": response_language}
 
             forced_cache = tool_context.get("_forced_workflow_results") or {}
             cache_key = _idempotent_tool_key(tc["name"], args) if not term_error else None

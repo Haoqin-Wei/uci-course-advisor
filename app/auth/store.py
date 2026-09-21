@@ -1,10 +1,9 @@
 """
-SQLite-backed user + verification-code store.
+SQLite-backed account store with legacy verification-code storage.
 
 Tables:
-    users                — verified accounts (one row per email)
-    verification_codes   — pending 6-digit codes (TTL 10 min,
-                           single-use, latest-code-wins per email)
+    users                — accounts (one row per email); new emails are unverified
+    verification_codes   — retained for compatibility with old database files
 
 Concurrency: a single uvicorn worker is the demo target. SQLite's
 default check_same_thread=True is fine — we open a fresh connection
@@ -25,46 +24,63 @@ DB_PATH = Path("data/auth.db")
 CODE_TTL_MINUTES = 10
 
 
+class EmailAlreadyRegistered(ValueError):
+    """The normalized email already belongs to an account."""
+
+
+_USER_COLUMNS = """
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    verified_at TEXT,
+    created_at TEXT NOT NULL,
+    age_18_attested_at TEXT,
+    terms_accepted_at TEXT,
+    terms_version TEXT,
+    privacy_version TEXT
+"""
+
+
 # ── Connection + schema ──────────────────────────────────
 
 def _init_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            id              TEXT PRIMARY KEY,
-            email           TEXT NOT NULL UNIQUE,
-            password_hash   TEXT NOT NULL,
-            verified_at     TEXT NOT NULL,
-            created_at      TEXT NOT NULL,
-            age_18_attested_at TEXT,
-            terms_accepted_at TEXT,
-            terms_version   TEXT,
-            privacy_version TEXT
-        );
+    columns = {row["name"]: row for row in conn.execute("PRAGMA table_info(users)")}
+    consent_columns = ("age_18_attested_at", "terms_accepted_at", "terms_version", "privacy_version")
+    if all(name in columns for name in consent_columns) and not columns["verified_at"]["notnull"]:
+        return
 
-        CREATE TABLE IF NOT EXISTS verification_codes (
-            email           TEXT NOT NULL,
-            code_hash       TEXT NOT NULL,
-            expires_at      TEXT NOT NULL,
-            consumed        INTEGER NOT NULL DEFAULT 0,
-            created_at      TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS ix_codes_email_created
-            ON verification_codes (email, created_at DESC);
-    """)
-    # Existing private-beta databases predate the consent receipt columns.
-    # SQLite has no ADD COLUMN IF NOT EXISTS, so migrate defensively.
-    existing_columns = {
-        row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()
-    }
-    for name in (
-        "age_18_attested_at",
-        "terms_accepted_at",
-        "terms_version",
-        "privacy_version",
-    ):
-        if name not in existing_columns:
-            conn.execute(f"ALTER TABLE users ADD COLUMN {name} TEXT")
-    conn.commit()
+    # Serialize first-open upgrades, and roll the entire table rebuild back if
+    # anything fails. Preserve IDs, password hashes and historical verification.
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(f"CREATE TABLE IF NOT EXISTS users ({_USER_COLUMNS})")
+        conn.execute("""CREATE TABLE IF NOT EXISTS verification_codes (
+            email TEXT NOT NULL, code_hash TEXT NOT NULL,
+            expires_at TEXT NOT NULL, consumed INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        )""")
+        conn.execute("""CREATE INDEX IF NOT EXISTS ix_codes_email_created
+                        ON verification_codes (email, created_at DESC)""")
+        columns = {row["name"]: row for row in conn.execute("PRAGMA table_info(users)")}
+        for name in consent_columns:
+            if name not in columns:
+                conn.execute(f"ALTER TABLE users ADD COLUMN {name} TEXT")
+        if columns["verified_at"]["notnull"]:
+            schema_objects = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE tbl_name = 'users' AND sql IS NOT NULL "
+                "AND type IN ('index', 'trigger')"
+            ).fetchall()
+            conn.execute(f"CREATE TABLE users_nullable_verification ({_USER_COLUMNS})")
+            fields = "id, email, password_hash, verified_at, created_at, " + ", ".join(consent_columns)
+            conn.execute(f"INSERT INTO users_nullable_verification ({fields}) SELECT {fields} FROM users")
+            conn.execute("DROP TABLE users")
+            conn.execute("ALTER TABLE users_nullable_verification RENAME TO users")
+            for row in schema_objects:
+                conn.execute(row["sql"])
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 @contextmanager
@@ -114,28 +130,33 @@ def create_user(
     terms_version: Optional[str] = None,
     privacy_version: Optional[str] = None,
 ) -> dict:
-    """Insert a new user. Caller MUST have verified the email already."""
+    """Insert a new account without claiming that the email was verified."""
     email = email.strip().lower()
     uid = uuid.uuid4().hex
     now = _now_iso()
     attested_at = now if age_18_attested else None
     accepted_at = now if terms_version and privacy_version else None
     with _conn() as conn:
-        conn.execute(
-            """INSERT INTO users (
-                   id, email, password_hash, verified_at, created_at,
-                   age_18_attested_at, terms_accepted_at,
-                   terms_version, privacy_version
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                uid, email, password_hash, now, now,
-                attested_at, accepted_at, terms_version, privacy_version,
-            ),
-        )
-        conn.commit()
+        try:
+            conn.execute(
+                """INSERT INTO users (
+                       id, email, password_hash, verified_at, created_at,
+                       age_18_attested_at, terms_accepted_at,
+                       terms_version, privacy_version
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    uid, email, password_hash, None, now,
+                    attested_at, accepted_at, terms_version, privacy_version,
+                ),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError as exc:
+            if exc.sqlite_errorcode == sqlite3.SQLITE_CONSTRAINT_UNIQUE:
+                raise EmailAlreadyRegistered(email) from exc
+            raise
     return {
         "id": uid, "email": email, "password_hash": password_hash,
-        "verified_at": now, "created_at": now,
+        "verified_at": None, "created_at": now,
         "age_18_attested_at": attested_at,
         "terms_accepted_at": accepted_at,
         "terms_version": terms_version,

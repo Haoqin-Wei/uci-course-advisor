@@ -79,6 +79,40 @@ def test_import_requires_authentication(app_client):
     assert response.status_code == 401
 
 
+def test_profile_summary_reveals_gpa_only_on_request_for_authenticated_owner(app_client):
+    assert app_client.get("/api/academic/profile?include_gpa=true").status_code == 401
+    _create_and_login(app_client)
+    response = app_client.post(
+        "/api/academic/transcript/import", json=_payload(printed_at="2026-09-03T13:25:00Z")
+    )
+    assert response.status_code == 200
+    hidden = app_client.get("/api/academic/profile")
+    assert hidden.headers["cache-control"] == "no-store"
+    assert hidden.json()["gpa_available"] is True
+    assert "official_uc_gpa" not in hidden.json()
+    assert hidden.json()["units_completed"] == 112.5
+    visible = app_client.get("/api/academic/profile?include_gpa=true").json()
+    assert visible["official_uc_gpa"] == 3.4
+
+    _create_and_login(app_client, "other-student@uci.edu")
+    other = app_client.get("/api/academic/profile?include_gpa=true").json()
+    assert other["official_uc_gpa"] is None
+    assert other["gpa_available"] is False
+    assert other["units_completed"] is None
+    assert other["completed_courses"] == []
+
+
+def test_profile_summary_preserves_zero_units_and_gpa(app_client):
+    _create_and_login(app_client)
+    payload = _payload(printed_at="2026-09-03T13:25:00Z")
+    payload["summary"].update(official_uc_gpa=0, units_completed=0)
+    assert app_client.post("/api/academic/transcript/import", json=payload).status_code == 200
+    data = app_client.get("/api/academic/profile?include_gpa=true").json()
+    assert data["gpa_available"] is True
+    assert data["official_uc_gpa"] == 0
+    assert data["units_completed"] == 0
+
+
 def test_import_rejects_raw_transcript_fields(app_client):
     _create_and_login(app_client)
     body = _payload(printed_at="2026-09-03T13:25:00Z")
@@ -349,9 +383,16 @@ def test_account_deletion_removes_auth_and_academic_data(app_client):
 
 
 def test_private_beta_registration_rejects_non_uci_email(app_client):
+    from app.routers.auth import CURRENT_TERMS_VERSION, CURRENT_PRIVACY_VERSION
+
     response = app_client.post(
-        "/api/auth/request_code",
-        json={"email": "student@example.edu"},
+        "/api/auth/register",
+        json={
+            "email": "student@example.edu", "password": "password123",
+            "password_confirmation": "password123", "age_18_confirmed": True,
+            "terms_accepted": True, "terms_version": CURRENT_TERMS_VERSION,
+            "privacy_version": CURRENT_PRIVACY_VERSION,
+        },
     )
 
     assert response.status_code == 400

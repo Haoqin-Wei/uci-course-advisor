@@ -1,22 +1,35 @@
+// Match app/response_language.py; neutral input inherits USER language only.
+function detectResponseLanguage(message, previous = 'en') {
+  if (/[\u3400-\u9fff]/u.test(message)) return 'zh';
+  const prose = String(message || '').replace(/\b(?:[A-Za-z&]+\d+[A-Za-z]*|[A-Z&]+(?:[ \t]+[A-Z&]+){0,2}[ \t]+\d+[A-Za-z]*|\d+)\b/g, '');
+  return /[A-Za-z]/u.test(prose) ? 'en' : previous;
+}
+
+function responseTerm(term, language) {
+  if (language !== 'zh') return term;
+  const seasons = {Fall: '秋季', Winter: '冬季', Spring: '春季', Summer: '夏季',
+    Summer1: '夏季第一期', Summer2: '夏季第二期', Summer10wk: '夏季十周'};
+  const match = canonicalTerm(term).match(/^(\d{4})\s+(\w+)$/u);
+  return match && seasons[match[2]] ? `${match[1]}年${seasons[match[2]]}` : term;
+}
+
 /* ── Send / Stop ───────────────────────────────────── */
 async function sendMessage(text) {
   const msg = text || inputEl.value.trim();
   if (!msg) return;
   if (currentAbortController) return;   // already generating
 
+  const epoch = conversationEpoch;
+  const welcomeSend = beginWelcomeSend();
+  if (!currentSessionId) setThreadTitle(Array.from(msg).slice(0, 34).join(''));
   inputEl.value = '';
+  syncComposer();
 
-  // Phase 3 R3: leaving the empty/welcome state on first send. The
-  // welcome block is removed and the scroll loses its centered layout.
-  const scrollEl = document.getElementById('chatScroll');
-  const ws = document.getElementById('welcomeState');
-  if (ws) ws.remove();
-  scrollEl.classList.remove('is-empty');
-
-  appendUser(msg);
+  const userMessage = appendUser(msg);
   toggleSendStop(true);
 
-  currentAbortController = new AbortController();
+  const controller = new AbortController();
+  currentAbortController = controller;
 
   // Round 4 — captured BEFORE the request so we can decide in `finally`
   // whether to re-poll the sidebar for the LLM-generated title. The
@@ -34,8 +47,9 @@ async function sendMessage(text) {
   if (customPrompt) payload.system_prompt = customPrompt;
 
   // Create the AI message bubble up-front; tokens stream into its body.
-  const aiMsg = startAiMessage();
-  aiMsg._responseLanguage = /[\u3400-\u9fff]/u.test(msg) ? 'zh' : 'en';
+  currentResponseLanguage = detectResponseLanguage(msg, currentResponseLanguage);
+  const aiMsg = startAiMessage(currentResponseLanguage);
+  animateWelcomeSend(welcomeSend, userMessage, aiMsg);
   aiMsg._queryKind = /推荐|recommend|suggest|what (?:courses|classes).*take/iu.test(msg)
     ? 'recommendation'
     : /比较|对比|compare|comparison|versus|\bvs\.?\b/iu.test(msg) ? 'comparison' : 'query';
@@ -49,7 +63,7 @@ async function sendMessage(text) {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify(payload),
-      signal: currentAbortController.signal,
+      signal: controller.signal,
     });
 
     if (!res.ok) {
@@ -62,7 +76,10 @@ async function sendMessage(text) {
         appendStreamingToken(aiMsg, fullText);
       },
       meta(event) {
+        if (epoch !== conversationEpoch) return;
         meta = event;
+        if (event.response_language) aiMsg._responseLanguage = event.response_language;
+        markUserDelivery(userMessage, true);
         applyTermPayload(event);
         // Phase 3 R3 — backend's authoritative session_id. If this
         // is the first turn (we were sending "" before), capture
@@ -76,7 +93,7 @@ async function sendMessage(text) {
         // Agent loop dispatched a tool — show a status chip in the
         // AI bubble so the user sees what's happening during the
         // silent stretch before the answer streams.
-        startToolChip(aiMsg, event.label || event.name, event.name);
+        startToolChip(aiMsg, event.label || event.name, event.name, event.response_language);
       },
       tool_call_done(event) {
         finishToolChip(
@@ -97,7 +114,8 @@ async function sendMessage(text) {
       },
       error(event) {
         console.error('Stream error event:', event.message);
-        fullText += `\n\n_(server error: ${event.message})_`;
+        fullText += aiMsg._responseLanguage === 'zh'
+          ? '\n\n_暂时无法完成回复，请重试。_' : '\n\n_Unable to complete the response. Please try again._';
         appendStreamingToken(aiMsg, fullText); // re-render with error suffix
       },
       done() {
@@ -110,18 +128,21 @@ async function sendMessage(text) {
   } catch (err) {
     if (err.name === 'AbortError') {
       stopped = true;
-      fullText += fullText ? '\n\n_(generation stopped)_' : '_(generation stopped)_';
+      fullText += (fullText ? '\n\n' : '') + (aiMsg._responseLanguage === 'zh' ? '_已停止生成_' : '_(generation stopped)_');
     } else {
       console.error('chat stream failed:', err);
-      fullText = fullText || 'Connection error — is the backend running?';
+      fullText = fullText || (aiMsg._responseLanguage === 'zh' ? '无法连接，请重试。' : 'Unable to connect. Please try again.');
+      markUserDelivery(userMessage, false);
     }
   } finally {
+    if (epoch !== conversationEpoch) return;
     const finalText = (!stopped && meta && typeof meta.final_answer === 'string')
       ? meta.final_answer
       : fullText;
     finalizeAiMessage(aiMsg, finalText, meta || {}, stopped);
     currentAbortController = null;
     toggleSendStop(false);
+    syncComposer();
     inputEl.focus();
     // Channel A may have updated profile.json (e.g. user mentioned a
     // newly-completed course). Re-fetch the sidebar so the UI stays in
@@ -160,17 +181,18 @@ function toggleSendStop(isGenerating) {
   } else {
     sendBtn.style.display = '';
     stopBtn.style.display = 'none';
-    sendBtn.disabled = false;
+    sendBtn.disabled = !inputEl.value.trim();
   }
 }
 
 /* ── AI message bubble: streaming + finalize ──────── */
-function startAiMessage() {
+function startAiMessage(language = currentResponseLanguage) {
   const wrap = document.createElement('div');
   wrap.className = 'msg msg-ai';
+  wrap._responseLanguage = language;
   // Initial state: shimmer "Thinking" until first token arrives.
-  wrap.innerHTML = '<div class="msg-ai-label">Advisor</div>'
-                 + '<div class="msg-ai-body thinking">Thinking</div>';
+  wrap.innerHTML = `<div class="msg-ai-label">${solonIcon('sparkles')}Solon</div>`
+                 + `<div class="msg-ai-body thinking" aria-label="${language === 'zh' ? 'Solon 正在思考' : 'Solon is thinking'}"><span class="tdot"></span><span class="tdot"></span><span class="tdot"></span></div>`;
   document.getElementById('chatScroll').appendChild(wrap);
   scrollChat();
   // Per-message render scheduler — collapses bursts of tokens into one
@@ -186,7 +208,8 @@ function startAiMessage() {
   return wrap;
 }
 
-function startToolChip(wrap, label, toolName) {
+function startToolChip(wrap, label, toolName, language) {
+  if (language) wrap._responseLanguage = language;
   // Lazy-create the chips container above the body. We don't want it
   // on every AI message — only when the agent actually uses tools.
   let container = wrap.querySelector(':scope > .tool-calls');
@@ -207,13 +230,14 @@ function startToolChip(wrap, label, toolName) {
     }
   }
   chip.innerHTML = '<span class="tool-dot"></span><span class="tool-label"></span>';
-  chip.querySelector('.tool-label').textContent = label || '调用工具';
+  chip.querySelector('.tool-label').textContent = label || (wrap._responseLanguage === 'zh' ? '调用工具' : 'Running tool');
   container.appendChild(chip);
   wrap._toolChipQueue.push(chip);
   scrollChat();
 }
 
 function finishToolChip(wrap, ok, fetchSummary, resultMeta = {}) {
+  const zh = wrap._responseLanguage === 'zh';
   const chip = (wrap._toolChipQueue || []).shift();
   if (chip) {
     chip.classList.remove('is-active');
@@ -223,20 +247,20 @@ function finishToolChip(wrap, ok, fetchSummary, resultMeta = {}) {
       const count = Number(resultMeta.section_count || 0);
       if (count > 0) {
         chip.classList.add('is-sections-found');
-        if (label) label.textContent += ` · 找到 ${count} 个 section`;
+        if (label) label.textContent += zh ? ` · 找到 ${count} 个教学班` : ` · ${count} sections found`;
       } else if (
         resultMeta.offering_status === 'not_offered'
         && resultMeta.authoritative === true
       ) {
         chip.classList.add('is-official-no-match');
-        if (label) label.textContent += ' · 官方无匹配';
+        if (label) label.textContent += zh ? ' · 官方无匹配' : ' · No official match';
       } else if (resultMeta.offering_status === 'not_offered') {
         chip.classList.add('is-no-match');
-        if (label) label.textContent += ' · 未找到 section';
+        if (label) label.textContent += zh ? ' · 未找到教学班' : ' · No sections found';
       } else if (resultMeta.offering_status === 'unavailable') {
         chip.classList.remove('is-done');
         chip.classList.add('is-unavailable');
-        if (label) label.textContent += ' · 数据不可用';
+        if (label) label.textContent += zh ? ' · 数据不可用' : ' · Data unavailable';
       }
     }
   }
@@ -248,6 +272,7 @@ function finishToolChip(wrap, ok, fetchSummary, resultMeta = {}) {
 
 function renderWebFetchSummary(wrap, fetches) {
   if (!wrap || !Array.isArray(fetches) || fetches.length === 0) return;
+  const zh = wrap._responseLanguage === 'zh';
 
   let container = wrap.querySelector(':scope > .tool-calls');
   if (!container) {
@@ -263,12 +288,12 @@ function renderWebFetchSummary(wrap, fetches) {
   const details = document.createElement('details');
   details.className = 'tool-fetch-details';
   const summary = document.createElement('summary');
-  summary.textContent = `实际抓取 ${fetches.length} 个请求`;
+  summary.textContent = zh ? `实际抓取 ${fetches.length} 个请求` : `${fetches.length} web ${fetches.length === 1 ? 'request' : 'requests'}`;
   details.appendChild(summary);
 
   const list = document.createElement('div');
   list.className = 'tool-fetch-list';
-  const roleLabels = {
+  const roleLabels = zh ? {
     registrar_websoc_form: 'WebSoc 查询表单',
     registrar_websoc_results: 'WebSoc 部门结果',
     registrar_websoc_course_results: 'WebSoc 课程结果',
@@ -277,6 +302,15 @@ function renderWebFetchSummary(wrap, fetches) {
     policy: '政策官方页',
     restriction_spreadsheet: '课程限制表',
     official_link: '官方链接',
+  } : {
+    registrar_websoc_form: 'WebSoc query form',
+    registrar_websoc_results: 'WebSoc department results',
+    registrar_websoc_course_results: 'WebSoc course results',
+    undergrad_restrictions: 'Official undergraduate restrictions',
+    graduate_restrictions: 'Official graduate restrictions',
+    policy: 'Official policy page',
+    restriction_spreadsheet: 'Course restrictions spreadsheet',
+    official_link: 'Official link',
   };
 
   for (const fetchItem of fetches) {
@@ -288,7 +322,7 @@ function renderWebFetchSummary(wrap, fetches) {
     header.className = 'tool-fetch-row-main';
     const status = document.createElement('span');
     status.className = 'tool-fetch-status';
-    status.textContent = fetchItem.ok === false ? '失败' : '成功';
+    status.textContent = fetchItem.ok === false ? (zh ? '失败' : 'Failed') : (zh ? '成功' : 'Succeeded');
     header.appendChild(status);
 
     const method = document.createElement('span');
@@ -297,7 +331,7 @@ function renderWebFetchSummary(wrap, fetches) {
     header.appendChild(method);
 
     const url = String(fetchItem.final_url || fetchItem.url || '');
-    const host = String(fetchItem.host || url || '未知地址');
+    const host = String(fetchItem.host || url || (zh ? '未知地址' : 'Unknown address'));
     if (/^https?:\/\//i.test(url)) {
       const link = document.createElement('a');
       link.href = url;
@@ -315,7 +349,7 @@ function renderWebFetchSummary(wrap, fetches) {
     if (fetchItem.provides_evidence) {
       const evidence = document.createElement('span');
       evidence.className = 'tool-fetch-evidence';
-      evidence.textContent = '用于最终事实';
+      evidence.textContent = zh ? '用于最终事实' : 'Used as evidence';
       header.appendChild(evidence);
     }
     row.appendChild(header);
@@ -323,25 +357,25 @@ function renderWebFetchSummary(wrap, fetches) {
     const meta = document.createElement('div');
     meta.className = 'tool-fetch-meta';
     const role = roleLabels[fetchItem.source_role]
-      || String(fetchItem.source_role || '网页来源');
+      || (zh ? '网页来源' : 'Web source');
     const fields = [role];
     if (fetchItem.status_code != null) fields.push(`HTTP ${fetchItem.status_code}`);
     if (fetchItem.bytes != null) fields.push(`${Number(fetchItem.bytes).toLocaleString()} B`);
     if (fetchItem.duration_ms != null) fields.push(`${Math.round(fetchItem.duration_ms)} ms`);
-    if (fetchItem.depth != null) fields.push(`深度 ${fetchItem.depth}`);
+    if (fetchItem.depth != null) fields.push(zh ? `深度 ${fetchItem.depth}` : `Depth ${fetchItem.depth}`);
     meta.textContent = fields.join(' · ');
     row.appendChild(meta);
 
     if (fetchItem.parent_url) {
       const parent = document.createElement('div');
       parent.className = 'tool-fetch-parent';
-      parent.textContent = `来自：${fetchItem.parent_url}`;
+      parent.textContent = zh ? `来自：${fetchItem.parent_url}` : `From: ${fetchItem.parent_url}`;
       row.appendChild(parent);
     }
     if (fetchItem.error) {
       const error = document.createElement('div');
       error.className = 'tool-fetch-error';
-      error.textContent = String(fetchItem.error);
+      error.textContent = zh ? '抓取失败，未能读取此来源。' : 'Request failed; this source could not be read.';
       row.appendChild(error);
     }
     list.appendChild(row);
@@ -355,6 +389,7 @@ function appendStreamingToken(wrap, fullText) {
     // First chunk has arrived — swap thinking shimmer for streaming dot.
     const body = wrap.querySelector('.msg-ai-body');
     body.classList.remove('thinking');
+    body.removeAttribute('aria-label');
     body.classList.add('streaming');
     body.textContent = '';
     wrap._gotFirstToken = true;
@@ -386,6 +421,7 @@ function finalizeAiMessage(wrap, fullText, meta, stopped) {
   // Remove both indicator classes so neither thinking shimmer nor
   // streaming dot persists after generation ends.
   body.classList.remove('thinking');
+  body.removeAttribute('aria-label');
   body.classList.remove('streaming');
   body.innerHTML = formatMarkdown(fullText || '');
 
@@ -405,17 +441,8 @@ function finalizeAiMessage(wrap, fullText, meta, stopped) {
     if (block.firstElementChild) wrap.appendChild(block.firstElementChild);
   }
 
-  // Followups
-  if (!stopped && meta.followups && meta.followups.length > 0) {
-    const fuDiv = document.createElement('div');
-    fuDiv.className = 'followups';
-    let fuHtml = '';
-    for (const fu of meta.followups) {
-      fuHtml += `<button class="followup-chip" onclick="sendFollowup(\`${fu.replace(/`/g,"'")}\`)">${escHTML(fu)}</button>`;
-    }
-    fuDiv.innerHTML = fuHtml;
-    wrap.appendChild(fuDiv);
-  }
+  setComposerSuggestions(!stopped && Array.isArray(meta.followups) ? meta.followups : []);
+  renderScheduleGrid();
 
   // Continue button — only when the agent loop hit a budget limit
   // and stashed a continuation_id during this stream. Skip when the
@@ -428,15 +455,20 @@ function finalizeAiMessage(wrap, fullText, meta, stopped) {
 }
 
 function renderQueryTermBadge(wrap, meta) {
-  const terms = Array.isArray(meta?.query_terms) ? meta.query_terms : [];
+  const terms = Array.isArray(meta?.query_terms)
+    ? meta.query_terms.map(term => responseTerm(term, wrap._responseLanguage)) : [];
   if (!terms.length) return;
+  const zh = wrap._responseLanguage === 'zh';
   const badge = document.createElement('div');
   badge.className = 'query-term-badge';
   badge.textContent = meta.query_term_source === 'history'
-    ? `开课规律：${terms.join(' · ')}`
+    ? (zh ? `开课规律：${terms.join(' · ')}` : `Offering history: ${terms.join(' · ')}`)
     : terms.length > 1
-      ? `本次比较：${terms.join(' ↔ ')}`
-      : `本次查询：${terms[0]}${meta.inferred_year || meta.query_term_source === 'inferred' ? '（年份自动推断）' : ''}`;
+      ? (zh ? `本次比较：${terms.join(' ↔ ')}` : `Comparing: ${terms.join(' ↔ ')}`)
+      : (zh ? `本次查询：${terms[0]}` : `Querying: ${terms[0]}`);
+  if (meta.inferred_year || meta.query_term_source === 'inferred') {
+    badge.textContent += zh ? '（年份自动推断）' : ' (year inferred)';
+  }
   const body = wrap.querySelector('.msg-ai-body');
   wrap.insertBefore(badge, body);
 }
@@ -553,6 +585,7 @@ async function continueAgent(wrap, continuationId, btn) {
       },
       meta(event) {
         resumedMeta = event;
+        if (event.response_language) wrap._responseLanguage = event.response_language;
         if (typeof event.final_answer === 'string') {
           resumedText = event.final_answer;
         }
@@ -560,7 +593,7 @@ async function continueAgent(wrap, continuationId, btn) {
       tool_call_start(event) {
         // Reuse the existing chip container on `wrap`. Pass the
         // real wrap, not the shell, so chips land in the right DOM.
-        startToolChip(wrap, event.label || event.name, event.name);
+        startToolChip(wrap, event.label || event.name, event.name, event.response_language);
       },
       tool_call_done(event) {
         finishToolChip(
@@ -610,15 +643,41 @@ async function continueAgent(wrap, continuationId, btn) {
   }
 }
 
-function appendUser(text) {
+function appendUser(text, options = {}) {
+  const scroll = document.getElementById('chatScroll');
+  scroll.querySelectorAll('.delivered').forEach(el => el.remove());
   const el = document.createElement('div');
   el.className = 'msg msg-user';
-  el.textContent = text;
-  document.getElementById('chatScroll').appendChild(el);
+  if (!scroll.querySelector('.msg-user')) {
+    const date = new Date(options.time || Date.now());
+    if (!Number.isNaN(date.getTime()) && (!options.restored || options.time)) {
+      const stamp = document.createElement('div');
+      stamp.className = 'message-timestamp';
+      const today = date.toDateString() === new Date().toDateString();
+      stamp.textContent = `${today ? 'Today' : date.toLocaleDateString(undefined, {month: 'short', day: 'numeric'})} ${date.toLocaleTimeString(undefined, {hour: 'numeric', minute: '2-digit'})}`;
+      el.appendChild(stamp);
+    }
+  }
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble-me' + (options.restored ? '' : ' send');
+  bubble.textContent = text;
+  el.appendChild(bubble);
+  scroll.appendChild(el);
+  if (options.restored) markUserDelivery(el, true);
   scrollChat();
+  return el;
 }
 
-
+function markUserDelivery(el, delivered) {
+  if (!el || el !== [...document.querySelectorAll('#chatScroll .msg-user')].at(-1)) return;
+  let receipt = el.querySelector('.delivered');
+  if (!receipt) {
+    receipt = document.createElement('div');
+    receipt.className = 'delivered';
+    el.appendChild(receipt);
+  }
+  receipt.textContent = delivered ? 'Delivered' : 'Not sent';
+}
 
 /* ── Markdown renderer ───────────────────────────────
    Pipeline (in order, so block-level wins over inline):

@@ -19,6 +19,8 @@ let USER_ID = 'me';
 // null = guest (backend will route to demo_001).
 let currentAuthUser = null;
 let currentSessionId = null;
+let conversationEpoch = 0;
+let currentResponseLanguage = 'en';
 let automaticTermContext = null;
 let currentTermContext = null;
 let addedCourses = new Set();
@@ -33,11 +35,11 @@ let colorIndex = 0;
 const courseColors = {};
 
 function scheduleEntryKey(term, courseId, section) {
-  return `${term || 'unknown'}|${courseId || ''}:${section || ''}`;
+  return `${canonicalTerm(term) || 'unknown'}|${courseId || ''}:${section || ''}`;
 }
 
 function scheduleCourseKey(term, courseId) {
-  return `${term || 'unknown'}|${courseId || ''}`;
+  return `${canonicalTerm(term) || 'unknown'}|${courseId || ''}`;
 }
 
 /* ── Settings / generation state ───────────────────── */
@@ -67,7 +69,7 @@ function getCourseColor(id) {
 
 const inputEl = document.getElementById('userInput');
 inputEl.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendMessage(); }
 });
 
 let termRefreshTimer = null;
@@ -77,7 +79,10 @@ function setTermContext(term, source, status) {
   currentTermContext = {term, source: source || null, status: status || null, mode: 'auto'};
   const label = document.getElementById('defaultTermLabel');
   if (label) label.textContent = term;
+  const composerLabel = document.getElementById('composerTermLabel');
+  if (composerLabel) composerLabel.textContent = displayTerm(term);
   updateWelcomeTerm();
+  renderScheduleGrid();
 }
 
 function applyTermPayload(payload) {
@@ -105,8 +110,12 @@ async function loadTermState() {
     termRefreshTimer = setTimeout(loadTermState, delay);
   } catch (err) {
     console.warn('Failed to load /api/term-state', err);
-    const label = document.getElementById('defaultTermLabel');
-    if (label && !currentTermContext) label.textContent = 'Term unavailable';
+    if (!currentTermContext) {
+      for (const id of ['defaultTermLabel', 'composerTermLabel']) {
+        const label = document.getElementById(id);
+        if (label) label.textContent = 'Term unavailable';
+      }
+    }
     clearTimeout(termRefreshTimer);
     termRefreshTimer = setTimeout(loadTermState, 60000);
   }

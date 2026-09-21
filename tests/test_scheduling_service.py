@@ -859,3 +859,28 @@ def test_agent_and_chat_do_not_define_private_schedule_parsers():
 
     assert not {"_parse_days", "_parse_time", "_section_overlap"} & agent_defs
     assert "_parse_days" not in chat_defs
+
+
+def test_websoc_meridiem_ranges_are_normalized_before_conflict_checks():
+    from app.scheduling import meeting_time_minutes, normalize_section_meeting
+
+    cases = [
+        ("12:30", "1:50p", "12:30", "13:50"),
+        ("3:30", "4:50p", "15:30", "16:50"),
+        ("11:00", "12:20p", "11:00", "12:20"),
+        ("9:00a", "10:20a", "09:00", "10:20"),
+        ("12:00 AM", "1:00 AM", "00:00", "01:00"),
+        ("12:00 PM", "1:00 PM", "12:00", "13:00"),
+        ("15:30", "16:50", "15:30", "16:50"),
+    ]
+    for start, end, expected_start, expected_end in cases:
+        source = {"days": "TuTh", "start_time": start, "end_time": end}
+        normalized = normalize_section_meeting(source)
+        assert (normalized["start_time"], normalized["end_time"]) == (expected_start, expected_end)
+        assert source["end_time"] == end  # Never rewrite stored source evidence.
+        assert section_time_status(source, normalized) == "conflict"
+    for start, end in [("TBA", "TBA"), ("25:00", "26:00"), ("10:00", "09:00"), ("11:00p", "12:20a")]:
+        assert meeting_time_minutes(start, end) == (None, None)
+    afternoon = {"days": "TuTh", "start_time": "3:30", "end_time": "4:50p"}
+    assert section_time_status(afternoon, {"days": "TuTh", "start_time": "15:45", "end_time": "16:15"}) == "conflict"
+    assert section_time_status(afternoon, {"days": "TuTh", "start_time": "03:45", "end_time": "04:15"}) == "clear"

@@ -197,7 +197,7 @@ def test_agent_dispatches_fetch_page_with_run_scoped_state() -> None:
 def test_fetch_page_humanized_chip_label() -> None:
     assert agent_tools.humanize_tool_call(
         "fetch_page", {"url": "https://reg.uci.edu/policy"}
-    ) == "深读网页 · https://reg.uci.edu/policy"
+    ) == "Reading webpage · https://reg.uci.edu/policy"
 
 
 def test_restriction_workflow_does_not_delegate_missing_evidence_to_model(

@@ -7,6 +7,7 @@ bundle validation will build on this surface in M3.2.
 """
 from __future__ import annotations
 
+import re
 from typing import Callable, Iterable, Literal, Optional
 
 
@@ -69,18 +70,50 @@ def calendar_day_names(value: str) -> tuple[str, ...]:
 
 
 def time_to_minutes(value: str) -> Optional[int]:
-    """Convert 24-hour ``HH:MM`` text to minutes from midnight."""
-    if not value or ":" not in value:
+    """Accept canonical HH:MM and Registrar suffixes such as 1:50p."""
+    match = re.fullmatch(r"(\d{1,2}):(\d{2})\s*([ap](?:m)?)?", str(value or "").strip(), re.I)
+    if not match:
         return None
-    try:
-        hour, minute = value.strip().split(":", 1)
-        parsed_hour = int(hour)
-        parsed_minute = int(minute)
-    except (AttributeError, ValueError):
+    hour, minute = int(match[1]), int(match[2])
+    suffix = (match[3] or "").lower()
+    if minute > 59 or hour > 23 or (suffix and not 1 <= hour <= 12):
         return None
-    if not (0 <= parsed_hour <= 23 and 0 <= parsed_minute <= 59):
-        return None
-    return parsed_hour * 60 + parsed_minute
+    if suffix:
+        hour = hour % 12 + (12 if suffix.startswith("p") else 0)
+    return hour * 60 + minute
+
+
+def meeting_time_minutes(start, end) -> tuple[Optional[int], Optional[int]]:
+    """Resolve WebSoc's shared meridiem: 3:30-4:50p, 11:00-12:20p.
+
+    When only the end has a suffix, the start is the closest earlier
+    occurrence on the same day. Unmarked 24-hour data stays unchanged.
+    Overnight/invalid windows remain unknown instead of fabricating a day.
+    """
+    start_min, end_min = time_to_minutes(start), time_to_minutes(end)
+    if start_min is None or end_min is None:
+        return None, None
+    if re.search(r"[ap](?:m)?$", str(end).strip(), re.I) and not re.search(r"[ap](?:m)?$", str(start).strip(), re.I):
+        hour = int(str(start).strip().split(":")[0])
+        if 1 <= hour <= 12:
+            base = start_min % (12 * 60)
+            candidates = [value for value in (base, base + 12 * 60) if value < end_min]
+            if not candidates:
+                return None, None
+            start_min = max(candidates)
+    if start_min >= end_min:
+        return None, None
+    return start_min, end_min
+
+
+def normalize_section_meeting(section: dict) -> dict:
+    """Normalize copied source/legacy records, without changing their evidence text."""
+    result = dict(section)
+    start, end = meeting_time_minutes(section.get("start_time"), section.get("end_time"))
+    if start is not None and end is not None:
+        result["start_time"] = f"{start // 60:02d}:{start % 60:02d}"
+        result["end_time"] = f"{end // 60:02d}:{end % 60:02d}"
+    return result
 
 
 def _truthy(value) -> bool:
@@ -122,10 +155,8 @@ def section_time_status(a: dict, b: dict) -> SectionTimeStatus:
     if not (days_a & days_b):
         return "clear"
 
-    start_a = time_to_minutes(a.get("start_time") or "")
-    end_a = time_to_minutes(a.get("end_time") or "")
-    start_b = time_to_minutes(b.get("start_time") or "")
-    end_b = time_to_minutes(b.get("end_time") or "")
+    start_a, end_a = meeting_time_minutes(a.get("start_time"), a.get("end_time"))
+    start_b, end_b = meeting_time_minutes(b.get("start_time"), b.get("end_time"))
     if None in (start_a, end_a, start_b, end_b):
         return "unknown"
 
@@ -235,10 +266,8 @@ def build_pending_schedule_bundle_items(
                 if isinstance(section, dict)
             ]
 
-        # A forced live refresh may resolve a section that is not present in
-        # the bundled catalog. Preserve that exact, verified snapshot as
-        # validation input so time/final conflicts are still detected. Never
-        # substitute a different section from the same course.
+        # Use the same exact, server-verified snapshot as the calendar. A
+        # catalog record for this section may still have old/TBA times.
         snapshot = entry.get("materialized_section")
         if isinstance(snapshot, dict) and (
             _section_num(snapshot) == section_ref
@@ -249,18 +278,19 @@ def build_pending_schedule_bundle_items(
                 course_id,
                 term=entry_term,
             )
-            if not any(
-                (
-                    _section_num(section)
-                    and _section_num(section) == _section_num(normalized_snapshot)
+            sections_by_course[course_key] = [
+                section for section in sections_by_course[course_key] if not (
+                    (
+                        _section_num(section)
+                        and _section_num(section) == _section_num(normalized_snapshot)
+                    )
+                    or (
+                        _section_code(section)
+                        and _section_code(section) == _section_code(normalized_snapshot)
+                    )
                 )
-                or (
-                    _section_code(section)
-                    and _section_code(section) == _section_code(normalized_snapshot)
-                )
-                for section in sections_by_course[course_key]
-            ):
-                sections_by_course[course_key].append(normalized_snapshot)
+            ]
+            sections_by_course[course_key].append(normalized_snapshot)
 
         match = next(
             (
@@ -370,7 +400,7 @@ def _with_course_id(
     *,
     term: Optional[str] = None,
 ) -> dict:
-    copied = dict(section)
+    copied = normalize_section_meeting(section)
     if course_id and not _course_id(copied):
         copied["course_id"] = course_id
     if term and not copied.get("term"):

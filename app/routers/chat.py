@@ -15,12 +15,16 @@ import asyncio
 import logging
 import re
 from datetime import datetime, timezone
+from functools import lru_cache
+from threading import RLock
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
 
 from app import config, observability
+from app.response_language import response_language as _response_language
+from app.response_language import display_term
 from app.auth.deps import current_user_optional
 from app.auth.rate_limit import RateLimit, check_rate_limit
 from app.modules.state import (
@@ -32,6 +36,8 @@ from app.academic import get_ai_academic_context
 from app.scheduling import (
     build_pending_schedule_bundle_items,
     calendar_day_names,
+    normalize_section_meeting,
+    section_time_status,
     validate_schedule_bundle,
 )
 
@@ -551,33 +557,6 @@ def _tool_terms_from_agent_meta(agent_meta: dict) -> list[str]:
     return terms
 
 
-def _response_language(
-    user_message: str,
-    recent_turns: Optional[list[dict]] = None,
-) -> str:
-    """Choose the language used by non-LLM fallback templates."""
-
-    message = (user_message or "").strip()
-    if re.search(r"[\u3400-\u9fff]", message):
-        return "zh"
-    words = re.findall(r"[A-Za-z]+", message)
-    # Short English questions (e.g. "Recommend courses") still establish the
-    # current turn's language. Only language-neutral input inherits history.
-    ambiguous = not words or bool(
-        re.fullmatch(r"[\s\W]*(?:[A-Za-z&]+\s*)?\d+[A-Za-z]*[\s\W]*", message)
-    )
-    if ambiguous:
-        for turn in reversed(recent_turns or []):
-            if turn.get("role") != "user":
-                continue
-            content = str(turn.get("content") or "")
-            if re.search(r"[\u3400-\u9fff]", content):
-                return "zh"
-            if re.search(r"[A-Za-z]{3,}", content):
-                return "en"
-    return "en"
-
-
 def _grounded_agent_fallback_reply(
     user_message: str,
     state: dict,
@@ -598,15 +577,13 @@ def _grounded_agent_fallback_reply(
         return course_reply
 
     if language == "zh":
-        details = f"（{reason}）" if reason else ""
         return (
-            f"目前无法连接回答服务{details}。我不会凭空编造课程建议或班次信息。"
+            "目前无法连接回答服务。我不会凭空编造课程建议或班次信息。"
             "你可以稍后重试，或先询问一门具体课程；服务恢复后我会调用课程数据进行查询。"
         )
 
-    details = f" ({reason})" if reason else ""
     return (
-        f"I can’t reach the agent right now{details}, so I won’t invent "
+        "I can’t reach the agent right now, so I won’t invent "
         "course recommendations or section details. Please try again, or ask "
         "about a specific course "
         "and I’ll query the course data when the agent is available."
@@ -659,17 +636,20 @@ def _deterministic_single_course_fallback_reply(
         return None
 
     ref = refs[0]
-    details = f" ({reason})" if reason else ""
     prefix = (
-        f"I can’t reach the agent right now{details}. "
+        "I can’t reach the agent right now. "
         "Here is the local catalog fallback for the single course you mentioned."
     )
 
     catalog = get_catalog(target_term)
     coverage = get_term_coverage(target_term)
     coverage_status = coverage.get("coverage_status") or "unknown"
-    source_updated_at = coverage.get("updated_at") or "unknown"
-    term_label = target_term.display()
+    source_updated_at = coverage.get("updated_at") or ("未知" if language == "zh" else "unknown")
+    term_label = display_term(target_term.display(), language)
+    coverage_label = {
+        "complete": "完整", "partial": "不完整", "stale": "已过期",
+        "unavailable": "不可用", "unknown": "未知",
+    }.get(coverage_status, "未知")
     if coverage_status in {"partial", "stale", "unavailable", "unknown"}:
         observability.increment("catalog.coverage_status", status=coverage_status)
         observability.log_event(
@@ -699,7 +679,7 @@ def _deterministic_single_course_fallback_reply(
     if not record:
         if language == "zh":
             coverage_note = (
-                f"{term_label} 的本地数据状态为 {coverage_status}，"
+                f"{term_label} 的本地数据状态为 {coverage_label}，"
                 if coverage_status in {"partial", "stale"}
                 else ""
             )
@@ -727,21 +707,19 @@ def _deterministic_single_course_fallback_reply(
             "目前无法连接回答服务。以下内容直接来自本地课程目录。",
             "",
             f"**{record.ref.display()} · {record.title or '课程名称未知'}**",
-            f"学分：{units}",
+            f"学分：{'未知' if units == 'unknown units' else units}",
         ]
-        if record.description:
-            lines.append(record.description)
-        if record.prerequisite_text:
-            lines.append(f"先修要求：{record.prerequisite_text}")
-        if record.restriction:
-            lines.append(f"选课限制：{record.restriction}")
+        # The offline catalog contains English prose. Without the model we
+        # cannot translate it faithfully; retain facts and state the gap.
+        if record.description or record.prerequisite_text or record.restriction:
+            lines.append("课程描述、先修要求和选课限制的中文说明暂不可用，请在服务恢复后继续核实。")
         if sections:
             lines.append(f"{term_label}：本地数据找到 {len(sections)} 个班次。")
         elif coverage_status == "complete":
             lines.append(f"{term_label}：本地数据中没有找到班次。")
         else:
             lines.append(
-                f"{term_label}：数据状态为 {coverage_status}，暂时无法确认是否开课。"
+                f"{term_label}：数据状态为 {coverage_label}，暂时无法确认是否开课。"
             )
         lines.append(f"数据更新时间：{source_updated_at}。")
         return "\n".join(lines)
@@ -875,6 +853,8 @@ async def _handle_agent(
                     "name":  event.get("name"),
                     "label": event.get("label"),
                     "args":  event.get("args"),
+                    **({"response_language": event["response_language"]}
+                       if event.get("response_language") else {}),
                 })
             elif t == "tool_call_done":
                 ok = event.get("ok", True)
@@ -918,6 +898,9 @@ async def _handle_agent(
                 }
                 if event.get("fetch_summary") is not None:
                     tool_done_payload["fetch_summary"] = event["fetch_summary"]
+                for field in ("section_count", "offering_status", "authoritative"):
+                    if field in event:
+                        tool_done_payload[field] = event[field]
                 await queue.put(tool_done_payload)
             elif t == "cards_proposed":
                 # propose_recommendation tool fired. Default behavior
@@ -1722,8 +1705,68 @@ def _migrate_schedule_entries(
     return session, changed
 
 
+# Fixed-size stripes bound memory while keeping each session's read/modify/write
+# atomic when FastAPI runs schedule handlers in its worker pool.
+_SCHEDULE_LOCKS = tuple(RLock() for _ in range(64))
+
+
+def _schedule_lock(user_id, session_id):
+    return _SCHEDULE_LOCKS[hash((user_id, session_id)) % len(_SCHEDULE_LOCKS)]
+
+
+def _schedule_lookups(user_id: str, session_id: str):
+    """Reuse this session's server-generated cards; memoize other lookups.
+
+    Adding/removing a shown section does not need a new WebSoc request.
+    Explicit refresh still fetches live data. Never accept section times
+    from a mutation request or borrow cards from another user/session/term.
+    """
+    from app.data.db import get_sections, get_course_info
+
+    def course_key(value):
+        ref = parse_course_mention(str(value or ""))
+        return ref.display() if ref else str(value or "").strip()
+
+    cards = {}
+    titles = {}
+    for turn in reversed(sessions_data.read_turns(user_id, session_id)):
+        if turn.get("role") != "assistant":
+            continue
+        for card in reversed(turn.get("cards") or []):
+            if not isinstance(card, dict):
+                continue
+            cid = course_key(card.get("course_id"))
+            parsed = parse_term_key(str(card.get("term") or ""))
+            if not cid or parsed.kind != "single":
+                continue
+            key = (cid, parsed.terms[0].canonical_name)
+            cards.setdefault(key, card)
+            if card.get("title"):
+                titles.setdefault(cid, card["title"])
+
+    @lru_cache(maxsize=None)
+    def sections(course_id, term):
+        card = cards.get((course_key(course_id), term))
+        if card and card.get("sections"):
+            return {
+                "found": True,
+                "source": card.get("section_source"),
+                "sections": [normalize_section_meeting(s) for s in card["sections"] if isinstance(s, dict)],
+            }
+        return get_sections(course_id, term)
+
+    @lru_cache(maxsize=None)
+    def course_info(course_id):
+        title = titles.get(course_key(course_id))
+        if title:
+            return {"found": True, "course": {"title": title}}
+        return get_course_info(course_id)
+
+    return sections, course_info
+
+
 def _resolve_section_num(course_id: str, sec: Optional[str],
-                         term: Optional[str]) -> Optional[str]:
+                         term: Optional[str], *, section_lookup=None) -> Optional[str]:
     """
     Normalise an entry's `section` field to a canonical section_num
     ("A" / "A1" / "B"). The frontend pre-E4 sometimes stored the
@@ -1740,7 +1783,7 @@ def _resolve_section_num(course_id: str, sec: Optional[str],
     if not term or term == "unknown":
         return sec_str        # best effort; can't resolve without term
     from app.data.db import get_sections
-    env = get_sections(course_id, term)
+    env = (section_lookup or get_sections)(course_id, term)
     if not env.get("found"):
         return sec_str
     for s in env.get("sections", []):
@@ -1754,6 +1797,8 @@ def _entries_match(
     course_id: str,
     req_section: Optional[str],
     term: str,
+    *,
+    section_lookup=None,
 ) -> bool:
     """True if `entry` refers to the same (course, section) as the
     request, surviving the section_num-vs-section_code mismatch
@@ -1762,8 +1807,10 @@ def _entries_match(
         return False
     if entry.get("term") != term:
         return False
-    entry_norm = _resolve_section_num(course_id, entry.get("section"), term)
-    req_norm   = _resolve_section_num(course_id, req_section, term)
+    if entry.get("section") == req_section and req_section:
+        return True
+    entry_norm = _resolve_section_num(course_id, entry.get("section"), term, section_lookup=section_lookup)
+    req_norm   = _resolve_section_num(course_id, req_section, term, section_lookup=section_lookup)
     return entry_norm == req_norm and entry_norm is not None
 
 
@@ -1782,7 +1829,7 @@ def _append_schedule_notice(entry: dict, message: str) -> None:
         notices.append(message)
 
 
-def _validate_pending_schedule(pending_schedule: list[dict]) -> dict:
+def _validate_pending_schedule(pending_schedule: list[dict], *, section_lookup=None) -> dict:
     if not pending_schedule:
         return _empty_schedule_validation()
 
@@ -1791,7 +1838,7 @@ def _validate_pending_schedule(pending_schedule: list[dict]) -> dict:
     bundle_items = build_pending_schedule_bundle_items(
         pending_schedule,
         term=None,
-        section_lookup=get_sections,
+        section_lookup=section_lookup or get_sections,
     )
     validation = validate_schedule_bundle(bundle_items)
     unknown_term_entries = [
@@ -1816,11 +1863,16 @@ def _validate_pending_schedule(pending_schedule: list[dict]) -> dict:
 
 
 @router.post("/schedule/add")
-async def add_to_schedule(
+def add_to_schedule(
     req: ScheduleRequest,
     request: Request,
     user: dict = Depends(current_user_optional),
 ):
+    with _schedule_lock(user["id"], req.session_id):
+        return _add_to_schedule(req, request, user)
+
+
+def _add_to_schedule(req, request, user):
     """Phase E4: each (course_id, section) pair is a separate schedule
     entry. Adding Lec A and Dis A1 of the same course produces TWO
     entries (and downstream, two calendar events) so the user sees
@@ -1839,7 +1891,8 @@ async def add_to_schedule(
         active_session_id,
         req.term,
     )
-    sec_norm = _resolve_section_num(req.course_id, req.section, effective_term)
+    section_lookup, course_lookup = _schedule_lookups(user_id, active_session_id)
+    sec_norm = _resolve_section_num(req.course_id, req.section, effective_term, section_lookup=section_lookup)
     sec_canon = sec_norm or req.section
     entry = {
         "course_id": req.course_id,
@@ -1850,7 +1903,7 @@ async def add_to_schedule(
     # Dedup using section-equivalence (handles legacy entries that stored
     # the 5-digit registrar code where the new picker stores section_num).
     is_dup = any(
-        _entries_match(e, req.course_id, sec_canon, effective_term)
+        _entries_match(e, req.course_id, sec_canon, effective_term, section_lookup=section_lookup)
         for e in session.get("pending_schedule", [])
     )
     existing_terms = sorted(
@@ -1860,7 +1913,6 @@ async def add_to_schedule(
             if entry.get("term") and entry.get("term") != "unknown"
         }
     )
-    schedule_validation = _validate_pending_schedule(session.get("pending_schedule", []))
     if not is_dup:
         session.setdefault("pending_schedule", []).append(entry)
         session = update_session(
@@ -1868,8 +1920,8 @@ async def add_to_schedule(
             {"pending_schedule": session["pending_schedule"]},
             user_id=user_id,
         )
-        schedule_validation = _validate_pending_schedule(session.get("pending_schedule", []))
-    events = _build_schedule_events(session)
+    schedule_validation = _validate_pending_schedule(session.get("pending_schedule", []), section_lookup=section_lookup)
+    events = _build_schedule_events(session, section_lookup=section_lookup, course_lookup=course_lookup)
     cross_term_notice = None
     if not is_dup and existing_terms and effective_term not in existing_terms:
         cross_term_notice = {
@@ -1886,11 +1938,16 @@ async def add_to_schedule(
 
 
 @router.post("/schedule/remove")
-async def remove_from_schedule(
+def remove_from_schedule(
     req: ScheduleRequest,
     request: Request,
     user: dict = Depends(current_user_optional),
 ):
+    with _schedule_lock(user["id"], req.session_id):
+        return _remove_from_schedule(req, request, user)
+
+
+def _remove_from_schedule(req, request, user):
     """If `section` is provided, remove only that specific (course, section).
     Section-equivalence aware so legacy entries (5-digit codes stored
     where section_num is now expected) get matched and removed.
@@ -1905,10 +1962,11 @@ async def remove_from_schedule(
         if req.term == "unknown"
         else _schedule_effective_term(user_id, active_session_id, req.term)
     )
+    section_lookup, course_lookup = _schedule_lookups(user_id, active_session_id)
     if req.section:
         session["pending_schedule"] = [
             e for e in session.get("pending_schedule", [])
-            if not _entries_match(e, req.course_id, req.section, effective_term)
+            if not _entries_match(e, req.course_id, req.section, effective_term, section_lookup=section_lookup)
         ]
     else:
         session["pending_schedule"] = [
@@ -1924,12 +1982,12 @@ async def remove_from_schedule(
         {"pending_schedule": session["pending_schedule"]},
         user_id=user_id,
     )
-    events = _build_schedule_events(session)
+    events = _build_schedule_events(session, section_lookup=section_lookup, course_lookup=course_lookup)
     return {
         "ok": True,
         "pending_schedule": session["pending_schedule"],
         "events": events,
-        "schedule_validation": _validate_pending_schedule(session["pending_schedule"]),
+        "schedule_validation": _validate_pending_schedule(session["pending_schedule"], section_lookup=section_lookup),
     }
 
 
@@ -1996,6 +2054,10 @@ def _apply_live_schedule_result(entry: dict, result: Optional[dict]) -> dict:
         "days",
         "start_time",
         "end_time",
+        "time_is_tba",
+        "time_display",
+        "final_exam",
+        "units",
         "location",
         "instructors",
         "status",
@@ -2011,9 +2073,7 @@ def _apply_live_schedule_result(entry: dict, result: Optional[dict]) -> dict:
     refreshed["materialized_section"] = snapshot
     refreshed["materialization_status"] = (
         "resolved"
-        if matched.get("days")
-        and matched.get("start_time")
-        and matched.get("end_time")
+        if section_time_status(matched, matched) != "unknown"
         else "tba"
     )
     stale = bool(result.get("stale")) or result.get("source") == "last_known_live"
@@ -2108,40 +2168,53 @@ async def refresh_schedule(
             )
             result_by_key[key] = None
 
-    refreshed_entries = [
-        _apply_live_schedule_result(
-            entry,
-            result_by_key.get(
-                (
-                    str(entry.get("course_id") or ""),
-                    str(entry.get("term") or ""),
-                )
-            ),
-        )
-        for entry in entries
-    ]
-    session = update_session(
-        active_session_id,
-        {"pending_schedule": refreshed_entries},
-        user_id=user_id,
+    payload = await asyncio.to_thread(
+        _finish_schedule_refresh, user_id, active_session_id, result_by_key,
     )
-    return {
-        "ok": True,
-        "pending_schedule": session.get("pending_schedule", []),
-        "events": _build_schedule_events(session),
-        "schedule_validation": _validate_pending_schedule(
-            session.get("pending_schedule", [])
-        ),
-        "timed_out": bool(pending),
-    }
+    return {**payload, "timed_out": bool(pending)}
+
+
+def _finish_schedule_refresh(user_id, session_id, result_by_key):
+    with _schedule_lock(user_id, session_id):
+        # The user may add/remove sections while the live requests run.
+        session = get_or_create_session(session_id, user_id=user_id)
+        refreshed_entries = []
+        for entry in session.get("pending_schedule", []):
+            key = (entry.get("course_id"), entry.get("term"))
+            refreshed_entries.append(
+                _apply_live_schedule_result(entry, result_by_key[key])
+                if key in result_by_key else entry
+            )
+        session = update_session(session_id, {"pending_schedule": refreshed_entries}, user_id=user_id)
+        cached_lookup, course_lookup = _schedule_lookups(user_id, session_id)
+
+        def section_lookup(course_id, term):
+            result = result_by_key.get((course_id, term))
+            if result and result.get("sections"):
+                return {**result, "found": True}
+            return cached_lookup(course_id, term)
+
+        return {
+            "ok": True,
+            "pending_schedule": session.get("pending_schedule", []),
+            "events": _build_schedule_events(session, section_lookup=section_lookup, course_lookup=course_lookup),
+            "schedule_validation": _validate_pending_schedule(
+                session.get("pending_schedule", []), section_lookup=section_lookup,
+            ),
+        }
 
 
 @router.post("/schedule/clear")
-async def clear_schedule(
+def clear_schedule(
     req: ScheduleClearRequest,
     request: Request,
     user: dict = Depends(current_user_optional),
 ):
+    with _schedule_lock(user["id"], req.session_id):
+        return _clear_schedule(req, request, user)
+
+
+def _clear_schedule(req, request, user):
     """Wipe every entry in this session's pending_schedule. Escape hatch
     when the user accumulates stuck entries (e.g. from legacy format
     that the section-equivalence fix can't auto-resolve)."""
@@ -2158,10 +2231,15 @@ async def clear_schedule(
 
 
 @router.get("/schedule")
-async def get_schedule(
+def get_schedule(
     session_id: str,
     user: dict = Depends(current_user_optional),
 ):
+    with _schedule_lock(user["id"], session_id):
+        return _get_schedule(session_id, user)
+
+
+def _get_schedule(session_id, user):
     user_id = user["id"]
     active_session_id = _resolve_session_id(session_id, user_id, None)
     session = get_or_create_session(active_session_id, user_id=user_id)
@@ -2170,12 +2248,13 @@ async def get_schedule(
         active_session_id,
         session,
     )
+    section_lookup, course_lookup = _schedule_lookups(user_id, active_session_id)
     return {
         "ok": True,
         "pending_schedule": session.get("pending_schedule", []),
-        "events": _build_schedule_events(session),
+        "events": _build_schedule_events(session, section_lookup=section_lookup, course_lookup=course_lookup),
         "schedule_validation": _validate_pending_schedule(
-            session.get("pending_schedule", [])
+            session.get("pending_schedule", []), section_lookup=section_lookup,
         ),
         "migrated": migrated,
     }
@@ -2195,7 +2274,7 @@ async def end_session(
     return {"ok": True, "messages_archived": 0}
 
 
-def _build_schedule_events(session):
+def _build_schedule_events(session, *, section_lookup=None, course_lookup=None):
     """
     Materialize the session's pending_schedule into calendar events.
 
@@ -2214,35 +2293,30 @@ def _build_schedule_events(session):
         if not entry_term or entry_term == "unknown":
             continue
 
-        course_env = get_course_info(cid)
+        course_env = (course_lookup or get_course_info)(cid)
         title = (
             course_env.get("course", {}).get("title", cid)
             if course_env.get("found") else cid
         )
 
-        sec_env = get_sections(cid, entry_term)
-        sections = sec_env.get("sections", []) if sec_env.get("found") else []
-
-        # Match by section_num (what the frontend picker sends: "A" /
-        # "A1") — NOT section_code (the 5-digit registrar number).
-        # Section_code matching was the legacy path and never hit;
-        # the frontend has always passed section_num here.
-        sec = next((s for s in sections if (s.get("section_num") or "") == sid), None)
+        # A server-verified refresh is newer than the bundled catalog. Using
+        # the catalog first can hide real meetings behind an old TBA record.
+        snapshot = entry.get("materialized_section")
+        sec = snapshot if isinstance(snapshot, dict) and sid in (
+            str(snapshot.get("section_num") or ""),
+            str(snapshot.get("section_code") or ""),
+        ) else None
         if sec is None:
-            # Fall back to section_code for old callers. Never fall back to
-            # an unrelated first section: unresolved planning intent stays
-            # visible in the list without a fabricated calendar block.
-            sec = next((s for s in sections if s.get("section_code") == sid), None)
-        if sec is None:
-            snapshot = entry.get("materialized_section")
-            if isinstance(snapshot, dict) and (
-                str(snapshot.get("section_num") or "") == sid
-                or str(snapshot.get("section_code") or "") == sid
-            ):
-                sec = snapshot
-        if sec is None:
+            sec_env = (section_lookup or get_sections)(cid, entry_term)
+            sections = sec_env.get("sections", []) if sec_env.get("found") else []
+            # Never substitute an unrelated first section on an exact miss.
+            sec = next((s for s in sections if sid in (
+                str(s.get("section_num") or ""), str(s.get("section_code") or ""),
+            )), None)
+        if sec is None or section_time_status(sec, sec) == "unknown":
             continue
 
+        sec = normalize_section_meeting(sec)
         start, end = sec.get("start_time"), sec.get("end_time")
         days_str = sec.get("days")
         if not (start and end and days_str):

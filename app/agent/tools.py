@@ -25,6 +25,7 @@ import logging
 from typing import Any, Callable, Optional
 
 from app import observability
+from app.response_language import display_term
 from app.agent.deep_search_state import DeepSearchRunState
 from app.catalog.normalization import parse_course_mention
 from app.data import db
@@ -2219,56 +2220,69 @@ def dispatch(name: str, args: dict, *, context: dict):
         return {"error": f"{type(e).__name__}: {e}"}
 
 
-def humanize_tool_call(name: str, args: dict) -> str:
-    """Short user-facing label for a tool call (chip text)."""
+def humanize_tool_call(name: str, args: dict, response_language: str = "en") -> str:
+    """User-facing tool progress in the same language as this turn's answer."""
     a = args or {}
-    term_suffix = f" · {a['term']}" if a.get("term") else ""
+    zh = response_language == "zh"
+    term = display_term(str(a.get("term") or ""), response_language)
+    term_suffix = f" · {term}" if term else ""
+    course_id = a.get("course_id", "")
+    instructor = a.get("instructor_name", "")
+    course_suffix = f" · {a['course']}" if a.get("course") else ""
     if name == "get_course_info":
-        return f"查询 {a.get('course_id', '')} 课程信息"
+        return f"查询 {course_id} 课程信息" if zh else f"Looking up {course_id} course details"
     if name == "get_course_offerings":
-        return f"查询开课与教授 · {a.get('course_id', '')} · {', '.join(a.get('terms') or [])}"
+        terms = ", ".join(display_term(t, response_language) for t in a.get("terms") or [])
+        action = "查询开课与教授" if zh else "Checking offerings and instructors"
+        return f"{action} · {course_id} · {terms}"
     if name == "get_sections":
-        return f"查询 {a.get('course_id', '')} 排课{term_suffix}"
+        return (f"查询 {course_id} 排课" if zh else f"Checking {course_id} sections") + term_suffix
     if name == "get_live_sections":
-        return f"实时查询 WebSoc · {a.get('course_id', '')}{term_suffix}"
+        action = "实时查询 WebSoc" if zh else "Checking live WebSoc"
+        return f"{action} · {course_id}{term_suffix}"
     if name == "get_grade_distribution":
-        return f"查询 {a.get('course_id', '')} 历年成绩"
+        return f"查询 {course_id} 历年成绩" if zh else f"Checking {course_id} grade history"
     if name == "get_professor_rating":
-        return f"查询教授 {a.get('instructor_name', '')}"
+        return f"查询教授 {instructor}" if zh else f"Looking up professor {instructor}"
     if name == "get_professor_reviews":
-        course = a.get("course")
-        suffix = f" · {course}" if course else ""
-        return f"读取学生评论 · {a.get('instructor_name', '')}{suffix}"
+        action = "读取学生评论" if zh else "Reading student reviews"
+        return f"{action} · {instructor}{course_suffix}"
     if name == "get_professor_tags":
-        return f"汇总教授标签 · {a.get('instructor_name', '')}"
+        action = "汇总教授标签" if zh else "Summarizing professor tags"
+        return f"{action} · {instructor}"
     if name == "summarize_professor_reviews":
-        course = a.get("course")
-        suffix = f" · {course}" if course else ""
-        return f"提炼教授口碑 · {a.get('instructor_name', '')}{suffix}"
+        action = "提炼教授口碑" if zh else "Summarizing professor reviews"
+        return f"{action} · {instructor}{course_suffix}"
     if name == "check_prerequisites_met":
-        return f"检查 {a.get('course_id', '')} 先修要求"
+        return f"检查 {course_id} 先修要求" if zh else f"Checking {course_id} prerequisites"
     if name == "search_courses":
         bits = [v for v in (a.get("department"), a.get("ge_category")) if v]
-        return f"搜索课程（{', '.join(bits) or '全部'}）{term_suffix}"
+        scope = ", ".join(bits) or ("全部" if zh else "all")
+        return (f"搜索课程（{scope}）" if zh else f"Searching courses ({scope})") + term_suffix
     if name == "check_section_conflict":
-        return f"对比 {a.get('course_a', '')} 与 {a.get('course_b', '')} 时间冲突{term_suffix}"
+        first, second = a.get("course_a", ""), a.get("course_b", "")
+        action = f"对比 {first} 与 {second} 时间冲突" if zh else f"Checking conflicts between {first} and {second}"
+        return action + term_suffix
     if name == "get_student_profile":
-        return "读取学生画像"
+        return "读取学生画像" if zh else "Reading student profile"
     if name == "get_policy":
         topic = a.get("topic")
-        return f"查询学校政策 · {topic}" if topic else "列出学校政策主题"
+        if not topic:
+            return "列出学校政策主题" if zh else "Listing university policy topics"
+        return ("查询学校政策" if zh else "Checking university policy") + f" · {topic}"
     if name == "get_department_restrictions":
-        department = a.get("department") or ""
-        term = a.get("term")
-        suffix = f" · {term}" if term else ""
-        return f"读取 WebSoc 部门说明 · {department}{suffix}"
+        action = "读取 WebSoc 部门说明" if zh else "Reading WebSoc department notes"
+        return f"{action} · {a.get('department') or ''}{term_suffix}"
     if name == "web_search":
         query = (a.get("query") or "").strip()
-        return f"联网搜索 · {query}" if query else "联网搜索"
+        action = "联网搜索" if zh else "Searching the web"
+        return action + (f" · {query}" if query else "")
     if name == "fetch_page":
         url = (a.get("url") or "").strip()
-        return f"深读网页 · {url}" if url else "深读网页"
+        action = "深读网页" if zh else "Reading webpage"
+        return action + (f" · {url}" if url else "")
     if name == "propose_recommendation":
         n = len(a.get("items") or [])
-        return f"准备 {n} 张推荐卡片{term_suffix}"
-    return f"调用 {name}"
+        action = f"准备 {n} 张推荐卡片" if zh else f"Preparing {n} recommendation cards"
+        return action + term_suffix
+    return f"调用 {name}" if zh else f"Calling {name}"

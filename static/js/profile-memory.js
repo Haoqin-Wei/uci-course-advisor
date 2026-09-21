@@ -58,136 +58,6 @@ async function loadMemory() {
 
 
 
-/* ── Profile modal ────────────────────────────────────── */
-function openProfile() {
-  closeUserPopover();
-  document.getElementById('profileModal').classList.add('open');
-  loadProfile();
-}
-function closeProfile(ev) {
-  if (ev && ev.type === 'click' && ev.target.id !== 'profileModal') return;
-  document.getElementById('profileModal').classList.remove('open');
-}
-
-async function loadProfile() {
-  const body = document.getElementById('profileBody');
-  body.innerHTML = '<div class="memory-empty">Loading…</div>';
-  try {
-    const [memoryResponse, academicResponse] = await Promise.all([
-      fetch(`${API}/api/memory/me`),
-      fetch(`${API}/api/academic/profile`),
-    ]);
-    if (!memoryResponse.ok) {
-      body.innerHTML = `<div class="memory-empty">Failed to load profile (${memoryResponse.status}).</div>`;
-      return;
-    }
-    const data = await memoryResponse.json();
-    data.academic = academicResponse.ok ? await academicResponse.json() : {};
-    renderProfile(data);
-  } catch (err) {
-    body.innerHTML = `<div class="memory-empty">Error: ${escHTML(String(err))}</div>`;
-  }
-}
-
-function renderProfile(data) {
-  const p = data.profile || {};
-  const academic = data.academic || {};
-  let html = '';
-
-  // ── Wizard re-open entry point ──
-  // Always show; lets users revisit and edit major / year / completed
-  // courses regardless of whether they originally saved or skipped.
-  // Pre-populates wizard state from the current profile so existing
-  // selections aren't lost.
-  html += `<div class="profile-wizard-cta">
-    <div class="profile-wizard-cta-text">
-      <div class="profile-wizard-cta-title">Edit with the onboarding wizard</div>
-      <div class="profile-wizard-cta-sub">
-        Re-pick your school, year, major, or completed courses. Existing values pre-fill.
-      </div>
-    </div>
-    <button class="wizard-btn primary" type="button" onclick="reopenWizardFromProfile()">Open wizard</button>
-  </div>`;
-
-  // ── About you ──
-  html += `<div class="memory-section">
-    <div class="memory-section-label">About you</div>
-    <div class="memory-about">`;
-  if (p.major)
-    html += `<div class="memory-about-line"><strong>${escHTML(p.major)}</strong>` +
-            (p.year ? ` · ${escHTML(p.year)}` : '') + `</div>`;
-  if (p.catalog_year)
-    html += `<div class="memory-about-line">Catalog year: <strong>${escHTML(p.catalog_year)}</strong></div>`;
-  if (p.target_gpa)
-    html += `<div class="memory-about-line">Target GPA: <strong>${p.target_gpa}</strong></div>`;
-  const grad = p.graduating_class || _inferGradClass(p.year);
-  if (grad)
-    html += `<div class="memory-about-line">Expected graduation: <strong>${grad}</strong></div>`;
-  html += `</div></div>`;
-
-  // ── Course lists (Completed / Enrolled / Waitlisted) ──
-  const importedCompleted = Array.isArray(academic.completed_courses)
-    ? academic.completed_courses : [];
-  const completed = importedCompleted.length
-    ? importedCompleted
-    : (p.completed_courses || []).map(courseId => ({course_id: courseId, title: ''}));
-  const sections = [
-    ['Completed',  completed, 'dot-complete'],
-    ['Enrolled',   p.selected_courses   || [], 'dot-enrolled'],
-    ['Waitlisted', p.waitlisted_courses || [], 'dot-waitlist'],
-  ];
-  for (const [label, courses, dotClass] of sections) {
-    html += `<div class="memory-section">
-      <div class="profile-section-label-row">
-        <div class="memory-section-label">${label}<span class="profile-section-count">${courses.length}</span></div>` +
-        (label === 'Completed'
-          ? `<button class="wizard-btn primary transcript-import-button" type="button"
-                     data-transcript-button onclick="triggerTranscriptPicker('profile')">Import updated transcript</button>`
-          : '') +
-      `</div>`;
-    if (label === 'Completed') {
-      if (academic.last_import?.imported_at) {
-        html += `<div class="profile-import-meta">Last transcript import: ${escHTML(_formatProfileDate(academic.last_import.imported_at))}</div>`;
-      }
-      html += `<div class="transcript-import-status" id="profileTranscriptStatus" hidden aria-live="polite"></div>`;
-    }
-    if (!courses.length) {
-      html += `<div class="memory-empty">No ${label.toLowerCase()} courses.</div>`;
-    } else {
-      html += `<div class="profile-course-grid">`;
-      for (const course of courses) {
-        const cid = typeof course === 'string' ? course : course.course_id;
-        const title = typeof course === 'string' ? '' : course.title;
-        const text = title ? `${_prettyCourseId(cid)} · ${title}` : _prettyCourseId(cid);
-        html += `<div class="left-course-tag"><span class="${dotClass}"></span> ${escHTML(text)}</div>`;
-      }
-      html += `</div>`;
-    }
-    if (label === 'Completed') {
-      html += `<div class="profile-unverified-note">User-provided and not verified by UCI. ZotAdvisor is not an official degree audit.</div>`;
-    }
-    html += `</div>`;
-  }
-
-  html += `<div class="profile-danger-zone">
-    <div>
-      <div class="profile-wizard-cta-title">Delete account</div>
-      <p class="profile-wizard-cta-sub">Remove your profile, academic data, and conversations.</p>
-    </div>
-    <button class="modal-btn danger" type="button" onclick="openDeleteAccount()">Delete account</button>
-  </div>`;
-
-  document.getElementById('profileBody').innerHTML = html;
-}
-
-function _formatProfileDate(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value || '');
-  return date.toLocaleString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-  });
-}
-
 function renderMemory(data) {
   const profile = data.profile || {};
   const prefs = data.preferences || [];
@@ -270,7 +140,7 @@ function renderMemory(data) {
   html += `<div class="memory-section">
     <div class="memory-section-label">Learned preferences</div>`;
   if (!prefs.length) {
-    html += `<div class="memory-empty">ZotAdvisor hasn't learned any preferences yet. ` +
+    html += `<div class="memory-empty">Solon hasn't learned any preferences yet. ` +
             `Chat naturally and it'll pick up on what matters to you.</div>`;
   } else {
     for (const p of prefs) {

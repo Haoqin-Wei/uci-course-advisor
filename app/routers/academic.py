@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 
 from app.academic import get_academic_profile, import_transcript
 from app.academic.models import TranscriptImportRequest
@@ -65,9 +65,14 @@ def import_transcript_data(
 
 
 @router.get("/profile")
-def academic_profile(user: dict = Depends(current_user_required)):
+def academic_profile(
+    response: Response, include_gpa: bool = False, user: dict = Depends(current_user_required)
+):
+    response.headers["Cache-Control"] = "no-store"
     profile = get_memory_manager().get_profile(user["id"]) or {}
     return {
         "ok": True,
-        **get_academic_profile(user["id"], profile.get("completed_courses") or []),
+        **get_academic_profile(
+            user["id"], profile.get("completed_courses") or [], include_gpa=include_gpa
+        ),
     }

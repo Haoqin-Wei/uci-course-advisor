@@ -7,6 +7,7 @@ This project is not an official UCI advisor, degree audit, or enrollment system.
 ## Current capabilities
 
 - Streaming chat through `/api/chat/stream` with SSE events, tool chips, limit-reached continuation, and persisted history.
+- New conversations center the existing composer beneath a randomly selected greeting. The first send animates into the chat layout without delaying the request; restored conversations skip the transition, and system reduced-motion preferences are respected. Offline browser coverage: `scripts/verify_welcome_motion.cjs`.
 - Tool-backed course, section, professor, grade, prerequisite, policy, and schedule-conflict lookups.
 - Controlled `web_search` agent tool with source classification, default-off safety, fake-provider tests, and markdown citations for web-sourced facts.
 - Fixed WebSoc restriction evidence pipeline: the backend follows query-relevant official links, parses cross-row timelines, and selects dates/scopes/exceptions deterministically.
@@ -16,7 +17,11 @@ This project is not an official UCI advisor, degree audit, or enrollment system.
 - Automatic Week 8 planning defaults, a read-only default badge, conversational term inference, and multi-term offering/professor comparisons.
 - Structured XML runtime context plus a backend tool guard keeps the conversation default separate from the term(s) each tool is allowed to query.
 - Cross-term schedules: every entry keeps its own term, overlaps are non-blocking, and the same course/section can coexist across terms.
-- Verified `@uci.edu` accounts, authenticated sessions, onboarding, and cross-session restoration.
+- Schedule shows only added sections, with TBA/unknown-time sections in a visible untimed area above the weekly grid. Suggested meeting previews are disabled. Exact server-refreshed meeting data takes precedence over older catalog times for both calendar blocks and conflict checks.
+- The weekly grid spans 08:00–22:00 by default, extending for actual meetings outside those hours. A confirmed class-free Friday afternoon shows `Free` with a randomly chosen celebration or smile emoji; unknown meeting times remain unknown.
+- Registrar times such as `12:30–1:50p` are normalized to `12:30–13:50`, including existing saved cards. Schedule mutations reuse the current session's server-generated cards and cache fallback lookups per request; live checks remain behind Refresh.
+- `@uci.edu` email/password registration with password confirmation and immediate sign-in, authenticated sessions, optional onboarding, and cross-session restoration. New emails are not ownership-verified.
+- Student Profile workspace between Ask and Schedule: real academic summary, private GPA reveal, searchable completed courses, and existing profile-edit/transcript-import flows. See [profile data and UI conventions](docs/student-profile.md).
 - Optional UCI unofficial-transcript import: PDF.js extracts text entirely in
   the browser, discards identity fields, and sends only allow-listed structured
   academic records to the authenticated server profile.
@@ -116,11 +121,40 @@ For production/runtime-only installs, use `requirements.txt` instead of `require
 - `MEMORY_PROVIDER`, `MEMORY_ROOT`, `MEMORY_DB_PATH`, `MEMORY_MAX_ACTIVE_ITEMS`: select and size the evidence-backed long-term memory store. SQLite is the default; `json` is a rollback mode.
 - `ACADEMIC_DB_PATH`: server-side normalized academic record database. It never stores PDF bytes or raw transcript text.
 - `WEB_SEARCH_ENABLED`, `WEB_SEARCH_PROVIDER`, `WEB_SEARCH_API_KEY`, `WEB_SEARCH_MAX_RESULTS`, `WEB_SEARCH_TIMEOUT_SECONDS`: controlled web-search mode. Development defaults to `WEB_SEARCH_ENABLED=true` and `WEB_SEARCH_PROVIDER=duckduckgo`; production defaults to disabled unless explicitly enabled. Tests force offline fake/disabled modes.
-- `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_SUBJECT`: optional email verification delivery.
 - `ALLOW_SHARED_DEMO`, `ALLOW_GUEST_USERS`, `COOKIE_SECURE`, `CSRF_PROTECTION`, `ALLOWED_ORIGINS`, `ALLOW_CUSTOM_SYSTEM_PROMPT`: private-beta safety switches.
 - `LLM_INPUT_USD_PER_1K`, `LLM_OUTPUT_USD_PER_1K`: optional estimated cost rates for observability logs.
 
-Do not commit `.env`, API keys, auth databases, verification codes, cookies, or runtime memory data.
+Do not commit `.env`, API keys, auth databases, cookies, or runtime memory data.
+
+### Registration
+
+Account access uses a full-page split layout with a Solon introduction and a compact
+sign-in/create-account form. Mobile screens use a single column. Tabs support keyboard
+navigation; incomplete forms and pending requests disable submission. The workspace is
+hidden and inert until authentication resolves. Only existing email/password features
+are shown, with no SSO, Google, password-reset, help, or language-picker placeholders.
+
+The registration form takes a UCI email address, password, and password confirmation,
+plus the existing age/terms/privacy acknowledgment. `POST /api/auth/register` validates
+the UCI domain and matching passwords, stores a bcrypt password hash, and immediately
+sets the login cookie. Passwords require at least 8 characters and must fit within
+bcrypt's 72-byte UTF-8 limit. No email service or verification code is required;
+`/api/auth/request_code` and `/api/auth/verify` are retired.
+
+New accounts have `verified_at = NULL`. On first database access, legacy auth tables
+are upgraded transactionally to allow this while retaining existing user IDs, password
+hashes, verification timestamps, and consent receipts. Back up the auth database before
+deployment. Registration creates no profile, course, or conversation records itself.
+
+Registration is limited to five attempts per client IP per ten minutes, independent
+of the submitted email. Configure Uvicorn's trusted proxy addresses for your reverse
+proxy; application code uses the resolved ASGI client address, not arbitrary forwarding
+headers. The domain restriction does not prove that a registrant owns the email.
+
+Focused checks: `pytest tests/test_password_registration.py tests/test_auth_ownership_characterization.py tests/test_private_beta_security.py --no-cov -q`.
+Offline desktop/mobile browser check: `node scripts/verify_registration_ui.cjs`
+(requires Playwright and Chrome; starts its own temporary local static server and uses
+synthetic API responses, without creating real accounts).
 
 ### Transcript import
 
@@ -202,9 +236,11 @@ Network/data refresh scripts exist under `scripts/`, but default tests and offli
 
 ### Automatic term state
 
+The user-confirmed contract, implementation map, and known parsing gaps are recorded in [学期规则与实现核对](docs/term-rules.md). Read it before changing term behavior; `AGENTS.md` also points maintainers to this contract. The 2026-09-20 audit found that the main flows are implemented, but unrelated yearless queries, mixed explicit/relative dates, and custom historical year ranges still have documented gaps.
+
 The backend uses `America/Los_Angeles` and UCI instruction dates from Anteater `calendar/all`. The actual ongoing `current_term` is separate from the planning `default_term`. At Week 8 Monday 00:00 Pacific time, the default advances Fall → Winter → Spring → Fall, regardless of whether the next timetable is published. Week 1 starts on the first Monday on or after instruction begins, accounting for Fall's opening Week 0. Official term end dates are preferred; when absent, the bounded calendar fallback ends after finals in Week 11. Summer queries are not supported yet.
 
-`GET /api/term-state` returns `automatic_term`, `source`, `status`, and `next_cutoff`. The frontend displays a read-only `YYYY Quarter · default` badge and refreshes at the next boundary and when the tab becomes visible. Per-answer query badges never overwrite this default. Legacy manual/pinned sessions migrate to automatic mode (metadata schema v3); the old mutation endpoint rejects manual requests with `manual_term_disabled` and continues accepting auto refresh for compatibility.
+`GET /api/term-state` returns `automatic_term`, `source`, `status`, and `next_cutoff`. The composer displays a read-only `@ Quarter YYYY` badge alongside the existing default-term display, and refreshes at the next boundary and when the tab becomes visible. Per-answer query badges never overwrite this default. Legacy manual/pinned sessions migrate to automatic mode (metadata schema v3); the old mutation endpoint rejects manual requests with `manual_term_disabled` and continues accepting auto refresh for compatibility.
 
 Complete user dates and actual-current relative references take precedence, followed by relevant discussion context, then the default. Missing years are inferred from context or the current/upcoming quarter and disclosed in the answer. Ordinary follow-ups (including a different course such as “那 ICS 32 呢”) retain the discussion terms. A bounded semantic LLM pass handles indirect follow-ups and offering-pattern intent, with deterministic fallback on timeout or offline operation. Backend term guards validate the resulting scope independently of the model.
 
@@ -315,7 +351,6 @@ GitHub Actions runs install, syntax lint, dependency graph validation, and offli
 - External API mode: Anteater term-state sync and live UCI fallback can run without a key under the shared quota; set `ANTEATER_API_KEY` for a dedicated rate limit. Missing or stale local sections trigger the fixed official Registrar WebSoc query, followed by Anteater when the official request fails. Results retain their source, lookup time and failure diagnostics.
 - Controlled web search: development can use `WEB_SEARCH_PROVIDER=duckduckgo` without an API key. `WEB_SEARCH_PROVIDER=fake` is the deterministic provider for offline tests/dev fixtures; unimplemented paid providers fail closed with a structured `provider_unimplemented` response. Web search results are never written into the local DB and are labeled with URL, domain, retrieved date, source class, and trust level.
 - Live LLM mode: set `DEEPSEEK_API_KEY`. The adapter uses an OpenAI-compatible DeepSeek endpoint and streams through the agent loop.
-- Email delivery: set `RESEND_API_KEY` and sender variables. Without this, development can still exercise auth flows without logging verification codes.
 
 ## Correctness boundaries
 

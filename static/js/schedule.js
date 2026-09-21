@@ -1,3 +1,7 @@
+let scheduleViewTerm = '';
+let scheduleLoadSequence = 0;
+let scheduleSyncState = 'idle';
+
 async function _postAddCourse(courseId, section, term) {
   const res = await fetch(`${API}/api/schedule/add`, {
     method: 'POST',
@@ -15,18 +19,33 @@ async function _postAddCourse(courseId, section, term) {
 }
 
 async function addCourse(courseId, section, btnEl, term) {
+  const epoch = conversationEpoch;
   const data = await _postAddCourse(courseId, section, term);
+  if (epoch !== conversationEpoch) return;
+  scheduleSyncState = 'ready';
+  scheduleViewTerm = canonicalTerm(term);
   if (!data.ok) throw new Error(data.reason || 'add failed');
+  ++scheduleLoadSequence; // An older GET must not erase this completed addition.
   pendingScheduleEntries = data.pending_schedule || [];
   scheduleEvents = data.events || [];
   scheduleValidation = data.schedule_validation || scheduleValidation;
   _hydrateScheduleState();        // rebuild local sets from server-of-truth
   renderScheduleGrid();
   showCrossTermToast(data.cross_term_notice);
-  if (!scheduleOpen) openSchedule();
+  // A completed background request must not interrupt the profile workspace.
+  if (!scheduleOpen && !document.body.classList.contains('profile-open')) openSchedule();
+  if (scheduleOpen && !document.body.classList.contains('profile-open')) {
+    selectedScheduleCourse = scheduleCourseKey(scheduleViewTerm, courseId);
+    syncScheduleHighlight();
+    const blocks = [...document.querySelectorAll('.sg-event, .schedule-untimed-item')].filter(el =>
+      scheduleCourseKey(el.dataset.term, el.dataset.cid) === selectedScheduleCourse);
+    const addedBlock = blocks.find(el => el.dataset.sec === section) || blocks[0];
+    addedBlock?.scrollIntoView({block: 'nearest', inline: 'nearest'});
+  }
 }
 
 async function removeCourse(courseId, btnEl, section, term) {
+  const epoch = conversationEpoch;
   const res = await fetch(`${API}/api/schedule/remove`, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
@@ -39,6 +58,9 @@ async function removeCourse(courseId, btnEl, section, term) {
   });
   const data = await res.json();
   if (!res.ok || !data.ok) throw new Error(data.detail || data.reason || 'remove failed');
+  if (epoch !== conversationEpoch) return;
+  ++scheduleLoadSequence;
+  scheduleSyncState = 'ready';
   pendingScheduleEntries = data.pending_schedule || [];
   scheduleEvents = data.events || [];
   scheduleValidation = data.schedule_validation || scheduleValidation;
@@ -53,7 +75,7 @@ function updateCardState(courseId, added, section) {
   const btn = card.querySelector('.cc-add-btn');
   if (btn) {
     const icon = btn.querySelector('.material-symbols-outlined');
-    if (icon) icon.textContent = added ? 'check' : 'add';
+    if (icon) icon.innerHTML = solonIcon(added ? 'check' : 'add');
     btn.setAttribute('aria-label', added ? 'Remove from schedule' : 'Add to schedule');
     if (section) btn.setAttribute('data-section', section);
   }
@@ -63,8 +85,8 @@ function updateScheduleCount() {
   const n = new Set(pendingScheduleEntries.map(
     entry => scheduleCourseKey(entry.term, entry.course_id)
   )).size;
-  document.getElementById('scheduleCount').textContent =
-    n + ' course' + (n === 1 ? '' : 's');
+  const count = document.getElementById('scheduleCount');
+  if (count) count.textContent = n + ' course' + (n === 1 ? '' : 's');
 }
 
 function openSchedule() {
@@ -72,6 +94,7 @@ function openSchedule() {
   document.getElementById('schedulePanel').classList.add('open');
   document.body.classList.add('schedule-open');     // chat shrinks to make room
   document.getElementById('toggleScheduleBtn')?.setAttribute('aria-expanded', 'true');
+  syncScheduleChrome();
 }
 
 /* Wipe every entry from the session's pending_schedule. Used as an
@@ -82,6 +105,7 @@ function openSchedule() {
 async function clearSchedule() {
   if (pendingScheduleEntries.length === 0) return;
   if (!confirm('Clear ALL sections from this schedule?')) return;
+  const epoch = conversationEpoch;
   try {
     const res = await fetch(`${API}/api/schedule/clear`, {
       method: 'POST',
@@ -89,7 +113,9 @@ async function clearSchedule() {
       body: JSON.stringify({session_id: currentSessionId || ''}),
     });
     const data = await res.json();
-    if (!data.ok) throw new Error(data.reason || 'clear failed');
+    if (!res.ok || !data.ok) throw new Error(data.reason || 'clear failed');
+    if (epoch !== conversationEpoch) return;
+    scheduleSyncState = 'ready';
     pendingScheduleEntries = data.pending_schedule || [];
     scheduleEvents = data.events || [];
     scheduleValidation = data.schedule_validation || {
@@ -99,10 +125,12 @@ async function clearSchedule() {
     renderScheduleGrid();
   } catch (err) {
     console.error('clear schedule failed:', err);
+    if (epoch === conversationEpoch) notifySchedule('Could not clear your plan. Please try again.');
   }
 }
 
 async function loadScheduleForSession(sessionId) {
+  const sequence = ++scheduleLoadSequence;
   if (!sessionId) {
     pendingScheduleEntries = [];
     scheduleEvents = [];
@@ -117,6 +145,8 @@ async function loadScheduleForSession(sessionId) {
     );
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.detail || 'schedule load failed');
+    if (sessionId !== currentSessionId || sequence !== scheduleLoadSequence) return;
+    scheduleSyncState = 'ready';
     pendingScheduleEntries = data.pending_schedule || [];
     scheduleEvents = data.events || [];
     scheduleValidation = data.schedule_validation || {
@@ -126,11 +156,16 @@ async function loadScheduleForSession(sessionId) {
     renderScheduleGrid();
   } catch (err) {
     console.warn('schedule load failed:', err);
+    if (sessionId === currentSessionId && sequence === scheduleLoadSequence) {
+      scheduleSyncState = 'error';
+      renderScheduleGrid();
+    }
   }
 }
 
 async function refreshSchedule() {
   if (!currentSessionId || pendingScheduleEntries.length === 0) return;
+  const epoch = conversationEpoch;
   const button = document.getElementById('scheduleRefreshBtn');
   if (button) button.disabled = true;
   try {
@@ -143,6 +178,8 @@ async function refreshSchedule() {
     if (!res.ok || !data.ok) {
       throw new Error(data.detail || 'schedule refresh failed');
     }
+    if (epoch !== conversationEpoch) return;
+    scheduleSyncState = 'ready';
     pendingScheduleEntries = data.pending_schedule || [];
     scheduleEvents = data.events || [];
     scheduleValidation = data.schedule_validation || scheduleValidation;
@@ -150,6 +187,7 @@ async function refreshSchedule() {
     renderScheduleGrid();
   } catch (err) {
     console.warn('schedule refresh failed:', err);
+    if (epoch === conversationEpoch) { scheduleSyncState = 'error'; renderScheduleGrid(); notifySchedule('Could not refresh your schedule. Try again.'); }
   } finally {
     if (button) button.disabled = false;
   }
@@ -175,118 +213,193 @@ function showCrossTermToast(notice) {
   toast.innerHTML = `<div><strong>${escHTML(notice.added_term)}</strong> section added.</div>
     <div class="schedule-toast-sub">Your schedule also includes ${escHTML(prior)}.</div>
     <button type="button" aria-label="Dismiss notification" onclick="dismissScheduleToast()">
-      <span class="material-symbols-outlined">close</span>
+      <span class="material-symbols-outlined">${solonIcon('close')}</span>
     </button>`;
   region.appendChild(toast);
   scheduleToastTimer = setTimeout(dismissScheduleToast, 5000);
 }
 function toggleSchedule() {
+  setWorkspaceView('ask');
   scheduleOpen = !scheduleOpen;
   document.getElementById('schedulePanel').classList.toggle('open', scheduleOpen);
   document.body.classList.toggle('schedule-open', scheduleOpen);
   document.getElementById('toggleScheduleBtn')?.setAttribute('aria-expanded', String(scheduleOpen));
+  syncScheduleChrome();
 }
 
-(function initResize() {
+function syncScheduleChrome() {
   const panel = document.getElementById('schedulePanel');
-  const handle = document.getElementById('resizeHandle');
-  const SCHED_MIN = 420;
-  const SCHED_MAX = 760;
-  let dragging = false;
-
-  handle.addEventListener('mousedown', e => {
-    if (!scheduleOpen) return;
-    dragging = true;
-    panel.classList.add('resizing');
-    document.body.style.cursor = 'ew-resize';
-    e.preventDefault();
-  });
-
-  document.addEventListener('mousemove', e => {
-    if (!dragging) return;
-    const newWidth = Math.max(SCHED_MIN, Math.min(SCHED_MAX, window.innerWidth - e.clientX));
-    panel.style.width = newWidth + 'px';
-  });
-
-  document.addEventListener('mouseup', () => {
-    if (!dragging) return;
-    dragging = false;
-    panel.classList.remove('resizing');
-    document.body.style.cursor = '';
-    if (scheduleEvents.length > 0) renderScheduleGrid();
-  });
-})();
+  panel.inert = !scheduleOpen;
+  document.getElementById('scheduleNav').classList.toggle('is-active', scheduleOpen);
+  document.getElementById('scheduleNav').setAttribute('aria-expanded', String(scheduleOpen));
+  toggleMobileSidebar(false);
+  if (scheduleOpen) {
+    closeUserPopover();
+  } else if (panel.contains(document.activeElement)) {
+    document.getElementById('toggleScheduleBtn').focus();
+  }
+}
 
 const DAYS = ['Mon','Tue','Wed','Thu','Fri'];
-// Day grid hours: 7 AM through end of 9 PM (covers 7-22:00).
-// Render rows 7..21 inclusive (so 15 rows × ROW_HEIGHT = 780px of
-// content + HEADER_HEIGHT). schedule-body scrolls vertically when
-// the viewport is shorter — typical case for laptop screens.
-const START_HOUR = 7;
-const END_HOUR = 22;
-const ROW_HEIGHT = 52;
-// Must match the actual `.sg-day-header` height (padding 12+12 +
-// text 16 + 1px border = 41). Keeping it at 41 makes JS topOffset
-// math align pixel-for-pixel with the rendered grid.
-const HEADER_HEIGHT = 41;
+const ROW_HEIGHT = 58;
+const HEADER_HEIGHT = 34;
+const SCHEDULE_START_HOUR = 8;
+const SCHEDULE_END_HOUR = 22;
+const FRIDAY_FREE_EMOJIS = ['🎉', '🥳', '😊', '😄'];
+// Choose once per page visit so normal rerenders don't make the metric jump.
+const fridayFreeEmoji = FRIDAY_FREE_EMOJIS[Math.floor(Math.random() * FRIDAY_FREE_EMOJIS.length)];
+let scheduleGridStart = SCHEDULE_START_HOUR;
+let scheduleGridDays = DAYS;
+
+function isTimedScheduleEvent(event) {
+  return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].includes(event.day)
+    && parseTimeToMinutes(event.start) >= 0 && parseTimeToMinutes(event.end) > parseTimeToMinutes(event.start);
+}
+
+function scheduleEntryHasEvent(entry, events = scheduleEvents) {
+  return events.some(e => isTimedScheduleEvent(e)
+    && scheduleCourseKey(e.term, e.course_id) === scheduleCourseKey(entry.term, entry.course_id)
+    && [e.section_num, e.section_code, e.section].includes(entry.section));
+}
+
+function scheduleEntrySection(entry) {
+  const matches = section => section && [section.section_num, section.section_code, section.num, section.code].includes(entry.section);
+  if (matches(entry.materialized_section)) return entry.materialized_section;
+  // Saved cards contain the exact server-sourced section, including TBA/online details.
+  const cards = [...planObjects.values()].flat().filter(card =>
+    scheduleCourseKey(planTerm(card), card.course_id) === scheduleCourseKey(entry.term, entry.course_id));
+  for (const card of cards.reverse()) {
+    const sections = [...(card.sections || []), ...(card.section_groups || []).flatMap(g => [g.primary, ...(g.secondaries || [])])];
+    const match = sections.find(matches);
+    if (match) return match;
+  }
+  return null;
+}
+
+function scheduleEntryStatus(entry) {
+  if (scheduleEntryHasEvent(entry)) return 'resolved';
+  const section = scheduleEntrySection(entry);
+  const start = parseTimeToMinutes(section?.start_time);
+  const end = parseTimeToMinutes(section?.end_time);
+  if (entry.materialization_status === 'tba' || section &&
+      (!section.days || section.days === 'TBA' || /^(true|1|yes)$/i.test(String(section.time_is_tba)) || start < 0 || end <= start)) return 'tba';
+  return 'unresolved';
+}
+
+function renderUntimedSchedule(entries, events) {
+  const untimed = entries.filter(entry => !scheduleEntryHasEvent(entry, events));
+  if (!untimed.length) return '';
+  return `<section class="schedule-untimed" aria-label="Sections without a scheduled time">
+    <h3>Time not scheduled <span>${untimed.length} ${untimed.length === 1 ? 'section' : 'sections'}</span></h3>
+    <p>Added to your plan. These sections have no confirmed time on the weekly grid.</p>
+    <div class="schedule-untimed-items">${untimed.map(entry => {
+      const section = scheduleEntrySection(entry) || {};
+      const label = scheduleEntryStatus(entry) === 'tba' ? 'Time TBA' : 'Time unavailable';
+      const details = [section.section_type || section.type, entry.section, section.location].filter(Boolean).join(' · ');
+      return `<button type="button" class="schedule-untimed-item" data-cid="${escAttr(entry.course_id)}" data-sec="${escAttr(entry.section)}" data-term="${escAttr(entry.term)}" onclick="selectUntimedScheduleEntry(this)">
+        <strong>${escHTML(_prettyCourseId(entry.course_id))}</strong><span>${escHTML(details)}</span><span class="schedule-untimed-status">${label}</span>
+      </button>`;
+    }).join('')}</div></section>`;
+}
+
+function selectUntimedScheduleEntry(button) {
+  selectedScheduleCourse = scheduleCourseKey(button.dataset.term, button.dataset.cid);
+  syncScheduleHighlight();
+  const details = document.querySelector('.schedule-details');
+  if (details) { details.open = true; details.scrollIntoView({block: 'nearest'}); }
+}
+
+function scheduleMetrics(entries, events) {
+  const courses = new Map();
+  const knownCards = [...planObjects.values()].flat();
+  for (const entry of entries) {
+    const key = scheduleCourseKey(entry.term, entry.course_id);
+    if (courses.has(key)) continue;
+    const card = knownCards.find(c => scheduleCourseKey(planTerm(c), c.course_id) === key);
+    courses.set(key, exactUnits(entry.units ?? entry.materialized_section?.units ?? card?.units));
+  }
+  const values = [...courses.values()];
+  const units = values.every(u => u !== null) ? values.reduce((a,b) => a+b, 0) : null;
+  const times = events.map(e => parseTimeToMinutes(e.start)).filter(t => t >= 0);
+  const earliest = times.length ? displayTime(`${Math.floor(Math.min(...times) / 60)}:${String(Math.min(...times) % 60).padStart(2, '0')}`) : '—';
+  const incomplete = entries.some(entry => !scheduleEntryHasEvent(entry, events));
+  const fridayBusy = events.some(e => e.day === 'Fri' && parseTimeToMinutes(e.end) > 12 * 60);
+  const friday = fridayBusy ? 'Busy' : incomplete ? 'Unknown' : times.length ? 'Free' : '—';
+  return {count: courses.size, units, earliest, friday, incomplete};
+}
+
+function renderScheduleOverview(entries, events, term, terms) {
+  const m = scheduleMetrics(entries, events);
+  const season = displayTerm(term === 'unknown' ? '' : term).replace(/\s+\d{4}$/, '').toLowerCase();
+  const title = season ? `Your ${season} quarter` : 'Your quarter';
+  const metric = (label, value, note, tone = '') => `<div class="schedule-metric"><span class="metric-label">${label}</span><span class="metric-value">${escHTML(String(value))}</span><span class="metric-note ${tone}">${escHTML(note)}</span></div>`;
+  const unitNote = m.units === null ? 'Units unavailable' : 'In your plan';
+  return `<div class="schedule-overview">
+    <div class="schedule-overview-heading"><h2>${escHTML(title)}</h2>
+      <div class="constraint-chips">${terms.length > 1 ? terms.map(t => `<button class="constraint-chip" onclick="selectScheduleTerm(this)" data-term="${escAttr(t)}" aria-pressed="${t === term}">${escHTML(displayTerm(t))}</button>`).join('') : `<span class="constraint-chip" id="scheduleCount">${m.count} courses</span>`}</div>
+    </div>
+    <div class="schedule-metrics">
+      ${metric('UNITS', m.units ?? '—', unitNote)}
+      ${metric('COURSES', m.count, 'In your plan')}
+      ${metric('EARLIEST CLASS', m.earliest, m.incomplete ? 'Some times unknown' : events.length ? 'First meeting' : 'No meetings yet')}
+      ${metric('FRIDAY AFTERNOON', m.friday === 'Free' ? `Free ${fridayFreeEmoji}` : m.friday, m.friday === 'Free' ? 'No classes after noon' : m.friday === 'Busy' ? 'Classes after noon' : 'Awaiting meeting times', m.friday === 'Free' ? 'ok' : '')}
+    </div>
+  </div>`;
+}
+
+function selectScheduleTerm(btn) {
+  scheduleViewTerm = btn.dataset.term;
+  document.getElementById('scheduleBody').scrollTop = 0;
+  selectedScheduleCourse = null;
+  renderScheduleGrid();
+}
 
 function renderScheduleGrid() {
   const body = document.getElementById('scheduleBody');
-  const entryList = _renderScheduleEntryList();
-
-  if (pendingScheduleEntries.length === 0) {
-    body.innerHTML = `<div class="schedule-empty">
-      <span class="material-symbols-outlined schedule-empty-icon">calendar_month</span>
-      <div class="schedule-empty-title">No sections yet</div>
-      <div class="schedule-empty-sub">Click <b>+</b> on a Lec card to pin it here.</div>
-    </div>`;
-    return;
+  if (!body) return;
+  const terms = [...new Set(pendingScheduleEntries.map(e => canonicalTerm(e.term) || 'unknown'))];
+  if (!terms.includes(scheduleViewTerm)) scheduleViewTerm = terms[0] || canonicalTerm(currentTermContext?.term || '');
+  const term = scheduleViewTerm;
+  const entries = pendingScheduleEntries.filter(e => (canonicalTerm(e.term) || 'unknown') === term);
+  const events = scheduleEvents.filter(e => canonicalTerm(e.term) === term && isTimedScheduleEvent(e));
+  const risk = (scheduleValidation?.conflicts || []).length || (scheduleValidation?.warnings || []).length || (scheduleValidation?.unknowns || []).length;
+  const sync = document.getElementById('scheduleSync');
+  sync.textContent = scheduleSyncState === 'error' ? 'Unable to sync' : risk ? 'Needs a look' : pendingScheduleEntries.length && scheduleSyncState === 'ready' ? 'In sync' : 'Draft';
+  sync.classList.toggle('is-warning', !!risk || scheduleSyncState === 'error');
+  document.getElementById('scheduleTermLabel').textContent = (term === 'unknown' ? 'Term not set' : displayTerm(term)) || 'Your schedule';
+  document.getElementById('scheduleRefreshBtn').disabled = !pendingScheduleEntries.length;
+  document.getElementById('scheduleClearBtn').disabled = !pendingScheduleEntries.length;
+  let html = renderScheduleOverview(entries, events, term, terms);
+  if (!entries.length) {
+    html += `<div class="schedule-empty">${solonIcon('calendar')}<div class="schedule-empty-title">Your quarter starts here</div><div class="schedule-empty-sub">Ask Solon for course recommendations, then add sections to your plan.</div></div>`;
   }
-
-  if (scheduleEvents.length === 0) {
-    body.innerHTML = entryList + `<div class="schedule-empty schedule-empty-compact">
-      <span class="material-symbols-outlined schedule-empty-icon">event_busy</span>
-      <div class="schedule-empty-title">No timed meetings</div>
-      <div class="schedule-empty-sub">TBA and unknown-term entries stay listed above.</div>
-    </div>`;
-    return;
+  html += renderUntimedSchedule(entries, events);
+  // Always show 08:00–22:00; extend only if a real meeting falls outside it.
+  scheduleGridStart = Math.min(SCHEDULE_START_HOUR, ...events.map(e => Math.floor(parseTimeToMinutes(e.start) / 60)));
+  const end = Math.max(SCHEDULE_END_HOUR, ...events.map(e => Math.ceil(parseTimeToMinutes(e.end) / 60)));
+  scheduleGridDays = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].filter(d => DAYS.includes(d) || events.some(e => e.day === d));
+  html += `<div class="schedule-calendar"><div class="schedule-grid" style="--schedule-days:${scheduleGridDays.length}"><div class="sg-corner"></div>`;
+  for (const d of scheduleGridDays) html += `<div class="sg-day-header">${d}</div>`;
+  for (let h = scheduleGridStart; h < end; h++) {
+    html += `<div class="sg-time-label">${displayTime(`${h}:00`)}</div>`;
+    for (const day of scheduleGridDays) html += `<div class="sg-cell" data-day="${day}" data-hour="${h}"></div>`;
   }
-
-  let html = entryList + '<div class="schedule-grid">';
-  html += '<div class="sg-corner"></div>';
-  for (const d of DAYS) html += `<div class="sg-day-header">${d}</div>`;
-
-  for (let h = START_HOUR; h < END_HOUR; h++) {
-    let label;
-    if (h === 12) label = '12 PM';
-    else if (h < 12) label = `${h} AM`;
-    else label = `${h-12} PM`;
-    // Alternating hour bands (odd hours get a faint stripe) — borrows
-    // from AntAlmanac's .rbc-timeslot-group:nth-child(odd) trick to
-    // give vertical rhythm without harsh horizontal lines.
-    const band = (h % 2 === 1) ? ' sg-band' : '';
-    html += `<div class="sg-time-label${band}">${label}</div>`;
-    for (let d = 0; d < 5; d++) {
-      html += `<div class="sg-cell${band}" data-day="${DAYS[d]}" data-hour="${h}"></div>`;
-    }
-  }
-  html += '</div>';
+  // Label the closing boundary without introducing a spurious 22:00–23:00 slot.
+  html += `<div class="sg-time-label sg-time-end">${displayTime(`${end}:00`)}</div>`;
+  for (const day of scheduleGridDays) html += '<div class="sg-end-cell" aria-hidden="true"></div>';
+  html += '</div></div><div class="schedule-grid-note">Select a class to see it in your plan. Choose offered sections in the course details.</div>';
+  if (pendingScheduleEntries.length) html += `<details class="schedule-details"${risk ? ' open' : ''}><summary>Plan details · ${pendingScheduleEntries.length} sections${risk ? ' · Review notices' : ''}</summary>${_renderScheduleEntryList()}</details>`;
+  const previousScroll = body.scrollTop;
   body.innerHTML = html;
-
-  // Compute side-by-side layout for overlapping events on the same
-  // day so two events at the same time don't stack on top of each
-  // other (the previous renderer placed both at left:0).
-  const layout = _computeOverlapLayout(scheduleEvents);
+  const layout = _computeOverlapLayout(events);
   const conflictKeys = _scheduleConflictKeys();
-  for (const ev of scheduleEvents) {
+  for (const ev of events) {
     const meta = layout.get(ev) || {col: 0, cols: 1};
-    placeEvent(
-      ev,
-      meta.col,
-      meta.cols,
-      _scheduleItemHasConflict(conflictKeys, ev),
-    );
+    placeEvent(ev, meta.col, meta.cols, _scheduleItemHasConflict(conflictKeys, ev));
   }
+  body.scrollTop = previousScroll;
+  syncPlanObjects();
+  syncScheduleHighlight();
 }
 
 function _scheduleConflictKeys() {
@@ -316,7 +429,7 @@ function _renderScheduleEntryList() {
   const rows = pendingScheduleEntries.map(entry => {
     const term = entry.term || 'unknown';
     const notice = (entry.notices || []).join(' ');
-    const materialization = entry.materialization_status || 'unresolved';
+    const materialization = scheduleEntryStatus(entry);
     const hasConflict = _scheduleItemHasConflict(conflictKeys, entry);
     const snapshot = entry.materialized_section || {};
     const liveStatus = snapshot.is_cancelled
@@ -340,7 +453,7 @@ function _renderScheduleEntryList() {
         : ''}
       <button type="button" aria-label="Remove ${escAttr(entry.course_id || 'course')}"
               onclick="removeScheduledEntry(this)">
-        <span class="material-symbols-outlined">close</span>
+        <span class="material-symbols-outlined">${solonIcon('close')}</span>
       </button>
     </div>`;
   }).join('');
@@ -357,6 +470,7 @@ function removeScheduledEntry(btn) {
   removeCourse(row.dataset.cid, btn, row.dataset.sec, row.dataset.term).catch(err => {
     console.error('remove failed:', err);
     btn.disabled = false;
+    notifySchedule('Could not remove this section. Please try again.');
   });
 }
 
@@ -393,7 +507,7 @@ function _computeOverlapLayout(events) {
 }
 
 function placeEvent(ev, col, cols, hasConflict = false) {
-  const dayIdx = DAYS.indexOf(ev.day);
+  const dayIdx = scheduleGridDays.indexOf(ev.day);
   if (dayIdx < 0) return;
 
   const startMin = parseTimeToMinutes(ev.start);
@@ -403,18 +517,17 @@ function placeEvent(ev, col, cols, hasConflict = false) {
   const gridEl = document.querySelector('.schedule-grid');
   if (!gridEl) return;
 
-  const topOffset = ((startMin - START_HOUR * 60) / 60) * ROW_HEIGHT + HEADER_HEIGHT;
+  const topOffset = ((startMin - scheduleGridStart * 60) / 60) * ROW_HEIGHT + HEADER_HEIGHT + 2;
   const height = ((endMin - startMin) / 60) * ROW_HEIGHT;
-
-  const [stroke, fill] = getCourseColor(ev.course_id);
 
   // Column math: each day column is split into `cols` sub-tracks.
   // 4px outer gap on each side of the day column + 2px between tracks.
-  const dayCol = `((100% - 56px) / 5)`;
+  const dayCol = `((100% - 48px) / ${scheduleGridDays.length})`;
   const trackW = `((${dayCol} - 8px) / ${cols} - ${cols > 1 ? '2px' : '0px'})`;
   const trackX = `(${col} * (${trackW} + 2px))`;
 
-  const evEl = document.createElement('div');
+  const evEl = document.createElement('button');
+  evEl.type = 'button';
   evEl.className = `sg-event${hasConflict ? ' has-conflict' : ''}`;
   evEl.dataset.cid = ev.course_id;
   evEl.dataset.sec = ev.section_num || '';
@@ -422,23 +535,11 @@ function placeEvent(ev, col, cols, hasConflict = false) {
   evEl.style.position = 'absolute';
   evEl.style.top = topOffset + 'px';
   evEl.style.height = Math.max(height - 4, 24) + 'px';
-  evEl.style.left = `calc(56px + ${dayIdx} * ${dayCol} + 4px + ${trackX})`;
+  evEl.style.left = `calc(48px + ${dayIdx} * ${dayCol} + 4px + ${trackX})`;
   evEl.style.width = `calc(${trackW})`;
-  evEl.style.background = fill;
-  evEl.style.borderLeftColor = stroke;
-  evEl.style.color = stroke;
 
-  const tall = height > 40;
-  const sectionTag = ev.section_type ? `<span class="sg-event-type">${ev.section_type}</span>` : '';
-  const top2 = `<div class="sg-event-top">
-    <span class="sg-event-id">${ev.course_id}${ev.section_num ? ' · ' + ev.section_num : ''}</span>
-    ${sectionTag}
-  </div>`;
-  const bottom2 = tall ? `<div class="sg-event-bot">
-    <span class="sg-event-time">${ev.start}-${ev.end}</span>
-    ${ev.location ? `<span class="sg-event-room">${ev.location}</span>` : ''}
-  </div>${ev.section_code ? `<div class="sg-event-code">${ev.section_code}</div>` : ''}` : '';
-  evEl.innerHTML = top2 + bottom2;
+  evEl.innerHTML = `<div class="sg-event-top"><span class="sg-event-id">${escHTML(_prettyCourseId(ev.course_id || ''))}</span>${hasConflict ? '<span class="sg-event-type">Check</span>' : ''}</div>
+    <div class="sg-event-bot"><span class="sg-event-time">${escHTML(displayTime(ev.start))}–${escHTML(displayTime(ev.end))}</span></div>`;
   evEl.title = [
     `${ev.course_id}${ev.section_num ? ' · ' + ev.section_num : ''}`,
     ev.term || '',
@@ -447,40 +548,24 @@ function placeEvent(ev, col, cols, hasConflict = false) {
     ev.location || '',
     ev.instructor || '',
     ev.section_code ? `Code ${ev.section_code}` : '',
-    'Click to remove',
+    'Select to view plan details',
   ].filter(Boolean).join('\n');
-  evEl.addEventListener('click', () => _removeFromCalendar(ev));
+  evEl.addEventListener('click', () => {
+    selectedScheduleCourse = scheduleCourseKey(ev.term, ev.course_id);
+    syncScheduleHighlight();
+    const details = document.querySelector('.schedule-details');
+    if (details) details.open = true;
+  });
 
   gridEl.appendChild(evEl);
 }
 
-/* Clicking an event tile removes that specific (course, section_num)
-   from the schedule. Section-aware now that the backend supports it
-   (Phase E4). Also flips the matching + button on the recommendation
-   card back to the un-added state. */
-function _removeFromCalendar(ev) {
-  const cid = ev.course_id;
-  // Fall back to the legacy `section` field for events that pre-date
-  // the section_num split. Without this, clicking an old tile silently
-  // no-op'd and the user couldn't dismiss the math course they added
-  // before today's changes.
-  const sec = ev.section_num || ev.section;
-  if (!cid) return;
-  // Optimistic: hide the tile immediately so the click feels live —
-  // _hydrateScheduleState (called from removeCourse) will reconcile
-  // any drift.
-  const tileEl = document.querySelector(
-    `.sg-event[data-cid="${CSS.escape(cid)}"][data-sec="${CSS.escape(sec || '')}"][data-term="${CSS.escape(ev.term || '')}"]`
-  );
-  if (tileEl) tileEl.style.opacity = '0.4';
-  removeCourse(cid, null, sec || null, ev.term || null).catch(err => {
-    console.error('remove failed:', err);
-    if (tileEl) tileEl.style.opacity = '';   // unfade on failure
-  });
-}
-
 function parseTimeToMinutes(t) {
-  const parts = t.split(':');
-  if (parts.length !== 2) return -1;
-  return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+  const match = /^(\d{1,2}):(\d{2})\s*([AP]M?)?$/i.exec(String(t || '').trim());
+  if (!match) return -1;
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (minute > 59 || hour > 23 || match[3] && (hour < 1 || hour > 12)) return -1;
+  if (match[3]) hour = hour % 12 + (/^p/i.test(match[3]) ? 12 : 0);
+  return hour * 60 + minute;
 }
