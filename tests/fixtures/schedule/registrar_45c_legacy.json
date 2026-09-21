@@ -1,0 +1,64 @@
+{
+  "course_id": "I&C SCI 45C",
+  "title": "Programming in C/C++ as a Second Language",
+  "units": 4,
+  "term": "2026 Fall",
+  "primary_code": "36120",
+  "section_source": "registrar_websoc",
+  "sections": [
+    {
+      "section_code": "36120",
+      "section_num": "A",
+      "section_type": "Lec",
+      "units": "4",
+      "days": "TuTh",
+      "start_time": "12:30",
+      "end_time": "1:50p",
+      "time_display": "TuTh 12:30- 1:50p",
+      "location": "ALP 2300",
+      "instructors": [
+        "KLEFSTAD, R.",
+        "STAFF",
+        "STAFF"
+      ],
+      "modality": "In-Person",
+      "max_capacity": null,
+      "enrolled": 255,
+      "seats_open": null,
+      "waitlisted": null,
+      "requests": 236,
+      "status": "BOOKSTORE",
+      "is_cancelled": false,
+      "ge_categories": [],
+      "restrictions": "0",
+      "final_exam": null,
+      "source": "registrar_websoc",
+      "is_live": false,
+      "retrieved_at": "2026-09-21T16:45:35.888470Z"
+    }
+  ],
+  "section_groups": [
+    {
+      "letter": "A",
+      "primary": {
+        "code": "36120",
+        "num": "A",
+        "type": "Lec",
+        "days": "TuTh",
+        "time": "TuTh 12:30- 1:50p",
+        "location": "ALP 2300",
+        "instructors": [
+          "KLEFSTAD, R.",
+          "STAFF",
+          "STAFF"
+        ],
+        "seats_open": null,
+        "max_capacity": null,
+        "status": "BOOKSTORE",
+        "restrictions": "0",
+        "final_exam": null
+      },
+      "secondaries": []
+    }
+  ]
+}

@@ -35,6 +35,7 @@ from datetime import datetime
 from typing import Optional
 from xml.sax.saxutils import escape, quoteattr
 
+from app.response_language import language_instruction, response_language
 from app.terms.parser import parse_term_key
 
 
@@ -375,6 +376,10 @@ def build_messages(
     evidence_block = build_memory_evidence_block(memory_evidence)
     if evidence_block:
         system_parts.append(_MEMORY_EVIDENCE_POLICY)
+
+    # Last, application-owned rule: style overrides, memory and source text
+    # cannot choose a different language for this turn.
+    system_parts.append(language_instruction(response_language(user_message, recent_turns)))
 
     messages: list[dict] = []
     if system_parts:

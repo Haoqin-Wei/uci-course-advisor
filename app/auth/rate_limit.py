@@ -25,9 +25,8 @@ _BUCKETS: dict[str, Deque[float]] = defaultdict(deque)
 
 
 def client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",", 1)[0].strip()
+    # Uvicorn resolves forwarding headers from configured trusted proxies.
+    # Reading arbitrary X-Forwarded-For here lets callers rotate their own IP key.
     if request.client:
         return request.client.host
     return "unknown"

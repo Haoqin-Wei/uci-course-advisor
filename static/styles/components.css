@@ -3105,27 +3105,6 @@ body.schedule-open .input-row {
 .auth-guest-btn:focus-visible {
   color: var(--text-primary);
 }
-.auth-step-divider {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-top: var(--space-1);
-  font-size: var(--text-label);
-  color: var(--text-tertiary);
-}
-.auth-step-divider::before,
-.auth-step-divider::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--border-subtle);
-}
-.auth-register-step2 {
-  display: none;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-.auth-register-step2.is-visible { display: flex; }
 .auth-consent {
   display: flex;
   align-items: flex-start;
@@ -3161,6 +3140,7 @@ body.schedule-open .input-row {
 
 .wizard-main {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -3425,6 +3405,7 @@ body.schedule-open .input-row {
 
 /* Sticky footer with Back / Skip / Continue */
 .wizard-footer {
+  flex-shrink: 0;
   position: sticky;
   bottom: 0;
   background: var(--bg-shell);
@@ -3985,3 +3966,46 @@ body.schedule-open .input-row {
 .wizard-card.is-hidden,
 .wizard-dept-header.is-hidden,
 .wizard-letter-nav button.is-hidden { display: none !important; }
+
+/* Coursework grows with imported selections and validation messages. Give the
+   entire step one scroll area, instead of squeezing the catalog into the space
+   left below those controls. The footer remains outside this scroll area. */
+.wizard-overlay.is-coursework .wizard-main {
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding-bottom: var(--space-6);
+}
+.wizard-overlay.is-coursework .wizard-content { flex: 0 0 auto; overflow: visible; }
+.wizard-overlay.is-coursework #wizardStep4 { height: auto; }
+.wizard-overlay.is-coursework .wizard-step4-body {
+  flex: none;
+  overflow: visible;
+  align-items: flex-start;
+}
+.wizard-overlay.is-coursework #wizardCourseGridWrap { overflow: visible; min-width: 0; }
+.wizard-overlay.is-coursework .wizard-letter-nav {
+  position: sticky;
+  top: 12px;
+  align-self: flex-start;
+  max-height: calc(100vh - 140px);
+  max-height: calc(100dvh - 140px);
+}
+.wizard-overlay.is-coursework .wizard-letter-nav button { flex-shrink: 0; }
+
+@media (max-width: 680px) {
+  .wizard-main { padding: 24px 20px 0; }
+  .wizard-headline { font-size: 24px; }
+  .wizard-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 20px max(12px, env(safe-area-inset-bottom));
+  }
+  .wizard-actions { gap: 8px; }
+  .wizard-actions .wizard-btn { padding: 10px 12px; font-size: 10px; }
+  .wizard-actions .wizard-btn.primary { flex: 1; }
+  .wizard-overlay.is-coursework .wizard-letter-nav {
+    max-height: calc(100vh - 170px);
+    max-height: calc(100dvh - 170px);
+  }
+}

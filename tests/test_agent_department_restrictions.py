@@ -187,7 +187,7 @@ def test_department_restrictions_humanized_chip_label() -> None:
         {"department": "I&C SCI", "term": "Fall 2026"},
     )
 
-    assert label == "读取 WebSoc 部门说明 · I&C SCI · Fall 2026"
+    assert label == "Reading WebSoc department notes · I&C SCI · Fall 2026"
 
 
 def test_agent_prompt_encodes_department_restriction_rules() -> None:
@@ -242,13 +242,14 @@ def test_agent_can_dispatch_department_restrictions_with_sse_chip(
                 model="fake-model",
                 user_id="student_001",
                 term="Fall 2026",
+                response_language="zh",
             )
         )
     )
 
     assert events[0]["type"] == "tool_call_start"
     assert events[0]["name"] == "get_department_restrictions"
-    assert events[0]["label"] == "读取 WebSoc 部门说明 · ART · 2026 Fall"
+    assert events[0]["label"] == "读取 WebSoc 部门说明 · ART · 2026年秋季"
     assert events[0]["server_forced"] is True
     assert events[1]["ok"] is True
     assert events[1]["server_forced"] is True

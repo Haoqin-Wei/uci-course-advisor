@@ -44,6 +44,7 @@ def test_handle_agent_forwards_tool_limit_and_merges_fallback_cards(monkeypatch,
             "name": "get_policy",
             "args": {"topic": "ge"},
             "label": "Check policy",
+            "response_language": language,
         }
         yield {
             "type": "tool_call_done",
@@ -129,6 +130,7 @@ def test_handle_agent_forwards_tool_limit_and_merges_fallback_cards(monkeypatch,
         "name": "get_policy",
         "label": "Check policy",
         "args": {"topic": "ge"},
+        "response_language": language,
     }
     assert queued[2] == {
         "type": "tool_call_done",
@@ -275,7 +277,7 @@ def test_stream_chat_returns_grounded_fallback_when_agent_errors_before_streamin
 
     assert [event["type"] for event in events] == ["token", "meta", "done"]
     assert "I can’t reach the agent right now" in events[0]["text"]
-    assert "LLM call failed: offline" in events[0]["text"]
+    assert "LLM call failed: offline" not in events[0]["text"]
     session_state = sessions_data.get_session_state(
         "demo_001",
         events[1]["session_id"],

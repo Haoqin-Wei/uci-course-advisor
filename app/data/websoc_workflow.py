@@ -21,6 +21,7 @@ import requests
 
 from app import observability
 from app.catalog.term import Term
+from app.scheduling import normalize_section_meeting
 from app.data.restriction_timeline import (
     RestrictionQuery,
     RestrictionType,
@@ -1002,10 +1003,11 @@ def _split_websoc_time(
     )
     if not match:
         return None, None, None, display
+    meeting = normalize_section_meeting({"start_time": match.group("start"), "end_time": match.group("end")})
     return (
         _collapse_ws(match.group("days")) or None,
-        match.group("start"),
-        match.group("end"),
+        meeting["start_time"],
+        meeting["end_time"],
         display,
     )
 

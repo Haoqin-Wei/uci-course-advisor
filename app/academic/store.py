@@ -639,7 +639,9 @@ def _upsert_requirements(
         )
 
 
-def get_academic_profile(user_id: str, manual_course_ids: Iterable[str] = ()) -> dict:
+def get_academic_profile(
+    user_id: str, manual_course_ids: Iterable[str] = (), *, include_gpa: bool = False
+) -> dict:
     with _conn() as conn:
         course_rows = conn.execute(
             """
@@ -655,7 +657,8 @@ def get_academic_profile(user_id: str, manual_course_ids: Iterable[str] = ()) ->
             (user_id,),
         ).fetchall()
         profile = conn.execute(
-            "SELECT gpa_as_of, gpa_imported_at FROM student_academic_profiles WHERE user_id = ?",
+            """SELECT official_uc_gpa, gpa_as_of, units_completed, total_units_passed
+               FROM student_academic_profiles WHERE user_id = ?""",
             (user_id,),
         ).fetchone()
         latest = conn.execute(
@@ -689,11 +692,18 @@ def get_academic_profile(user_id: str, manual_course_ids: Iterable[str] = ()) ->
             "catalog_matched": course_id in titles,
             "transcript_seen": False,
         }
-    return {
+    result = {
         "completed_courses": sorted(completed.values(), key=lambda item: item["course_id"]),
         "last_import": dict(latest) if latest else None,
         "gpa_as_of": profile["gpa_as_of"] if profile else None,
+        "gpa_available": bool(profile and profile["official_uc_gpa"] is not None),
+        "units_completed": profile["units_completed"] if profile else None,
+        "total_units_passed": profile["total_units_passed"] if profile else None,
     }
+    # GPA stays out of the default page payload; reveal only on the user's request.
+    if include_gpa:
+        result["official_uc_gpa"] = profile["official_uc_gpa"] if profile else None
+    return result
 
 
 def get_ai_academic_context(user_id: str) -> dict:

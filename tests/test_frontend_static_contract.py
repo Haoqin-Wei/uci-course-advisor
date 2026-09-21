@@ -7,6 +7,10 @@ STATIC = ROOT / "static"
 EXPECTED_FRONTEND_MODULES = {
     STATIC / "styles" / "tokens.css",
     STATIC / "styles" / "components.css",
+    STATIC / "styles" / "solon.css",
+    STATIC / "styles" / "auth.css",
+    STATIC / "js" / "ui.js",
+    STATIC / "js" / "plan.js",
     STATIC / "js" / "api-client.js",
     STATIC / "js" / "chat.js",
     STATIC / "js" / "cards.js",
@@ -14,6 +18,8 @@ EXPECTED_FRONTEND_MODULES = {
     STATIC / "js" / "sessions.js",
     STATIC / "js" / "auth.js",
     STATIC / "js" / "profile-memory.js",
+    STATIC / "js" / "student-profile.js",
+    STATIC / "styles" / "student-profile.css",
     STATIC / "js" / "onboarding.js",
 }
 
@@ -97,7 +103,7 @@ def test_frontend_assets_are_split_into_roadmap_modules() -> None:
     for path in EXPECTED_FRONTEND_MODULES:
         rel = "/" + path.relative_to(ROOT).as_posix()
         assert rel in index
-        assert f'{rel}?v=20260917-auto-terms' in index
+        assert re.search(re.escape(rel) + r'\?v=[^"\s]+"', index)
 
 
 def test_key_browser_regression_flows_are_wired() -> None:
@@ -112,8 +118,9 @@ def test_key_browser_regression_flows_are_wired() -> None:
 
     assert "developer_mode:" not in chat
     assert "/api/auth/login" in auth
-    assert "/api/auth/request_code" in auth
-    assert "/api/auth/verify" in auth
+    assert "/api/auth/register" in auth
+    assert "/api/auth/request_code" not in auth
+    assert "/api/auth/verify" not in auth
     assert "function continueAsGuest(" not in auth
     assert "@uci.edu" in auth
 
@@ -197,6 +204,7 @@ def test_cross_term_schedule_identity_and_notice_are_wired() -> None:
 def test_live_and_restored_messages_share_structured_renderers() -> None:
     chat = (STATIC / "js" / "chat.js").read_text(encoding="utf-8")
     sessions = (STATIC / "js" / "sessions.js").read_text(encoding="utf-8")
+    ui = (STATIC / "js" / "ui.js").read_text(encoding="utf-8")
 
     assert "renderCardsBlock(meta.cards)" in chat
     assert "formatMarkdown(fullText || '')" in chat
@@ -208,7 +216,8 @@ def test_live_and_restored_messages_share_structured_renderers() -> None:
 
     assert "renderCardsBlock(extras.cards)" in sessions
     assert "formatMarkdown(text || '')" in sessions
-    assert "sendFollowup(" in sessions
+    assert "setComposerSuggestions(Array.isArray(extras.followups)" in sessions
+    assert "sendFollowup(prompt)" in ui
 
 
 def test_v1_frontend_has_no_check_or_developer_trace_ui() -> None:
@@ -244,7 +253,7 @@ def test_frontend_accessibility_and_mobile_contracts() -> None:
     css = (STATIC / "styles" / "components.css").read_text(encoding="utf-8")
 
     assert 'aria-label="Conversation default term"' in index
-    assert 'aria-label="Ask ZotAdvisor a question"' in index
+    assert 'aria-label="Ask Solon a question"' in index
     assert 'role="log"' in index
     assert 'aria-live="polite"' in index
     assert 'role="dialog"' in index
@@ -255,7 +264,7 @@ def test_frontend_accessibility_and_mobile_contracts() -> None:
     assert 'id="transcriptFileInput"' in index
     assert 'aria-label="Close settings"' in index
     assert 'aria-label="Close weekly schedule"' in index
-    assert index.count("Data from <a href=\"https://icssc.link/about-anteaterapi\"") == 2
+    assert index.count("Data from <a href=\"https://icssc.link/about-anteaterapi\"") == 1
 
     assert ":focus-visible" in css
     assert "@media (max-width: 700px)" in css

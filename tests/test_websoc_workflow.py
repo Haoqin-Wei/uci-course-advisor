@@ -917,3 +917,11 @@ def test_fetch_websoc_department_restrictions_returns_structured_error() -> None
 def test_build_websoc_department_params_rejects_missing_department() -> None:
     with pytest.raises(ValueError, match="department is required"):
         websoc_workflow.build_websoc_department_params("Fall 2026", "")
+
+
+def test_registrar_meeting_range_normalizes_pm_suffix_and_preserves_source_text():
+    from app.data.websoc_workflow import _split_websoc_time
+
+    assert _split_websoc_time("TuTh 12:30- 1:50p") == ("TuTh", "12:30", "13:50", "TuTh 12:30- 1:50p")
+    assert _split_websoc_time("TuTh 3:30-4:50p") == ("TuTh", "15:30", "16:50", "TuTh 3:30-4:50p")
+    assert _split_websoc_time("TBA") == (None, None, None, "TBA")

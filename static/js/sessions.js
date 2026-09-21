@@ -40,6 +40,7 @@ async function loadSidebar(forceRefresh = false) {
 function setActiveSessionItem(sessionId) {
   document.querySelectorAll('.session-item').forEach(el => {
     el.classList.toggle('is-active', el.dataset.sid === sessionId);
+    el.querySelector('.session-item-title')?.setAttribute('aria-current', String(el.dataset.sid === sessionId));
   });
 }
 
@@ -84,14 +85,6 @@ function renderSidebar(memory, userId) {
   document.getElementById('ub-avatar').textContent = initials;
   document.getElementById('ub-name').textContent   = userId;
 
-  // Also personalize the empty-state greeting (e.g. "Hey, Demo 001.
-  // Ready to plan your courses?"). Only updates the empty-state DOM
-  // if it's still present (i.e. no messages sent yet this session).
-  const greetingEl = document.getElementById('welcomeGreeting');
-  if (greetingEl) {
-    const firstName = displayName.split(/\s+/)[0] || 'there';
-    greetingEl.textContent = `Hey, ${firstName}. Ready to plan your courses?`;
-  }
 }
 
 /* ──────────────────────────────────────────────────────
@@ -101,32 +94,61 @@ function renderSidebar(memory, userId) {
 function renderSessionList(sessions) {
   const listEl = document.getElementById('sessionsList');
   if (!listEl) return;
+  listEl.replaceChildren();
+  const current = sessions.find(s => s.session_id === currentSessionId);
+  if (current) setThreadTitle(current.title);
   if (!sessions.length) {
     listEl.innerHTML = '<div class="sessions-empty">No conversations yet</div>';
     return;
   }
-  listEl.innerHTML = sessions.map(s => {
-    const sid     = escAttr(s.session_id);
-    const title   = escHTML(s.title || 'Untitled');
-    const isActive = (s.session_id === currentSessionId) ? ' is-active' : '';
-    return `
-      <div class="session-item${isActive}" data-sid="${sid}" onclick="loadSession('${sid}')" title="${escAttr(s.title || 'Untitled')}">
-        <div class="session-item-title">${title}</div>
-        <button class="session-item-delete" onclick="event.stopPropagation(); deleteSession('${sid}')" title="Delete">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-            <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
-          </svg>
-        </button>
-      </div>
-    `;
-  }).join('');
+  const today = new Date().toDateString();
+  const groups = {Today: [], Earlier: []};
+  for (const session of sessions) {
+    const date = new Date(session.last_active_at || session.updated_at || session.created_at || '');
+    groups[date.toDateString() === today ? 'Today' : 'Earlier'].push(session);
+  }
+  for (const [label, items] of Object.entries(groups)) {
+    if (!items.length) continue;
+    const heading = document.createElement('div');
+    heading.className = 'sessions-label';
+    heading.textContent = label;
+    listEl.appendChild(heading);
+    for (const session of items) {
+      const row = document.createElement('div');
+      row.className = 'session-item' + (session.session_id === currentSessionId ? ' is-active' : '');
+      row.dataset.sid = session.session_id;
+      const pick = document.createElement('button');
+      pick.className = 'session-item-title';
+      pick.textContent = session.title || 'New conversation';
+      pick.title = pick.textContent;
+      pick.setAttribute('aria-current', String(session.session_id === currentSessionId));
+      pick.addEventListener('click', () => loadSession(session.session_id));
+      const remove = document.createElement('button');
+      remove.className = 'session-item-delete';
+      remove.innerHTML = solonIcon('close');
+      remove.setAttribute('aria-label', `Delete ${pick.textContent}`);
+      remove.addEventListener('click', () => deleteSession(session.session_id));
+      row.append(pick, remove);
+      listEl.appendChild(row);
+    }
+  }
 }
 
 function startNewChat() {
+  setWorkspaceView('ask');
   // Stop any in-flight generation; user's about to switch context.
   if (currentAbortController) currentAbortController.abort();
 
+  conversationEpoch++;
+  currentAbortController = null;
+  toggleSendStop(false);
   currentSessionId = null;
+  currentResponseLanguage = 'en';
+  resetPlanObjects();
+  setThreadTitle();
+  setComposerSuggestions();
+  toggleMobileSidebar(false);
+  scheduleValidation = {valid: true, warnings: [], conflicts: [], unknowns: []};
   useAutomaticTermContext();
   pendingScheduleEntries = [];
   scheduleEvents = [];
@@ -136,28 +158,15 @@ function startNewChat() {
   // Highlight nothing in the sidebar
   document.querySelectorAll('.session-item.is-active')
     .forEach(el => el.classList.remove('is-active'));
-  // Hide the schedule panel if open (per-session UI state)
+  if (scheduleOpen) toggleSchedule();
   inputEl && inputEl.focus();
 }
 
 function resetChatToWelcome() {
-  // Rebuild the welcome empty-state — identical to the initial server-
-  // rendered DOM so first-message handler logic works the same way.
   const scrollEl = document.getElementById('chatScroll');
-  scrollEl.innerHTML = `
-    <div class="welcome-state" id="welcomeState">
-      <div class="welcome-greeting" id="welcomeGreeting">What can I help with today?</div>
-      <div class="welcome-sub">Ask about courses, professors, or build your schedule for <span id="welcomeTerm">the current term</span>.</div>
-      <div class="followups" id="welcomeFollowups">
-        <button class="followup-chip" onclick="sendFollowup('Recommend courses for next quarter')">Recommend courses</button>
-        <button class="followup-chip" onclick="sendFollowup('What are some easy GE courses?')">Easy GE courses</button>
-        <button class="followup-chip" onclick="sendFollowup('How is professor Thornton?')">Professor ratings</button>
-      </div>
-    </div>
-  `;
-  scrollEl.classList.add('is-empty');
-  // Re-apply the personalized greeting if we already have profile data.
-  loadSidebar();
+  scrollEl.replaceChildren();
+  scrollEl.scrollTop = 0;
+  setWelcomePresentation(true);
   // Sync the welcome sub-line to the current read-only context.
   updateWelcomeTerm();
 }
@@ -165,14 +174,20 @@ function resetChatToWelcome() {
 /* Reflect the backend-resolved term into the welcome-state sub-line. */
 function updateWelcomeTerm() {
   const span = document.getElementById('welcomeTerm');
-  if (!span) return;  // welcome state already replaced by chat messages
+  if (!span) return;
   span.textContent = currentTermContext?.term || 'the current term';
 }
 
 async function loadSession(sessionId) {
-  if (!sessionId || sessionId === currentSessionId) return;
+  if (!sessionId) return;
+  setWorkspaceView('ask');
+  if (sessionId === currentSessionId) return;
 
   if (currentAbortController) currentAbortController.abort();
+  currentAbortController = null;
+  toggleSendStop(false);
+  const epoch = ++conversationEpoch;
+  toggleMobileSidebar(false);
 
   try {
     const r = await fetch(`${API}/api/sessions/me/${sessionId}?include_turns=true`);
@@ -181,7 +196,16 @@ async function loadSession(sessionId) {
       return;
     }
     const data = await r.json();
+    if (epoch !== conversationEpoch) return;
+    resetPlanObjects();
     currentSessionId = sessionId;
+    currentResponseLanguage = 'en';
+    setComposerSuggestions();
+    pendingScheduleEntries = [];
+    scheduleEvents = [];
+    scheduleValidation = {valid: true, warnings: [], conflicts: [], unknowns: []};
+    _hydrateScheduleState();
+    setThreadTitle(data.title || data.meta?.title);
     // The server refreshes every session to the same automatic default.
     applyTermPayload(data);
 
@@ -189,7 +213,7 @@ async function loadSession(sessionId) {
     // turns reuse the same card/followup/validation renderers as live
     // streaming finalization so session restore preserves structured UI.
     const scrollEl = document.getElementById('chatScroll');
-    scrollEl.classList.remove('is-empty');
+    setWelcomePresentation(false);
     scrollEl.innerHTML = '';
     const turns = data.turns || [];
     if (!turns.length) {
@@ -199,7 +223,8 @@ async function loadSession(sessionId) {
     let pendingQueryMeta = null;
     for (const t of turns) {
       if (t.role === 'user') {
-        appendUser(t.content || '');
+        currentResponseLanguage = detectResponseLanguage(t.content || '', currentResponseLanguage);
+        appendUser(t.content || '', {time: t.timestamp, restored: true});
         pendingQueryMeta = {
           query_terms: t.query_terms,
           query_term_source: t.query_term_source,
@@ -207,6 +232,7 @@ async function loadSession(sessionId) {
         };
       } else if (t.role === 'assistant') {
         appendAssistantStatic(t.content || '', {
+          response_language: currentResponseLanguage,
             cards:      t.cards,
             followups:  t.followups,
           validation: t.validation,
@@ -222,6 +248,7 @@ async function loadSession(sessionId) {
       });
     }
     await loadScheduleForSession(sessionId);
+    if (epoch !== conversationEpoch) return;
     // The session list itself is unchanged; update its highlight locally.
     setActiveSessionItem(sessionId);
   } catch (err) {
@@ -242,8 +269,9 @@ function appendAssistantStatic(text, extras) {
   extras = extras || {};
   const wrap = document.createElement('div');
   wrap.className = 'msg msg-ai';
+  wrap._responseLanguage = extras.response_language || currentResponseLanguage;
   wrap.innerHTML = `
-    <div class="msg-ai-label">Advisor</div>
+    <div class="msg-ai-label">${solonIcon('sparkles')}Solon</div>
     <div class="msg-ai-body"></div>
   `;
   renderQueryTermBadge(wrap, extras);
@@ -260,16 +288,7 @@ function appendAssistantStatic(text, extras) {
     if (block.firstElementChild) wrap.appendChild(block.firstElementChild);
   }
 
-  if (extras.followups && extras.followups.length > 0) {
-    const fuDiv = document.createElement('div');
-    fuDiv.className = 'followups';
-    let fuHtml = '';
-    for (const fu of extras.followups) {
-      fuHtml += `<button class="followup-chip" onclick="sendFollowup(\`${fu.replace(/`/g,"'")}\`)">${escHTML(fu)}</button>`;
-    }
-    fuDiv.innerHTML = fuHtml;
-    wrap.appendChild(fuDiv);
-  }
+  setComposerSuggestions(Array.isArray(extras.followups) ? extras.followups : []);
 
 }
 

@@ -239,11 +239,11 @@ function _renderOneSectionGroup(g, courseId, term) {
     ${profs}
     <dl class="cc-sg-facts">
       <div class="cc-sg-fact">
-        <span class="material-symbols-outlined">schedule</span>
+        <span class="material-symbols-outlined">${solonIcon('schedule')}</span>
         <dd>${time}</dd>
       </div>
       <div class="cc-sg-fact">
-        <span class="material-symbols-outlined">location_on</span>
+        <span class="material-symbols-outlined">${solonIcon('location_on')}</span>
         <dd>${room}</dd>
       </div>
       ${finalExam}
@@ -290,7 +290,7 @@ function _renderProfRow(ratings, fallback_instructors) {
       const star = hasScore
         ? `<span class="cc-sg-rmp ${tierClass}"
                  title="${escHTML(p.tier_label || 'RMP')} · avg ${p.avg_rating} from ${p.num_ratings || 0} ratings">
-             <span class="material-symbols-outlined">star</span>
+             <span class="material-symbols-outlined">${solonIcon('star')}</span>
              ${p.avg_rating.toFixed(1)}
              <span class="cc-sg-rmp-n">(${p.num_ratings || 0})</span>
            </span>`
@@ -328,19 +328,19 @@ function _renderFinalExam(fx) {
   if (!fx) return '';
   if (fx.status === 'none') {
     return `<div class="cc-sg-fact">
-      <span class="material-symbols-outlined">event_busy</span>
+      <span class="material-symbols-outlined">${solonIcon('event_busy')}</span>
       <dd>No final exam</dd>
     </div>`;
   }
   if (fx.status === 'tba') {
     return `<div class="cc-sg-fact">
-      <span class="material-symbols-outlined">event</span>
+      <span class="material-symbols-outlined">${solonIcon('event')}</span>
       <dd>Final: TBA</dd>
     </div>`;
   }
   const loc = fx.location ? ` · ${escHTML(fx.location)}` : '';
   return `<div class="cc-sg-fact">
-    <span class="material-symbols-outlined">event</span>
+    <span class="material-symbols-outlined">${solonIcon('event')}</span>
     <dd>Final: ${escHTML(fx.label || '')}${loc}</dd>
   </div>`;
 }
@@ -383,8 +383,8 @@ function _renderAddBtn(courseId, sectionNum, opts) {
                   onclick="event.stopPropagation(); toggleSectionAdd(this)"
                   aria-label="${aria}"
                   aria-pressed="${isAdded ? 'true' : 'false'}">
-    <span class="material-symbols-outlined icon-add">add</span>
-    <span class="material-symbols-outlined icon-check">check</span>
+    <span class="material-symbols-outlined icon-add">${solonIcon('add')}</span>
+    <span class="material-symbols-outlined icon-check">${solonIcon('check')}</span>
   </button>`;
 }
 
@@ -417,7 +417,7 @@ function _renderOneSecondaryRow(s, courseId, term) {
     const star = hasScore
       ? `<span class="cc-sg-rmp ${_rmpTierClass(rt.tier, rt.num_ratings)}"
                title="${escHTML(rt.tier_label || 'RMP')} · avg ${rt.avg_rating} from ${rt.num_ratings || 0} ratings">
-           <span class="material-symbols-outlined">star</span>
+           <span class="material-symbols-outlined">${solonIcon('star')}</span>
            ${rt.avg_rating.toFixed(1)}
          </span>` : '';
     instCell = `<span class="cc-sg-row-inst">${escHTML(real[0])}</span>${star}`;
@@ -433,10 +433,10 @@ function _renderOneSecondaryRow(s, courseId, term) {
     <td class="cc-sg-row-code">${code}</td>
     <td class="cc-sg-row-instcell">${instCell}</td>
     <td class="cc-sg-row-meta">
-      <span class="material-symbols-outlined">schedule</span>${time}
+      <span class="material-symbols-outlined">${solonIcon('schedule')}</span>${time}
     </td>
     <td class="cc-sg-row-meta">
-      <span class="material-symbols-outlined">location_on</span>${room}
+      <span class="material-symbols-outlined">${solonIcon('location_on')}</span>${room}
     </td>
     <td class="cc-sg-row-status">${status}</td>
     <td class="cc-sg-row-add">${addBtn}</td>
@@ -463,7 +463,7 @@ function toggleSectionGroups(originEl) {
   if (btn) {
     btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
     const icon = btn.querySelector('.material-symbols-outlined');
-    if (icon) icon.textContent = willOpen ? 'expand_less' : 'expand_more';
+    if (icon) icon.innerHTML = solonIcon(willOpen ? 'expand_less' : 'expand_more');
   }
 }
 
@@ -494,10 +494,15 @@ function cardClickHandler(e) {
    fires immediately, then hits the backend. If the backend
    rejects, we revert the visual change. */
 async function toggleSectionAdd(btn) {
+  if (btn.disabled) return;
   const cid = btn.dataset.cid;
   const sec = btn.dataset.sec;
   const term = btn.dataset.term || currentTermContext?.term || '';
   if (!cid || !sec) return;
+  const epoch = conversationEpoch;
+  const peers = [...document.querySelectorAll('.cc-sg-add')].filter(el =>
+    el.dataset.cid === cid && el.dataset.sec === sec && canonicalTerm(el.dataset.term) === canonicalTerm(term));
+  peers.forEach(el => { el.disabled = true; });
   const key = scheduleEntryKey(term, cid, sec);
   const wasAdded = addedSectionKeys.has(key);
   // Optimistic flip — animation runs from CSS via the .added class.
@@ -522,10 +527,15 @@ async function toggleSectionAdd(btn) {
   } catch (err) {
     // Revert visual on failure
     console.error('section toggle failed:', err);
-    if (wasAdded) addedSectionKeys.add(key); else addedSectionKeys.delete(key);
-    btn.classList.toggle('added', wasAdded);
-    _syncAddedCourse(cid, term);
+    if (epoch === conversationEpoch) {
+      if (wasAdded) addedSectionKeys.add(key); else addedSectionKeys.delete(key);
+      _syncAddedCourse(cid, term);
+      notifySchedule('Could not update your schedule. Please try again.');
+    }
+  } finally {
+    peers.forEach(el => { el.disabled = false; });
   }
+  if (epoch !== conversationEpoch) return;
   // Mirror state on every other button bound to the same key (e.g.
   // both a Lec head + and a Dis row + can target the same key in
   // edge cases; or after a remove via the schedule rail we want all
@@ -533,10 +543,10 @@ async function toggleSectionAdd(btn) {
   document.querySelectorAll(
     `.cc-sg-add[data-cid="${CSS.escape(cid)}"][data-sec="${CSS.escape(sec)}"][data-term="${CSS.escape(term)}"]`
   ).forEach(el => {
-    if (el !== btn) {
-      el.classList.toggle('added', addedSectionKeys.has(key));
-      el.setAttribute('aria-pressed', addedSectionKeys.has(key) ? 'true' : 'false');
-    }
+    const added = addedSectionKeys.has(key);
+    el.classList.toggle('added', added);
+    el.setAttribute('aria-pressed', String(added));
+    el.setAttribute('aria-label', added ? 'Remove section from schedule' : 'Add section to schedule');
   });
 }
 
@@ -551,7 +561,7 @@ function _toggleSectionAddByRow(rowEl) {
    (section-level). A course counts as added iff ANY of its section
    keys is present. The schedule rail / count read from addedCourses. */
 function _syncAddedCourse(courseId, term) {
-  const prefix = `${term || 'unknown'}|${courseId}:`;
+  const prefix = `${canonicalTerm(term) || 'unknown'}|${courseId}:`;
   let hasAny = false;
   for (const k of addedSectionKeys) {
     if (k.startsWith(prefix)) { hasAny = true; break; }
@@ -560,6 +570,7 @@ function _syncAddedCourse(courseId, term) {
   if (hasAny) addedCourses.add(courseKey);
   else        addedCourses.delete(courseKey);
   updateScheduleCount();
+  syncPlanObjects();
 }
 
 /* Source-of-truth rebuild from pending_schedule, including TBA and
@@ -591,6 +602,7 @@ function _hydrateScheduleState() {
       isAdded ? 'Remove section from schedule' : 'Add section to schedule');
   });
   updateScheduleCount();
+  syncPlanObjects();
 }
 
 /* Enrollment-restriction chips (SOC 'Rstr' column decoded).
@@ -621,19 +633,19 @@ function _renderPrereqChips(card) {
   // No prereqs known → empty column.
   if (status === 'met' && required.length > 0) {
     return `<span class="cc-chip cc-chip-met">
-      <span class="material-symbols-outlined">check_circle</span>
+      <span class="material-symbols-outlined">${solonIcon('check_circle')}</span>
       Prereqs met
     </span>`;
   }
   if (status === 'unknown' && unknown.length > 0) {
     return unknown.map(p => `<span class="cc-chip">
-      <span class="material-symbols-outlined">help</span>
+      <span class="material-symbols-outlined">${solonIcon('help')}</span>
       ${escHTML(p)}
     </span>`).join('');
   }
   if (missing.length === 0) return '';
   return missing.map(p => `<span class="cc-chip">
-    <span class="material-symbols-outlined">lock</span>
+    <span class="material-symbols-outlined">${solonIcon('lock')}</span>
     ${escHTML(p)}
   </span>`).join('');
 }
@@ -671,7 +683,7 @@ function renderCard(card) {
             aria-expanded="false"
             onclick="toggleSectionGroups(this)">
       <span>${groupCount === 1 ? '1 section' : groupCount + ' Lec groups'}</span>
-      <span class="material-symbols-outlined">expand_more</span>
+      <span class="material-symbols-outlined">${solonIcon('expand_more')}</span>
     </button>` : '';
 
   return `<div class="${classes}"
@@ -708,22 +720,8 @@ function toggleCard(courseId, section, btnEl, term) {
   }
 }
 
-/* Header strip + N cards, returned as one HTML string. The header
-   shows "N INTELLIGENCE MODULES" and the live category legend
-   computed from what's actually present in the batch — no point
-   showing "Practical" if none of the cards are practical. */
+/* Plan summaries retain the existing detailed card/section renderers. */
 function renderCardsBlock(cards) {
   if (!cards || cards.length === 0) return '';
-  const cats = new Set(cards.map(_catSlug));
-  const legend = ['core', 'practical', 'career', 'advanced', 'elective']
-    .filter(c => cats.has(c))
-    .map(c => `<span class="cards-legend-dot" style="--legend-color: var(--cat-${c});">${CATEGORY_LABELS[c]}</span>`)
-    .join('');
-  const noun = cards.length === 1 ? 'module' : 'modules';
-  const head = `<div class="cards-header">
-    <span class="cards-header-title">${cards.length} ${noun} recommended</span>
-    <div class="cards-legend">${legend}</div>
-  </div>`;
-  const body = cards.map(renderCard).join('');
-  return `<div class="cards-row">${head}${body}</div>`;
+  return renderPlanObject(cards);
 }

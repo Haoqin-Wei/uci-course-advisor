@@ -83,7 +83,7 @@ def test_web_search_humanized_chip_label() -> None:
         {"query": "UCI add drop deadline"},
     )
 
-    assert label == "联网搜索 · UCI add drop deadline"
+    assert label == "Searching the web · UCI add drop deadline"
 
 
 def test_search_skill_prompt_encodes_db_first_and_conflict_rules() -> None:
@@ -151,7 +151,7 @@ def test_agent_can_dispatch_explicit_web_search_with_sse_chip(monkeypatch) -> No
         "final",
     ]
     assert events[0]["name"] == "web_search"
-    assert events[0]["label"] == "联网搜索 · UCI add drop deadline registrar"
+    assert events[0]["label"] == "Searching the web · UCI add drop deadline registrar"
     assert events[1]["ok"] is True
     tool_payload = json.loads(messages[2]["content"])
     assert tool_payload["ok"] is True

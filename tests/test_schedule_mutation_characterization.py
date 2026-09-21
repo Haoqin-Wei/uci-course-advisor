@@ -772,3 +772,222 @@ def test_schedule_get_migrates_reliable_legacy_term_and_marks_ambiguous_unknown(
     )
     assert removed.status_code == 200
     assert removed.json()["pending_schedule"] == []
+
+
+def test_tba_sections_are_saved_without_invented_meeting_times(app_client, monkeypatch):
+    from app.data import db
+
+    sections = [
+        {"section_num": "A", "section_code": "36250", "section_type": "Lec",
+         "days": "TBA", "start_time": "", "end_time": "", "location": "ON LINE"},
+        {"section_num": "A1", "section_code": "36251", "section_type": "Dis",
+         "days": "TBA", "start_time": "", "end_time": "", "location": "ON LINE"},
+    ]
+    monkeypatch.setattr(db, "get_sections", lambda *_: {"found": True, "sections": sections})
+    monkeypatch.setattr(db, "get_course_info", lambda *_: {"found": False})
+    session_id = sessions_data.create_session("demo_001", title="Online course", term_scope="Fall 2026")
+    for section in sections:
+        response = app_client.post("/api/schedule/add", json={
+            "session_id": session_id, "course_id": "I&C SCI 139W",
+            "section": section["section_num"], "term": "2026 Fall",
+        })
+        assert response.status_code == 200
+        assert response.json()["events"] == []
+    assert [entry["section"] for entry in response.json()["pending_schedule"]] == ["A", "A1"]
+    assert response.json()["schedule_validation"]["unknowns"]
+    restored = app_client.get("/api/schedule", params={"session_id": session_id}).json()
+    assert len(restored["pending_schedule"]) == 2
+    assert restored["events"] == []
+
+
+@pytest.mark.parametrize("live_tba", [False, True])
+def test_live_meeting_times_override_catalog_in_calendar_and_validation(
+    app_client, fake_schedule_catalog, monkeypatch, live_tba,
+):
+    from app.data import db
+
+    catalog_lookup = db.get_sections
+    catalog_lecture = dict(catalog_lookup("COMPSCI161", "2025 Spring")["sections"][0])
+    live_lecture = {**catalog_lecture, "days": "TBA" if live_tba else "TuTh",
+                    "start_time": "" if live_tba else "10:45",
+                    "end_time": "" if live_tba else "11:35"}
+    # In one direction the catalog has no times; in the other its old times
+    # must disappear when the live source changes this exact section to TBA.
+    if not live_tba:
+        catalog_lecture.update(days="TBA", start_time="", end_time="")
+
+    def lookup(course_id, term):
+        result = catalog_lookup(course_id, term)
+        if course_id == "COMPSCI161":
+            result = {**result, "sections": [catalog_lecture, *result["sections"][1:]]}
+        return result
+
+    def live_lookup(course_id, term, **_kwargs):
+        return {"source": "live_anteater_websoc", "retrieved_at": "2026-09-21T16:00:00Z",
+                "sections": [live_lecture] if course_id == "COMPSCI161" else lookup(course_id, term)["sections"]}
+
+    monkeypatch.setattr(db, "get_sections", lookup)
+    monkeypatch.setattr(db, "get_live_sections", live_lookup)
+    session_id = sessions_data.create_session("demo_001", title="Refreshed meetings", term_scope="Spring 2025")
+    for course_id in ("COMPSCI161", "STATS67"):
+        assert app_client.post("/api/schedule/add", json={
+            "session_id": session_id, "course_id": course_id, "section": "A", "term": "2025 Spring",
+        }).status_code == 200
+    refreshed = app_client.post("/api/schedule/refresh", json={"session_id": session_id})
+    assert refreshed.status_code == 200
+    restored = app_client.get("/api/schedule", params={"session_id": session_id})
+    for payload in (refreshed.json(), restored.json()):
+        meetings = [event for event in payload["events"] if event["course_id"] == "COMPSCI161"]
+        time_conflicts = [issue for issue in payload["schedule_validation"]["conflicts"] if issue["type"] == "time_conflict"]
+        if live_tba:
+            assert meetings == []
+            assert time_conflicts == []
+            assert payload["pending_schedule"][0]["materialization_status"] == "tba"
+        else:
+            assert [(event["day"], event["start"], event["end"]) for event in meetings] == [
+                ("Tue", "10:45", "11:35"), ("Thu", "10:45", "11:35"),
+            ]
+            assert time_conflicts
+            assert payload["pending_schedule"][0]["materialization_status"] == "resolved"
+
+
+@pytest.fixture
+def recorded_registrar_card():
+    from pathlib import Path
+
+    return json.loads((Path(__file__).parent / "fixtures/schedule/registrar_45c_legacy.json").read_text())
+
+
+def test_recorded_45c_card_add_restore_remove_without_remote_queries(app_client, monkeypatch, recorded_registrar_card):
+    from app.data import db
+
+    def no_remote(*args, **kwargs):
+        pytest.fail(f"A shown card must not re-fetch course data: {args}")
+
+    monkeypatch.setattr(db, "get_sections", no_remote)
+    monkeypatch.setattr(db, "get_course_info", no_remote)
+    sid = sessions_data.create_session("demo_001", title="Recorded 45C", term_scope="Fall 2026")
+    sessions_data.append_turn("demo_001", sid, "assistant", "", cards=[recorded_registrar_card])
+    # Existing broken schedules are repaired on read, with no re-adding needed.
+    sessions_data.update_session_state("demo_001", sid, {"pending_schedule": [
+        {"course_id": "I&C SCI 45C", "section": "A", "status": "pending", "term": "2026 Fall"},
+    ]})
+    restored = app_client.get("/api/schedule", params={"session_id": sid})
+    added = app_client.post("/api/schedule/add", json={
+        "session_id": sid, "course_id": "I&C SCI 45C", "section": "36120", "term": "2026 Fall",
+        "materialized_section": {"days": "M", "start_time": "01:00", "end_time": "02:00"},
+    })
+    for response in (restored, added):
+        assert response.status_code == 200
+        payload = response.json()
+        assert len(payload["pending_schedule"]) == 1
+        assert [(e["day"], e["start"], e["end"]) for e in payload["events"]] == [
+            ("Tue", "12:30", "13:50"), ("Thu", "12:30", "13:50"),
+        ]
+        assert not any(i["type"] == "time_unknown" for i in payload["schedule_validation"]["unknowns"])
+    removed = app_client.post("/api/schedule/remove", json={
+        "session_id": sid, "course_id": "I&C SCI 45C", "section": "36120", "term": "2026 Fall",
+    })
+    assert removed.json()["pending_schedule"] == []
+    assert removed.json()["events"] == []
+
+
+def test_schedule_card_lookup_does_not_borrow_another_term_or_session(app_client, monkeypatch, recorded_registrar_card):
+    from app.data import db
+
+    sid = sessions_data.create_session("demo_001", title="Fall card", term_scope="Fall 2026")
+    other = sessions_data.create_session("demo_001", title="Other conversation", term_scope="Fall 2026")
+    sessions_data.append_turn("demo_001", sid, "assistant", "", cards=[recorded_registrar_card])
+    calls = []
+    monkeypatch.setattr(db, "get_sections", lambda cid, term: (calls.append((cid, term)) or {"found": False}))
+    monkeypatch.setattr(db, "get_course_info", lambda *_: {"found": False})
+    for session_id, term in [(sid, "2027 Winter"), (other, "2026 Fall")]:
+        response = app_client.post("/api/schedule/add", json={
+            "session_id": session_id, "course_id": "I&C SCI 45C", "section": "A", "term": term,
+        })
+        assert response.status_code == 200
+        assert response.json()["events"] == []
+    # Each missing course is fetched once, not again for dedup, validation and events.
+    assert calls == [("I&C SCI 45C", "2027 Winter"), ("I&C SCI 45C", "2026 Fall")]
+
+
+def test_concurrent_schedule_adds_preserve_both_sections(app_client, fake_schedule_catalog, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from time import sleep
+    from app.data import db
+
+    original = db.get_sections
+    def slow_lookup(*args):
+        sleep(0.03)
+        return original(*args)
+    monkeypatch.setattr(db, "get_sections", slow_lookup)
+    sid = sessions_data.create_session("demo_001", title="Concurrent adds", term_scope="Spring 2025")
+    def add(section):
+        return app_client.post("/api/schedule/add", json={
+            "session_id": sid, "course_id": "COMPSCI161", "section": section, "term": "2025 Spring",
+        })
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(add, ["A", "A1"]))
+    assert all(response.status_code == 200 for response in responses)
+    assert {e["section"] for e in sessions_data.get_session_state("demo_001", sid)["pending_schedule"]} == {"A", "A1"}
+
+
+def test_schedule_real_api_browser_flow(app_client, monkeypatch, recorded_registrar_card):
+    """Opt-in Chrome integration; upstream network is still blocked by conftest."""
+    import os
+    if os.environ.get("SOLON_BROWSER_CHECK") != "1":
+        pytest.skip("Set SOLON_BROWSER_CHECK=1 to run the real API browser check")
+    import socket
+    import subprocess
+    import threading
+    import time
+    from pathlib import Path
+    import uvicorn
+    from main import app
+    from app.data import db
+
+    def no_remote(*args, **kwargs):
+        raise AssertionError(f"Unexpected course lookup during a card click: {args}")
+    monkeypatch.setattr(db, "get_sections", no_remote)
+    monkeypatch.setattr(db, "get_course_info", no_remote)
+    sid = sessions_data.create_session("demo_001", title="Registrar schedule integration", term_scope="Fall 2026")
+    sessions_data.append_turn("demo_001", sid, "assistant", "Choose a section to add to your schedule.", cards=[recorded_registrar_card])
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(app, lifespan="off", loop="asyncio", log_level="error"))
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
+    thread.start()
+    try:
+        for _ in range(100):
+            if server.started:
+                break
+            time.sleep(.02)
+        assert server.started
+        result = subprocess.run(
+            ["node", "scripts/verify_schedule_api_ui.cjs"],
+            cwd=Path(__file__).resolve().parents[1],
+            env={**os.environ, "SOLON_BASE_URL": f"http://127.0.0.1:{port}"},
+            text=True, capture_output=True, timeout=90,
+        )
+        print(result.stdout)
+        assert result.returncode == 0, result.stdout + result.stderr
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
+        sock.close()
+
+
+def test_refresh_completion_keeps_edits_made_while_waiting(app_client, fake_schedule_catalog):
+    from app.routers.chat import _finish_schedule_refresh
+    from app.data import db
+
+    sid = sessions_data.create_session("demo_001", title="Refresh race", term_scope="Spring 2025")
+    initial = {"session_id": sid, "course_id": "COMPSCI161", "section": "A", "term": "2025 Spring"}
+    assert app_client.post("/api/schedule/add", json=initial).status_code == 200
+    old_live_result = db.get_sections("COMPSCI161", "2025 Spring")
+    assert app_client.post("/api/schedule/remove", json=initial).status_code == 200
+    assert app_client.post("/api/schedule/add", json={**initial, "course_id": "IN4MATX43"}).status_code == 200
+    payload = _finish_schedule_refresh("demo_001", sid, {("COMPSCI161", "2025 Spring"): old_live_result})
+    assert [entry["course_id"] for entry in payload["pending_schedule"]] == ["IN4MATX43"]
+    assert {event["course_id"] for event in payload["events"]} == {"IN4MATX43"}

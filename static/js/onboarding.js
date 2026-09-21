@@ -123,7 +123,7 @@ function _wizardReplayIntroAnimations() {
 }
 
 const WIZARD_INTRO_SUB =
-  "ZotAdvisor is your course-planning copilot. For accurate recommendations, " +
+  "Solon is your course-planning copilot. For accurate recommendations, " +
   "the AI needs your school, year, major, and the courses you've already taken.\n\n" +
   "The more honest your profile, the more personal the advice. " +
   "This intro shows once — you can revise everything later from Profile.";
@@ -193,7 +193,7 @@ function _wizardTypeIntroSubtitle() {
   _wizardTypeTimer = setTimeout(tick, WIZARD_TYPE_START_DELAY);
 }
 
-// Re-opening from the Profile modal: pre-fill state from the saved
+// Re-opening from Student Profile: pre-fill state from the saved
 // profile so the user sees their existing picks already marked rather
 // than starting from scratch. The school/major slugs are resolved
 // against the static schools list and the (lazy-loaded) majors list
@@ -202,7 +202,7 @@ function _wizardTypeIntroSubtitle() {
 async function reopenWizardFromProfile() {
   // Clear the skip flag so the wizard truly re-opens.
   sessionStorage.removeItem(WIZARD_SKIPPED_KEY);
-  closeProfile();
+  resetProfilePrivacy();
 
   // Re-fetch the freshest profile (sidebar cache could be stale)
   let profile = {};
@@ -253,6 +253,7 @@ async function reopenWizardFromProfile() {
 
 function closeWizard() {
   document.getElementById('wizardOverlay').classList.remove('open');
+  if (document.body.classList.contains('profile-open')) loadProfile();
 }
 
 function wizardRenderStep() {
@@ -271,6 +272,8 @@ function wizardRenderStep() {
   // Intro page uses its own layout — hide the standard header row.
   const overlay = document.getElementById('wizardOverlay');
   overlay.classList.toggle('is-intro', wizardState.step === 0);
+  overlay.classList.toggle('is-coursework', wizardState.step === 4);
+  overlay.querySelector('.wizard-main').scrollTop = 0;
 
   // Header text (only matters for steps 1-4)
   if (wizardState.step >= 1) {
@@ -698,7 +701,7 @@ function wizardRenderCourses(courses) {
 
   // Active-letter highlighting: when scrolling, mark the letter button
   // whose first-dept-header is the topmost visible one.
-  const scrollRoot = document.getElementById('wizardCourseGridWrap');
+  const scrollRoot = document.querySelector('#wizardOverlay .wizard-main');
   _wizardLetterObserver = new IntersectionObserver((entries) => {
     let topVisible = null;
     for (const e of entries) {

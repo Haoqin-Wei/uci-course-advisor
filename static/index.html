@@ -3,78 +3,32 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ZotAdvisor — Academic Planning Console</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..24,300..500,0..1,0&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/styles/tokens.css?v=20260917-auto-terms">
-<link rel="stylesheet" href="/static/styles/components.css?v=20260917-auto-terms">
+<title>Solon — Your course planning companion</title>
+<link rel="stylesheet" href="/static/styles/tokens.css?v=20260920-solon-welcome-motion">
+<link rel="stylesheet" href="/static/styles/components.css?v=20260920-solon-welcome-motion">
+<link rel="stylesheet" href="/static/styles/solon.css?v=20260921-schedule-hours-friday">
+<link rel="stylesheet" href="/static/styles/student-profile.css?v=20260920-solon-welcome-motion">
+<link rel="stylesheet" href="/static/styles/auth.css?v=20260921-auth-page">
 </head>
-<body>
-
-<!-- ═══ TOP BAR ═══════════════════════════════════════ -->
-<div class="topbar">
-  <div class="topbar-brand">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
-    </svg>
-    ZotAdvisor
-  </div>
-  <div class="topbar-sep"></div>
-  <div class="term-control" id="termControl">
-    <div class="term-default" aria-label="Conversation default term"
-         title="Used when your question and conversation do not specify a term. Updates automatically in Week 8."
-         role="status" aria-live="polite">
-      <span id="defaultTermLabel">Loading…</span>
-      <span class="term-default-tag">default</span>
-    </div>
-    <span class="term-error" id="termError" role="status"
-          aria-live="polite"></span>
-  </div>
-  <div class="topbar-right">
-    <div class="topbar-status"><span class="dot"></span>System ready</div>
-    <button class="topbar-btn topbar-icon-btn" id="settingsBtn"
-            aria-label="Open settings"
-            onclick="openSettings()" title="System prompt &amp; settings">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
-           stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
-        <circle cx="12" cy="12" r="3"></circle>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-      </svg>
-    </button>
-    <button class="topbar-btn" id="toggleScheduleBtn" onclick="toggleSchedule()"
-            aria-controls="schedulePanel" aria-expanded="false">Schedule</button>
-  </div>
-</div>
+<body class="auth-pending">
 
 <!-- ═══ APP BODY ══════════════════════════════════════ -->
-<div class="app-body">
+<div class="app-body" inert aria-hidden="true">
 
   <!-- ── Left Panel ─────────────────────────────── -->
-  <aside class="left-panel">
+  <button class="sidebar-scrim" onclick="toggleMobileSidebar(false)" aria-label="Close conversations" tabindex="-1"></button>
+  <aside class="left-panel" id="sidebar" aria-label="Solon sidebar">
    <div class="left-panel-scroll">
 
-    <!-- New chat button ──────────────────────────── -->
-    <button class="new-chat-btn" onclick="startNewChat()" title="Start a new conversation">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <path d="M12 5v14M5 12h14"/>
-      </svg>
-      <span>New chat</span>
-    </button>
-
-    <!-- Recent sessions list ─────────────────────── -->
-    <div class="sessions-section">
-      <div class="sessions-label">Recent</div>
-      <div class="sessions-list" id="sessionsList">
-        <div class="sessions-empty">No conversations yet</div>
-      </div>
-    </div>
-
-    <div class="left-spacer"></div>
-    <div class="left-footer">
-      v0.1 · demo<br>
-      UCI Course Planning<br>
-      Data from <a href="https://icssc.link/about-anteaterapi"
-                   target="_blank" rel="noopener noreferrer">Anteater API</a>
+    <div class="sidebar-brand"><span class="solon-logo">S</span><span>Solon</span></div>
+    <nav class="sidebar-nav" aria-label="Main navigation">
+      <button class="nav-item is-active" id="askNav" aria-current="page" onclick="showAsk()" aria-label="Ask" title="Ask"><span data-icon="sparkles"></span><span>Ask</span></button>
+      <button class="nav-item" id="profileNav" onclick="openProfile()" aria-label="Student Profile" aria-controls="studentProfilePanel" title="Student Profile"><span data-icon="user"></span><span>Student Profile</span></button>
+      <button class="nav-item" id="scheduleNav" onclick="toggleSchedule()" aria-label="Schedule" aria-controls="schedulePanel" aria-expanded="false" title="Schedule"><span data-icon="calendar"></span><span>Schedule</span></button>
+      <button class="nav-item" onclick="startNewChat()" aria-label="New thread" title="New thread"><span data-icon="compose"></span><span>New thread</span></button>
+    </nav>
+    <div class="sessions-section" aria-label="Conversations">
+      <div class="sessions-list" id="sessionsList"><div class="sessions-empty">No conversations yet</div></div>
     </div>
    </div><!-- /left-panel-scroll -->
 
@@ -124,65 +78,82 @@
   </aside>
 
   <!-- ── Center: Chat ───────────────────────────── -->
-  <main class="chat-panel" aria-label="Chat with ZotAdvisor">
+  <main id="chatPanel" class="chat-panel is-welcome" aria-label="Chat with Solon">
     <div class="chat-header">
-      <div class="chat-header-title">Planning Terminal</div>
-      <div class="chat-header-pill">Active</div>
+      <button class="icon-button mobile-sidebar-toggle" onclick="toggleMobileSidebar()" aria-label="Show conversations" aria-controls="sidebar" aria-expanded="false"><span data-icon="sidebar"></span></button>
+      <div class="chat-header-title" id="threadTitle">New conversation</div>
+      <button class="schedule-toggle" id="toggleScheduleBtn" onclick="toggleSchedule()" aria-controls="schedulePanel" aria-expanded="false"><span data-icon="panel"></span>Schedule</button>
     </div>
-
-    <div class="chat-scroll is-empty" id="chatScroll" role="log" aria-live="polite" aria-relevant="additions text">
-      <div class="welcome-state" id="welcomeState">
-        <div class="welcome-greeting" id="welcomeGreeting">What can I help with today?</div>
-        <div class="welcome-sub">Ask about courses, professors, or build your schedule for <span id="welcomeTerm">the current term</span>.</div>
-        <div class="followups" id="welcomeFollowups">
-          <button class="followup-chip" onclick="sendFollowup('Recommend courses for next quarter')">Recommend courses</button>
-          <button class="followup-chip" onclick="sendFollowup('What are some easy GE courses?')">Easy GE courses</button>
-          <button class="followup-chip" onclick="sendFollowup('How is professor Thornton?')">Professor ratings</button>
-        </div>
-      </div>
-    </div>
+    <div class="chat-scroll is-empty" id="chatScroll" role="log" aria-live="polite" aria-relevant="additions text"></div>
 
     <div class="input-area">
+      <div class="welcome-state" id="welcomeState">
+        <h1 class="welcome-greeting" id="welcomeGreeting">What should we plan?</h1>
+        <div class="welcome-sub sr-only">Ask about courses, professors, or build your schedule for <span id="welcomeTerm">the current term</span>.</div>
+      </div>
+      <div class="composer-suggestions" id="composerSuggestions"></div>
       <div class="input-row">
+        <span class="composer-term" role="status" aria-live="polite" aria-atomic="true"
+              aria-label="Default planning term"
+              title="Default term when your question does not specify one. Updates automatically in Week 8.">
+          <span aria-hidden="true">@</span><span class="composer-term-label" id="composerTermLabel">Loading…</span>
+        </span>
         <input type="text" class="input-field" id="userInput"
-               placeholder="Ask about courses, professors, or schedule…"
-               aria-label="Ask ZotAdvisor a question"
+               placeholder="Ask about courses or your schedule…"
+               aria-label="Ask Solon a question"
+               aria-describedby="composerTermLabel"
                autocomplete="off">
-        <button class="send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
-        <button class="stop-btn" id="stopBtn" onclick="stopGeneration()" style="display:none">
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()" aria-label="Send message" disabled><span data-icon="arrow-up"></span></button>
+        <button class="stop-btn" id="stopBtn" onclick="stopGeneration()" aria-label="Stop generation" style="display:none">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true">
             <rect x="6" y="6" width="12" height="12" rx="1.5"></rect>
           </svg>
-          Stop
         </button>
+      </div>
+      <div class="followups welcome-followups" id="welcomeFollowups" aria-label="Suggested questions">
+        <button class="followup-chip" onclick="sendFollowup('Recommend courses for next quarter')">Recommend courses</button>
+        <button class="followup-chip" onclick="sendFollowup('What are some easy GE courses?')">Easy GE courses</button>
+        <button class="followup-chip" onclick="sendFollowup('How is professor Thornton?')">Professor ratings</button>
       </div>
     </div>
   </main>
 
+  <!-- ── Student Profile ────────────────────────── -->
+  <main id="studentProfilePanel" class="student-profile-panel" aria-labelledby="studentProfileTitle" hidden>
+    <header class="student-profile-header">
+      <button class="icon-button mobile-sidebar-toggle" onclick="toggleMobileSidebar()" aria-label="Show conversations" aria-controls="sidebar" aria-expanded="false"><span data-icon="sidebar"></span></button>
+      <h1 id="studentProfileTitle" tabindex="-1">Student Profile</h1>
+      <button class="profile-edit-button" id="profileEditButton" onclick="reopenWizardFromProfile()" disabled>Edit</button>
+    </header>
+    <div class="student-profile-scroll" id="studentProfileScroll">
+      <div class="student-profile-content" id="profileBody" aria-busy="false"></div>
+    </div>
+  </main>
+
   <!-- ── Right: Schedule ────────────────────────── -->
-  <aside class="schedule-panel" id="schedulePanel" aria-label="Weekly schedule">
-    <div class="resize-handle" id="resizeHandle" aria-hidden="true"></div>
-    <div class="schedule-header">
-      <div class="schedule-header-title">Weekly Schedule</div>
-      <span class="pill" id="scheduleCount">0 courses</span>
-      <button class="schedule-refresh"
-              id="scheduleRefreshBtn"
-              onclick="refreshSchedule()"
-              aria-label="Refresh schedule data"
-              title="Refresh live section status without removing planning items">Refresh</button>
-      <button class="schedule-clear"
-              id="scheduleClearBtn"
-              onclick="clearSchedule()"
-              aria-label="Clear weekly schedule"
-              title="Remove every section from the schedule">Clear</button>
-      <button class="schedule-close" onclick="toggleSchedule()" aria-label="Close weekly schedule">&#x2715;</button>
-    </div>
-    <div class="schedule-body" id="scheduleBody">
-      <div class="schedule-empty">Add courses from recommendations<br>to build your schedule.</div>
-    </div>
-    <div class="schedule-attribution">
-      Data from <a href="https://icssc.link/about-anteaterapi"
-                   target="_blank" rel="noopener noreferrer">Anteater API</a>
+  <aside class="schedule-panel" id="schedulePanel" aria-label="Weekly schedule" inert>
+    <div class="schedule-inner">
+      <div class="schedule-header">
+        <div class="schedule-header-title" id="scheduleTermLabel">Your schedule</div>
+        <span class="schedule-sync" id="scheduleSync" role="status"></span>
+        <div class="schedule-header-actions">
+          <button class="icon-button" id="scheduleRefreshBtn" onclick="refreshSchedule()" aria-label="Refresh schedule data" title="Refresh schedule"><span data-icon="refresh"></span></button>
+          <button class="schedule-close icon-button" onclick="toggleSchedule()" aria-label="Close weekly schedule"><span data-icon="close"></span></button>
+        </div>
+      </div>
+      <div class="schedule-body" id="scheduleBody">
+        <div class="schedule-empty">Add courses from recommendations to build your schedule.</div>
+      </div>
+      <div class="schedule-footer">
+        <div class="term-control" id="termControl">
+          <div class="term-default" aria-label="Conversation default term" title="Used when your question does not specify a term. Updates automatically in Week 8." role="status" aria-live="polite">
+            <span id="defaultTermLabel">Loading…</span><span class="term-default-tag">default</span>
+          </div>
+          <span class="term-error" id="termError" role="status" aria-live="polite"></span>
+        </div>
+        <button class="schedule-clear" id="scheduleClearBtn" onclick="clearSchedule()" aria-label="Clear weekly schedule">Clear plan</button>
+      </div>
+      <div class="schedule-attribution">Data from <a href="https://icssc.link/about-anteaterapi" target="_blank" rel="noopener noreferrer">Anteater API</a></div>
     </div>
   </aside>
 
@@ -216,7 +187,7 @@
         <div class="wizard-intro">
           <div class="wizard-intro-eyebrow">
             <span class="dot"></span>
-            <span>Welcome to ZotAdvisor · v0.1</span>
+            <span>Welcome to Solon · v0.1</span>
           </div>
 
           <!-- Decorative architect lines (3 thin verticals with grad-to-accent) -->
@@ -308,7 +279,7 @@
                  placeholder="e.g. 2024-2025"
                  inputmode="numeric"
                  onchange="wizardState.catalog_year=this.value.trim()">
-          <small>Required before ZotAdvisor can confirm whether a course counts toward your degree.</small>
+          <small>Required before Solon can confirm whether a course counts toward your degree.</small>
         </label>
         <div class="wizard-matrix-label">
           <span>Selection Matrix</span>
@@ -354,78 +325,97 @@
   </div>
 </div>
 
-<!-- ═══ AUTH MODAL (login / register) ═══════════════════ -->
-<div class="modal-backdrop" id="authModal" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
-  <div class="modal-panel" onclick="event.stopPropagation()" style="max-width: 440px;">
-    <div class="modal-header">
-      <div class="modal-title" id="authModalTitle">Welcome to ZotAdvisor</div>
+<!-- ═══ AUTH PAGE (existing email login / registration) ═══ -->
+<section class="auth-screen" id="authModal" aria-labelledby="authModalTitle" hidden>
+  <aside class="auth-story" aria-label="About Solon">
+    <div class="auth-brand"><span class="solon-logo" aria-hidden="true">S</span><span>Solon</span></div>
+    <div class="auth-story-content">
+      <h2>Your next quarter,<br>with a clearer plan.</h2>
+      <p class="auth-story-intro">Ask in plain language. Explore UCI courses and professors, build your schedule, and get advice shaped by your coursework.</p>
+      <ul class="auth-features">
+        <li>
+          <span data-icon="calendar" aria-hidden="true"></span>
+          <div><h3>Plans that fit</h3><p>Explore sections and check time conflicts as you build your schedule.</p></div>
+        </li>
+        <li>
+          <span data-icon="user" aria-hidden="true"></span>
+          <div><h3>Professors in context</h3><p>See ratings and grade distributions alongside the courses you’re considering.</p></div>
+        </li>
+        <li>
+          <span data-icon="sparkles" aria-hidden="true"></span>
+          <div><h3>Advice that remembers</h3><p>Bring your completed coursework and preferences into the conversation.</p></div>
+        </li>
+      </ul>
     </div>
-    <div class="modal-body">
-      <div class="auth-tabs">
-        <button class="auth-tab is-active" id="authTabLogin"    onclick="switchAuthTab('login')">登录</button>
-        <button class="auth-tab"           id="authTabRegister" onclick="switchAuthTab('register')">注册</button>
+    <p class="auth-story-footer">Built for UC Irvine students.</p>
+  </aside>
+
+  <div class="auth-main">
+    <div class="auth-brand auth-mobile-brand"><span class="solon-logo" aria-hidden="true">S</span><span>Solon</span></div>
+    <div class="auth-card">
+      <header class="auth-heading">
+        <h1 id="authModalTitle" tabindex="-1">Sign in to Solon</h1>
+        <p id="authSubtitle">Pick up where your plan left off.</p>
+      </header>
+      <div class="auth-tabs" role="tablist" aria-label="Account access">
+        <button class="auth-tab is-active" id="authTabLogin" type="button" role="tab" aria-selected="true"
+                aria-controls="authPaneLogin" onclick="switchAuthTab('login')">Sign in</button>
+        <button class="auth-tab" id="authTabRegister" type="button" role="tab" aria-selected="false" tabindex="-1"
+                aria-controls="authPaneRegister" onclick="switchAuthTab('register')">Create account</button>
       </div>
+      <div class="auth-error" id="authError" role="alert"></div>
 
-      <div class="auth-error" id="authError"></div>
-
-      <!-- ── Login pane ─────────────────────────────── -->
-      <div class="auth-pane is-active" id="authPaneLogin">
-        <div class="auth-field">
-          <label class="auth-label" for="loginEmail">邮箱</label>
-          <input class="auth-input" id="loginEmail" type="email" autocomplete="email"
-                 placeholder="you@uci.edu">
-        </div>
-        <div class="auth-field">
-          <label class="auth-label" for="loginPassword">密码</label>
-          <input class="auth-input" id="loginPassword" type="password" autocomplete="current-password"
-                 placeholder="至少 8 位">
-        </div>
-        <div class="auth-actions">
-          <button class="auth-btn" id="loginSubmit" onclick="doLogin()">登录</button>
-        </div>
-      </div>
-
-      <!-- ── Register pane ──────────────────────────── -->
-      <div class="auth-pane" id="authPaneRegister">
-        <div class="auth-field">
-          <label class="auth-label" for="regEmail">邮箱</label>
-          <input class="auth-input" id="regEmail" type="email" autocomplete="email"
-                 placeholder="you@uci.edu">
-        </div>
-        <div class="auth-actions">
-          <button class="auth-btn secondary" id="regSendBtn" onclick="doRequestCode()">发送验证码</button>
-        </div>
-        <div class="auth-hint" id="regCodeHint" style="display:none;">
-          验证码已发送。10 分钟内有效。
-        </div>
-
-        <div class="auth-register-step2" id="authRegisterStep2">
-          <div class="auth-step-divider">填写验证码与密码</div>
+      <form class="auth-pane is-active" id="authPaneLogin" role="tabpanel" aria-labelledby="authTabLogin"
+            onsubmit="event.preventDefault(); doLogin()">
+        <div class="auth-input-group">
           <div class="auth-field">
-            <label class="auth-label" for="regCode">验证码（6 位）</label>
-            <input class="auth-input" id="regCode" type="text" inputmode="numeric"
-                   maxlength="6" placeholder="123456" autocomplete="one-time-code">
+            <label class="auth-label" for="loginEmail">Email</label>
+            <input class="auth-input" id="loginEmail" type="email" autocomplete="username"
+                   autocapitalize="none" spellcheck="false" placeholder="you@uci.edu" required>
           </div>
           <div class="auth-field">
-            <label class="auth-label" for="regPassword">设置密码（至少 8 位）</label>
+            <label class="auth-label" for="loginPassword">Password</label>
+            <input class="auth-input" id="loginPassword" type="password" autocomplete="current-password"
+                   placeholder="Required" required>
+          </div>
+        </div>
+        <button class="auth-btn" id="loginSubmit" type="submit" disabled>Sign in</button>
+      </form>
+
+      <form class="auth-pane" id="authPaneRegister" role="tabpanel" aria-labelledby="authTabRegister"
+            onsubmit="event.preventDefault(); doRegister()">
+        <div class="auth-input-group">
+          <div class="auth-field">
+            <label class="auth-label" for="regEmail">Email</label>
+            <input class="auth-input" id="regEmail" type="email" autocomplete="username"
+                   autocapitalize="none" spellcheck="false" placeholder="you@uci.edu" required>
+          </div>
+          <div class="auth-field">
+            <label class="auth-label" for="regPassword">Password</label>
             <input class="auth-input" id="regPassword" type="password" autocomplete="new-password"
-                   placeholder="至少 8 位">
+                   placeholder="At least 8 characters" minlength="8" maxlength="72" required>
           </div>
-          <label class="auth-consent" for="regConsent">
-            <input id="regConsent" type="checkbox">
-            <span>I confirm that I am 18 or older, agree to the
-              <a href="/terms" target="_blank" rel="noopener">Terms of Use</a>, and acknowledge the
-              <a href="/privacy" target="_blank" rel="noopener">Privacy Notice</a>, including academic-data processing and use of an AI provider.</span>
-          </label>
-          <div class="auth-actions">
-            <button class="auth-btn" id="regVerifyBtn" onclick="doVerify()">创建账号并登录</button>
+          <div class="auth-field">
+            <label class="auth-label" for="regPasswordConfirm">Confirm</label>
+            <input class="auth-input" id="regPasswordConfirm" type="password" autocomplete="new-password"
+                   aria-label="Confirm password" placeholder="Re-enter password" minlength="8" maxlength="72" required>
           </div>
         </div>
-      </div>
-
+        <label class="auth-consent" for="regConsent">
+          <input id="regConsent" type="checkbox" required>
+          <span>I’m 18 or older and agree to the
+            <a href="/terms" target="_blank" rel="noopener">Terms of Use</a> and
+            <a href="/privacy" target="_blank" rel="noopener">Privacy Notice</a>, including academic-data processing and use of an AI provider.</span>
+        </label>
+        <button class="auth-btn" id="regSubmit" type="submit" disabled>Create account</button>
+        <p class="auth-profile-note">Your student profile can wait. Start a conversation<br class="auth-note-break"> and add your coursework whenever you’re ready.</p>
+      </form>
+      <nav class="auth-legal-links" aria-label="Legal information">
+        <a href="/terms" target="_blank" rel="noopener">Terms of Use</a><span aria-hidden="true">·</span><a href="/privacy" target="_blank" rel="noopener">Privacy Notice</a>
+      </nav>
     </div>
   </div>
-</div>
+</section>
 
 <!-- ═══ SETTINGS MODAL ════════════════════════════════ -->
 <div class="modal-backdrop" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle" onclick="closeSettings(event)">
@@ -493,27 +483,17 @@
   </div>
 </div>
 
-<!-- ═══ PROFILE MODAL ══════════════════════════════════ -->
-<div class="modal-backdrop" id="profileModal" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle" onclick="closeProfile(event)">
-  <div class="modal-panel profile-modal-content" onclick="event.stopPropagation()">
-    <div class="modal-header">
-      <div class="modal-title" id="profileModalTitle">Student Profile</div>
-      <button class="modal-close" onclick="closeProfile()" aria-label="Close profile">&#x2715;</button>
-    </div>
-    <div class="modal-body" id="profileBody">
-      <div class="memory-empty">Loading…</div>
-    </div>
-  </div>
-</div>
-
-<script src="/static/js/api-client.js?v=20260917-auto-terms"></script>
-<script src="/static/js/chat.js?v=20260917-auto-terms"></script>
-<script src="/static/js/cards.js?v=20260917-auto-terms"></script>
-<script src="/static/js/schedule.js?v=20260917-auto-terms"></script>
-<script src="/static/js/sessions.js?v=20260917-auto-terms"></script>
-<script src="/static/js/profile-memory.js?v=20260917-auto-terms"></script>
-<script src="/static/js/auth.js?v=20260917-auto-terms"></script>
-<script src="/static/js/onboarding.js?v=20260917-auto-terms"></script>
+<script src="/static/js/ui.js?v=20260920-solon-welcome-motion"></script>
+<script src="/static/js/api-client.js?v=20260920-solon-welcome-motion"></script>
+<script src="/static/js/chat.js?v=20260920-solon-welcome-motion"></script>
+<script src="/static/js/cards.js?v=20260921-schedule-added-sections"></script>
+<script src="/static/js/plan.js?v=20260921-schedule-time-format"></script>
+<script src="/static/js/schedule.js?v=20260921-schedule-hours-friday"></script>
+<script src="/static/js/sessions.js?v=20260920-solon-welcome-motion"></script>
+<script src="/static/js/profile-memory.js?v=20260920-solon-welcome-motion"></script>
+<script src="/static/js/student-profile.js?v=20260920-solon-welcome-motion"></script>
+<script src="/static/js/auth.js?v=20260921-auth-page"></script>
+<script src="/static/js/onboarding.js?v=20260920-solon-welcome-motion"></script>
 <script src="/static/js/transcript-import.js?v=20260904-transcript-v2"></script>
 
 </body>

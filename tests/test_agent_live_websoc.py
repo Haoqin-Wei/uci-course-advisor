@@ -94,7 +94,7 @@ def test_get_live_sections_humanized_chip_label() -> None:
         {"course_id": "COMPSCI 161", "term": "Fall 2026"},
     )
 
-    assert label == "实时查询 WebSoc · COMPSCI 161 · Fall 2026"
+    assert label == "Checking live WebSoc · COMPSCI 161 · Fall 2026"
 
 
 def test_agent_prompt_encodes_live_availability_rules() -> None:
@@ -170,7 +170,7 @@ def test_agent_can_dispatch_live_sections_with_sse_chip(monkeypatch) -> None:
 
     assert events[0]["type"] == "tool_call_start"
     assert events[0]["name"] == "get_live_sections"
-    assert events[0]["label"] == "实时查询 WebSoc · CS161 · 2026 Fall"
+    assert events[0]["label"] == "Checking live WebSoc · CS161 · 2026 Fall"
     assert events[1]["ok"] is True
     tool_payload = json.loads(messages[2]["content"])
     assert tool_payload["source"] == "live_anteater_websoc"
