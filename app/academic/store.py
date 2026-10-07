@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 from app import config
 from app.academic.models import TranscriptCourseInput, TranscriptImportRequest
@@ -250,7 +250,18 @@ def _course_status(grade: str) -> str:
     return "unknown"
 
 
-def import_transcript(user_id: str, body: TranscriptImportRequest) -> dict:
+def import_transcript(
+    user_id: str,
+    body: TranscriptImportRequest,
+    *,
+    before_commit: Callable[[list[str]], None] | None = None,
+) -> dict:
+    """Replace one academic snapshot, aborting if its pre-commit mirror fails.
+
+    The optional callback receives the completed course IDs while the academic
+    write transaction is still open. Idempotent retries never invoke it.
+    Separate memory and academic stores do not share a distributed transaction.
+    """
     imported_at = _now_iso()
     source_time = _source_time(body, imported_at)
     import_id = uuid.uuid4().hex
@@ -436,9 +447,11 @@ def import_transcript(user_id: str, body: TranscriptImportRequest) -> dict:
                 skipped,
             ),
         )
-        conn.commit()
         all_completed = _completed_ids(conn, user_id)
         all_known = _known_ids(conn, user_id)
+        if before_commit:
+            before_commit(all_completed)
+        conn.commit()
 
     return {
         "ok": True,

@@ -592,6 +592,105 @@ def test_failed_snapshot_transaction_rolls_back_replacement(app_client, monkeypa
             assert conn.execute(f"SELECT COUNT(*) FROM {table} WHERE user_id = ?", (user["id"],)).fetchone()[0] == 1
 
 
+def test_failed_memory_write_aborts_import_and_same_request_retry_recovers(app_client, monkeypatch):
+    from app.academic import store
+    from app.memory import get_memory_manager
+
+    user = _create_and_login(app_client)
+    previous = _payload(printed_at="2026-09-03T13:25:00Z", grade="B+")
+    previous["client_request_id"] = "mirror-request-student-a"
+    assert app_client.post("/api/academic/transcript/import", json=previous).status_code == 200
+    assert app_client.post(
+        f"/api/memory/{user['id']}/profile",
+        json={"completed_courses": ["I&C SCI 32", "ANTHRO 2A"]},
+    ).status_code == 200
+    manager = get_memory_manager()
+    provider = manager.provider
+    real_update = provider.update_profile
+    before = app_client.get("/api/academic/profile?include_gpa=true").json()
+    ai_before = store.get_ai_academic_context(user["id"])
+    memory_before = manager.get_profile(user["id"])
+    replacement = _passing_snapshot([("MATH", "2B")], printed_at="2026-01-07T13:00:00Z", gpa=3.3)
+    replacement["client_request_id"] = "mirror-request-student-b"
+
+    def fail_update(*args, **kwargs):
+        raise OSError("synthetic mirror write failure")
+
+    monkeypatch.setattr(provider, "update_profile", fail_update)
+    # The existing non-strict manager API intentionally tolerates write errors.
+    # Transcript imports must use its strict path instead of accepting this
+    # returned old profile as successful synchronization.
+    assert manager.update_profile(user["id"], {"completed_courses": ["MATH 2B"]}) == memory_before
+    failed = app_client.post("/api/academic/transcript/import", json=replacement)
+
+    assert failed.status_code == 503
+    assert "try again" in failed.json()["detail"].lower()
+    assert app_client.get("/api/academic/profile?include_gpa=true").json() == before
+    assert store.get_ai_academic_context(user["id"]) == ai_before
+    assert manager.get_profile(user["id"]) == memory_before
+    with store._conn() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transcript_imports WHERE user_id = ?", (user["id"],)).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT COUNT(*) FROM transcript_imports WHERE user_id = ? AND client_request_id = ?",
+            (user["id"], replacement["client_request_id"]),
+        ).fetchone()[0] == 0
+
+    monkeypatch.setattr(provider, "update_profile", real_update)
+    recovered = app_client.post("/api/academic/transcript/import", json=replacement)
+
+    assert recovered.status_code == 200
+    assert recovered.json()["duplicate"] is False
+    assert manager.get_profile(user["id"])["completed_courses"] == ["MATH 2B"]
+    assert [course["course_id"] for course in app_client.get("/api/academic/profile").json()["completed_courses"]] == ["MATH 2B"]
+    assert store.get_ai_academic_context(user["id"])["uc_gpa"] == 3.3
+
+    assert app_client.post(
+        f"/api/memory/{user['id']}/profile",
+        json={"completed_courses": ["MATH 2B", "I&C SCI 31"]},
+    ).status_code == 200
+    after_manual_edit = app_client.get("/api/academic/profile?include_gpa=true").json()
+    monkeypatch.setattr(provider, "update_profile", fail_update)
+    # Neither a duplicate B request nor a stale A request may rewrite the mirror
+    # after a valid manual edit. A disabled write path proves no write is attempted.
+    for body in (replacement, previous):
+        retry = app_client.post("/api/academic/transcript/import", json=body)
+        assert retry.status_code == 200
+        assert retry.json()["duplicate"] is True
+        assert app_client.get("/api/academic/profile?include_gpa=true").json() == after_manual_edit
+
+
+def test_silently_incomplete_memory_mirror_aborts_import(app_client, monkeypatch):
+    from app.memory import get_memory_manager
+
+    user = _create_and_login(app_client)
+    previous = _payload(printed_at="2026-09-03T13:25:00Z", grade="B+")
+    assert app_client.post("/api/academic/transcript/import", json=previous).status_code == 200
+    manager = get_memory_manager()
+    memory_before = manager.get_profile(user["id"])
+    before = app_client.get("/api/academic/profile?include_gpa=true").json()
+    replacement = _passing_snapshot([("MATH", "2B")], printed_at="2026-01-07T13:00:00Z", gpa=3.3)
+    monkeypatch.setattr(manager, "update_profile", lambda *args, **kwargs: memory_before)
+
+    assert app_client.post("/api/academic/transcript/import", json=replacement).status_code == 503
+    assert app_client.get("/api/academic/profile?include_gpa=true").json() == before
+    assert manager.get_profile(user["id"]) == memory_before
+
+
+def test_unavailable_memory_provider_aborts_import(app_client, monkeypatch):
+    from app.academic import store
+    from app.memory import get_memory_manager
+
+    user = _create_and_login(app_client)
+    previous = _payload(printed_at="2026-09-03T13:25:00Z", grade="B+")
+    assert app_client.post("/api/academic/transcript/import", json=previous).status_code == 200
+    ai_before = store.get_ai_academic_context(user["id"])
+    replacement = _passing_snapshot([("MATH", "2B")], printed_at="2026-01-07T13:00:00Z", gpa=3.3)
+    monkeypatch.setattr(get_memory_manager(), "_provider", None)
+
+    assert app_client.post("/api/academic/transcript/import", json=replacement).status_code == 503
+    assert store.get_ai_academic_context(user["id"]) == ai_before
+
+
 def test_replaying_older_upload_request_does_not_replace_newer_snapshot_or_manual_edits(app_client):
     from app.academic import store
     from app.memory import get_memory_manager
@@ -693,10 +792,10 @@ def test_overlapping_imports_keep_sqlite_and_memory_snapshots_in_upload_order(mo
     monkeypatch.setattr(academic, "check_rate_limit", lambda *args: None)
     actual_import = academic.import_transcript
 
-    def observed_import(user_id, body):
+    def observed_import(user_id, body, **kwargs):
         if body.client_request_id == "concurrent-upload-b":
             second_import_started.set()
-        result = actual_import(user_id, body)
+        result = actual_import(user_id, body, **kwargs)
         if body.client_request_id == "concurrent-upload-a":
             first_committed.set()
             assert release_first_import.wait(2), "First import was not released"
@@ -717,19 +816,21 @@ def test_overlapping_imports_keep_sqlite_and_memory_snapshots_in_upload_order(mo
     with ThreadPoolExecutor(max_workers=2) as pool:
         try:
             first_result = pool.submit(academic.import_transcript_data, TranscriptImportRequest(**first), request, user)
-            assert first_committed.wait(2), "First SQLite snapshot was not committed"
+            assert first_memory_pending.wait(2), "First request did not reach memory synchronization"
+            assert not first_committed.is_set()
             second_result = pool.submit(academic.import_transcript_data, TranscriptImportRequest(**second), request, user)
             assert second_lock_attempted.wait(2), "Second request did not attempt the account lock"
             assert second_was_blocked is True
             assert not second_import_started.is_set()
-            release_first_import.set()
-            assert first_memory_pending.wait(2), "First request did not reach memory synchronization"
             acquired_during_memory_sync = real_lock.acquire(blocking=False)
             if acquired_during_memory_sync:
                 real_lock.release()
             assert acquired_during_memory_sync is False
             assert not second_import_started.is_set()
             release_first_memory.set()
+            assert first_committed.wait(2), "First SQLite snapshot was not committed"
+            assert not second_import_started.is_set()
+            release_first_import.set()
             assert first_result.result(timeout=2)["completed_course_ids"] == ["I&C SCI 32"]
             assert second_result.result(timeout=2)["completed_course_ids"] == ["MATH 2B"]
         finally:

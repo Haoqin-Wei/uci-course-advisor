@@ -193,8 +193,21 @@ printed transcript date is earlier. For example, importing student B's 19-course
 3.3-GPA transcript after student A's 10-course, 4.0-GPA transcript leaves only B's
 academic records. The import does not change account identity, login, or manually
 supplied profile fields that the parser does not extract, such as major and expected
-graduation. File parsing, request validation, and academic database write failures
-preserve the previous academic snapshot; its replacement is one database transaction. Historical import metadata is retained only for request idempotency.
+graduation. File parsing and request validation failures preserve the previous
+snapshot. Historical import metadata is retained only for request idempotency.
+
+The academic replacement uses one SQLite transaction. Before committing it, the
+server strictly saves and verifies the completed-course mirror used by student
+memory and recommendations. If that synchronization fails, the endpoint returns
+HTTP 503 and rolls back the academic replacement. Retrying the same failed request
+ID can complete the import, because its success metadata was not committed.
+Replaying an already successful request does not repeat synchronization or restore
+an old snapshot over a newer import or later manual course edits.
+
+The academic and memory databases do not share a distributed atomic transaction.
+If the academic commit itself fails or the process stops after the memory write,
+the two stores can still diverge; this synchronization does not guarantee recovery
+from those interruptions.
 
 Within the new snapshot, the server stores one effective row per course, hides
 non-passing statuses from the Student Profile, and uses UCI repeat notation such

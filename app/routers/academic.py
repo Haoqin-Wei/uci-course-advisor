@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from threading import RLock
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.academic import get_academic_profile, import_transcript
 from app.academic.models import TranscriptImportRequest
@@ -37,18 +37,29 @@ def import_transcript_data(
     user_id = user["id"]
     check_rate_limit(request, TRANSCRIPT_IMPORT_LIMIT, user_id)
     with _TRANSCRIPT_LOCKS[hash(user_id) % len(_TRANSCRIPT_LOCKS)]:
-        result = import_transcript(user_id, body)
-
-        # A new transcript replaces the completed-course compatibility snapshot,
-        # including prior manual selections. An idempotent retry must not undo edits
-        # or replace a newer import already saved under a different request ID.
-        if not result["duplicate"]:
+        def sync_completed_courses(completed_course_ids: list[str]) -> None:
+            # Run before the academic commit so a failed or silently incomplete
+            # memory write cannot report success or leave the new snapshot saved.
             manager = get_memory_manager()
-            manager.update_profile(
-                user_id,
-                {"completed_courses": result["completed_course_ids"]},
-                source_type="transcript_import",
-            )
+            try:
+                updated = manager.update_profile(
+                    user_id,
+                    {"completed_courses": completed_course_ids},
+                    source_type="transcript_import",
+                    strict=True,
+                )
+                if updated.get("completed_courses") != completed_course_ids:
+                    raise RuntimeError("Completed-course mirror did not match the import")
+            except Exception as exc:
+                logger.warning("transcript_import mirror_sync_failed error=%s", type(exc).__name__)
+                raise HTTPException(
+                    status_code=503,
+                    detail="Transcript import could not be completed. Please try again.",
+                ) from exc
+
+        # Successful duplicate requests skip the callback: an old request ID
+        # must not undo a newer import or subsequent legitimate manual edits.
+        result = import_transcript(user_id, body, before_commit=sync_completed_courses)
 
     logger.info(
         "transcript_import result=success read=%s accepted=%s added=%s "

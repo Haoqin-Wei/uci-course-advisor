@@ -166,14 +166,23 @@ class MemoryManager:
             logger.warning("get_preferences failed: %s", e)
             return []
 
-    def update_profile(self, user_id: str, updates: dict, **provenance) -> dict:
+    def update_profile(
+        self, user_id: str, updates: dict, *, strict: bool = False, **provenance
+    ) -> dict:
+        """Update saved fields, optionally propagating persistence failures."""
         if not self._provider:
+            if strict:
+                raise RuntimeError("Memory provider is unavailable")
             return {}
         try:
             updated = self._provider.update_profile(user_id, updates, **provenance)
-            return updated if isinstance(updated, dict) else self.get_profile(user_id)
+            if isinstance(updated, dict):
+                return updated
+            return self._provider.get_profile(user_id) if strict else self.get_profile(user_id)
         except Exception as e:
             logger.warning("update_profile failed: %s", e)
+            if strict:
+                raise
             return self.get_profile(user_id)
 
     def add_fact(self, user_id: str, text: str, **provenance) -> dict | None:

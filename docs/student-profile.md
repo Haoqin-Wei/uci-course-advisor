@@ -33,12 +33,19 @@ Profile entry opens the same page. Requirements and Courses remain out of scope.
   exam/transfer credits, and university requirement status. Fields missing from
   the new PDF clear old values, and the latest successful upload wins regardless
   of its printed date. For example, importing B's 19 courses and 3.3 GPA after A's
-  10 courses and 4.0 GPA displays only B's academic records. File parsing, request
-  validation, and academic database write failures leave the previous academic
-  snapshot intact; its replacement is one database transaction. Historical
+  10 courses and 4.0 GPA displays only B's academic records. File parsing and
+  request validation failures leave the previous snapshot intact. Historical
   import metadata is retained only for request idempotency.
   Account identity/login and manually supplied fields outside the parser's schema,
   including major and expected graduation, keep their existing values.
+- Before the academic SQLite transaction commits, the server strictly saves and
+  verifies the completed-course mirror used by memory and recommendations. A mirror
+  synchronization failure returns HTTP 503 and rolls back the academic replacement;
+  the same failed request ID can be retried. An already successful request ID skips
+  synchronization and cannot restore its old courses over a newer import or later
+  manual edits. The academic and memory databases have separate transactions:
+  an academic commit failure or process interruption after the memory write can
+  leave them inconsistent. This is not a distributed atomic transaction.
 - The planning link returns to Ask and fills an editable prompt using the existing
   default term only if the composer is empty. It never overwrites an unsent question,
   submits automatically, or changes the default term. See [term rules](term-rules.md).
