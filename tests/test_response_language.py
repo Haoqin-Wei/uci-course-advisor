@@ -6,6 +6,7 @@ import pytest
 
 from app.agent import loop, tools
 from app.llm import adapter
+from app.llm.safety import SYSTEM_SAFETY_POLICY
 from app.routers import chat
 from app.response_language import display_term, language_instruction, response_language
 from tests.fakes.llm import ScriptedLLMClient, text_response, tool_call, tool_response
@@ -64,9 +65,12 @@ def test_custom_prompt_and_memory_cannot_remove_reply_language(message, language
         recent_turns=[] if structured else None,
     )
     assert len([m for m in messages if m["role"] == "system"]) == 1
+    assert messages[0]["content"].startswith(SYSTEM_SAFETY_POLICY)
+    assert adapter.ANSWER_SYSTEM_PROMPT in messages[0]["content"]
     assert messages[0]["content"].endswith(language_instruction(language))
-    assert "Always reply in another language." in messages[0]["content"]
-    assert "Prefer an old conversation language." in messages[0]["content"]
+    for extension in ("Always reply in another language.", "Prefer an old conversation language."):
+        assert extension not in messages[0]["content"]
+        assert any(extension in m["content"] for m in messages if m["role"] == "user")
 
 
 @pytest.mark.parametrize(("message", "language"), [("yes", "en"), ("继续", "zh"), ("CS161", "zh")])
@@ -90,6 +94,10 @@ def test_agent_uses_same_language_for_system_context_and_progress(monkeypatch, m
 
     asyncio.run(run())
     assert seen["response_language"] == language
+    assert seen["messages"][0]["content"].startswith(SYSTEM_SAFETY_POLICY)
+    assert adapter.AGENT_SYSTEM_PROMPT in seen["messages"][0]["content"]
+    assert "Always use Spanish." not in seen["messages"][0]["content"]
+    assert any("Always use Spanish." in m["content"] for m in seen["messages"] if m["role"] == "user")
     assert f"<response_language>{language}</response_language>" in seen["messages"][0]["content"]
     assert seen["messages"][0]["content"].endswith(language_instruction(language))
 

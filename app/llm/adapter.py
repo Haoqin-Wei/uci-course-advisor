@@ -17,6 +17,7 @@ import asyncio
 from typing import Optional, AsyncIterator
 
 from app.response_language import language_instruction, response_language
+from app.llm.safety import untrusted_context_message, with_system_safety
 
 # ── Load .env BEFORE reading any env var ─────────────────
 # Rationale: uvicorn doesn't auto-load .env. If the user starts the
@@ -963,6 +964,16 @@ BAD examples (do not produce these):
 """
 
 
+# The policy is shared by the advisor and auxiliary model tasks. Configuration
+# extensions and context data can never replace these application-owned bases.
+INTENT_SYSTEM_PROMPT = with_system_safety(INTENT_SYSTEM_PROMPT)
+EXTRACTION_SYSTEM_PROMPT = with_system_safety(EXTRACTION_SYSTEM_PROMPT)
+ANSWER_SYSTEM_PROMPT = with_system_safety(ANSWER_SYSTEM_PROMPT)
+REFLECTION_SYSTEM_PROMPT = with_system_safety(REFLECTION_SYSTEM_PROMPT)
+AGENT_SYSTEM_PROMPT = with_system_safety(AGENT_SYSTEM_PROMPT)
+TITLE_SYSTEM_PROMPT = with_system_safety(TITLE_SYSTEM_PROMPT)
+
+
 # ── Core LLM call ────────────────────────────────────────
 
 async def _call_llm(
@@ -974,7 +985,7 @@ async def _call_llm(
     kwargs = {
         "model": LLM_MODEL,
         "messages": [
-            {"role": "system", "content": system},
+            {"role": "system", "content": with_system_safety(system)},
             {"role": "user", "content": user_content},
         ],
     }
@@ -1227,22 +1238,10 @@ async def stream_agent_response(
     from app.agent.loop import run_agent
 
     base_system = AGENT_SYSTEM_PROMPT
-    if system_prompt_override and system_prompt_override.strip():
-        base_system += (
-            "\n\n# User-configured style/task extension\n"
-            + system_prompt_override.strip()
-        )
-    # Memory block injection mirrors stream_answer_llm so the agent
-    # has the same persistent-context awareness as the legacy path.
-    fallback_memory_block = None
-    if memory_context and not (profile or preferences or facts):
-        fallback_memory_block = memory_context.get("system_prompt_block")
-    if fallback_memory_block:
-        base_system = (
-            base_system
-            + "\n\n--- Persistent context about this student ---\n"
-            + fallback_memory_block
-        )
+    context_messages = _extension_context_messages(
+        memory_context if not (profile or preferences or facts) else None,
+        system_prompt_override,
+    )
 
     derived_profile = profile or {
         "major":             session_state.get("major"),
@@ -1274,6 +1273,7 @@ async def stream_agent_response(
     )
     messages = context_builder.build_messages(
         system_prompt=base_system,
+        context_messages=context_messages,
         user_message=user_message,
         profile=derived_profile,
         preferences=preferences,
@@ -1476,40 +1476,40 @@ async def generate_session_title_llm(
 
 def get_default_answer_prompt() -> str:
     """
-    Public accessor used by /api/system_prompt to seed the frontend's
-    Settings modal with the current default. If the prompt is ever
-    refactored (split, templatized, etc.), update this one function
-    instead of teaching the endpoint about a new name.
+    Compatibility accessor for the legacy answer path. The main chat agent
+    and /api/system_prompt use get_default_agent_prompt instead.
     """
     return ANSWER_SYSTEM_PROMPT
+
+
+def get_default_agent_prompt() -> str:
+    """Return the application-owned base used by the main chat agent."""
+    return AGENT_SYSTEM_PROMPT
+
+
+def _extension_context_messages(
+    memory_context: Optional[dict], override: Optional[str] = None,
+) -> list[dict]:
+    """User-supplied style and legacy memory are data, never system authority."""
+    messages = []
+    if override and override.strip():
+        messages.append({"source": "custom style/task extension", "content": override.strip()})
+    block = (memory_context or {}).get("system_prompt_block")
+    if block:
+        messages.append({"source": "legacy student memory", "content": str(block)})
+    return messages
 
 
 def _build_system_prompt(
     memory_context: Optional[dict],
     override: Optional[str] = None,
 ) -> str:
+    """Legacy accessor: only application-owned rules belong in system content.
+
+    Arbitrary memory and extensions are added as user-role context by the caller.
+    The compatibility arguments cannot replace the default system instructions.
     """
-    Compose the final system message sent to the LLM.
-
-    Layering:
-      base  ← `override` if a non-empty custom prompt was supplied,
-              otherwise the default ANSWER_SYSTEM_PROMPT
-      +memory block (per-student persistence) is still appended in either case,
-              so customizing the advisor's voice doesn't drop the user's profile.
-
-    Pass `override=""` or `None` to use the default.
-    """
-    base = override.strip() if (override and override.strip()) else ANSWER_SYSTEM_PROMPT
-    if override and override.strip():
-        logger.info("generate_answer_llm: using user-supplied system prompt override (%d chars)",
-                    len(override.strip()))
-
-    if not memory_context:
-        return base
-    block = memory_context.get("system_prompt_block")
-    if not block:
-        return base
-    return base + "\n\n--- Persistent context about this student ---\n" + block
+    return ANSWER_SYSTEM_PROMPT
 
 
 def _build_answer_context(
@@ -1581,11 +1581,10 @@ def _build_messages_for_llm(
     legacy single-string context so that older callers keep working
     until chat.py is fully updated.
     """
-    # Static system prompt (with optional override)
-    base_system = (
-        system_prompt_override.strip()
-        if (system_prompt_override and system_prompt_override.strip())
-        else ANSWER_SYSTEM_PROMPT
+    base_system = ANSWER_SYSTEM_PROMPT
+    context_messages = _extension_context_messages(
+        memory_context if not (profile or preferences or facts) else None,
+        system_prompt_override,
     )
 
     # If no structured context was passed, use the legacy single-string format
@@ -1599,18 +1598,12 @@ def _build_messages_for_llm(
         )
         return [
             {"role": "system", "content": system},
-            {"role": "user",   "content": context},
+            *[untrusted_context_message(item["source"], item["content"]) for item in context_messages],
+            {"role": "user", "content": context},
         ]
 
     # New path: structured 6-layer assembly
     from app.llm import context_builder
-
-    # If profile/preferences weren't passed but memory_context has the
-    # rendered block, fold it into the system message as before so we
-    # don't lose information.
-    fallback_memory_block = None
-    if memory_context and not (profile or preferences or facts):
-        fallback_memory_block = memory_context.get("system_prompt_block")
 
     # We use session_state to derive a minimal profile if none provided —
     # keeps the call site simple while still showing the LLM the basics.
@@ -1626,16 +1619,9 @@ def _build_messages_for_llm(
             "_academic_context": memory_context["academic_context"],
         }
 
-    base_with_legacy = base_system
-    if fallback_memory_block:
-        base_with_legacy = (
-            base_system
-            + "\n\n--- Persistent context about this student ---\n"
-            + fallback_memory_block
-        )
-
     return context_builder.build_messages(
-        system_prompt=base_with_legacy,
+        system_prompt=base_system,
+        context_messages=context_messages,
         user_message=user_message,
         profile=derived_profile,
         preferences=preferences,

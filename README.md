@@ -160,21 +160,53 @@ synthetic API responses, without creating real accounts).
 
 The private beta accepts the current text-based UCI unofficial transcript PDF
 format, up to 5 MB and 20 pages. The original file is processed by the vendored,
-pinned PDF.js build in browser memory and is never uploaded. The parser submits
+pinned PDF.js legacy build in browser memory and is never uploaded. The parser submits
 only course identifiers, effective grades, units, GPA summary fields, university
 requirement status, and exam/transfer summaries. Name, Student ID, source URL,
 file name, and raw extracted text are not part of the API schema.
 
-The server stores one effective row per course, hides non-passing statuses from
-the Student Profile, merges imports with manually entered courses, and uses UCI
-repeat notation such as `RF`/`G0` to resolve repeats. Imported results are
-student-provided and are not an official UCI transcript or degree audit.
+The browser and PDF worker load compatibility support for older Safari, and import
+request IDs also work when `crypto.randomUUID` is unavailable (including HTTP).
+Printed GPA and unit summary fields are parsed independently of column order.
+Parser `uci-current-v3` joins stacked labels such as `UC` / `GPA` and
+`UNITS` / `COMPLETED` by their PDF coordinates before line reconstruction;
+course row spacing stays unchanged.
+Missing fields remain unknown rather than being calculated from course rows.
+Run the synthetic offline regressions with `node scripts/test_transcript_import.mjs`.
+The browser regression starts its own local server, simulates missing APIs in both
+the reader and actual worker, and checks import, unit display, and GPA reveal:
+
+```bash
+NODE_PATH="/path/to/bundled/node_modules" node scripts/verify_transcript_import_ui.cjs
+# An optional local PDF is read only; its text and identity fields are not logged.
+NODE_PATH="/path/to/bundled/node_modules" node scripts/verify_transcript_import_ui.cjs "/path/to/sample.pdf"
+```
+
+Vendored PDF.js files come from `pdfjs-dist/legacy/build` at the pinned package
+version; preserve `compat.mjs` and `worker-entry.mjs` when updating them.
+
+Each successful import replaces the current account's entire transcript academic
+snapshot: completed courses (including prior manual selections), GPA, units,
+university requirements, and exam/transfer credits. Fields absent from the new PDF
+clear their previous values. The latest successful upload wins, even when its
+printed transcript date is earlier. For example, importing student B's 19-course,
+3.3-GPA transcript after student A's 10-course, 4.0-GPA transcript leaves only B's
+academic records. The import does not change account identity, login, or manually
+supplied profile fields that the parser does not extract, such as major and expected
+graduation. File parsing, request validation, and academic database write failures
+preserve the previous academic snapshot; its replacement is one database transaction. Historical import metadata is retained only for request idempotency.
+
+Within the new snapshot, the server stores one effective row per course, hides
+non-passing statuses from the Student Profile, and uses UCI repeat notation such
+as `RF`/`G0` to resolve repeats. Imported results are student-provided and are not
+an official UCI transcript or degree audit.
 
 Transcript course rows carry separate `department` and `course_number` fields.
 Canonical registrar departments come from `data/uci/courses.csv`; the smaller
 conversation alias table is not used as a structured-data allow-list. Import
-responses distinguish `added`, `updated`, `unchanged`, `older_ignored`, and true
-`skipped` records, with sanitized per-course reason codes for UI diagnostics.
+responses distinguish `added`, `updated`, `unchanged`, and true `skipped` records,
+with sanitized per-course reason codes for UI diagnostics. The compatibility
+field `older_ignored` does not prevent replacement by a later upload.
 Parser-only issues remain local to the browser except for an aggregate count.
 
 Browser requests for user-owned memory and conversations use `/api/memory/me`
@@ -253,6 +285,13 @@ The LLM receives one XML runtime block with UCI time, current/default/query term
 ### Profile course catalog loading
 
 `GET /api/onboarding/courses/all` no longer performs a cold, sequential whole-catalog API crawl after every process restart. It builds the slim picker payload from `data/uci/courses.csv`, keeps it in process memory, and uses `data/runtime/onboarding_courses.json` as a restart-safe fallback when a deployment has no versioned CSV. Anteater cursor pagination runs only when both local sources are missing; a successful fallback fetch is persisted atomically.
+
+The main chat agent and auxiliary prompts share an immutable system-authority
+policy. Custom prompt settings are lower-priority style/task extensions; they
+cannot replace the defaults. Memory, summaries, retrieved sources, and workflow
+results are serialized separately from server-owned instructions. See
+[AI safety boundaries and offline checks](docs/ai-safety.md) and the
+[complete current agent base prompt](docs/current-agent-system-prompt.txt).
 
 Whole-catalog course data is loaded only when the onboarding course picker needs it. The default system prompt is likewise loaded only when Settings opens. Agent web activity is recorded as compact audit events: each real request logs its URL, method, status or error, byte count, duration, `cache_hit=false`, and trigger, followed by a deduplicated fetched-URL summary. Page bodies, extracted passages, restriction fields, and complete tool results are not written to logs.
 

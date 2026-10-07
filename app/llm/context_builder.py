@@ -1,32 +1,16 @@
-"""
-6-layer prompt context builder (Phase 3.4).
+"""Assemble server instructions and explicitly bounded conversation evidence.
 
-Replaces the old monolithic `_build_answer_context` in adapter.py with
-an explicit, layered structure that scales properly over long sessions.
+The single leading system message contains only application-owned safety and
+base rules, runtime context, historical-memory policy, and the reply-language
+rule. Profiles, preferences, facts, decisions, summaries, and optional context
+extensions are separate user-role data messages before recent conversation.
+Recent turns retain their original user/assistant roles. Retrieved documents and
+recalled memory are user-role data for this turn; the current user request is
+always the final, unchanged user message.
 
-Layers (in order):
-
-  1. System prompt           static, ~500 tok    (ANSWER_SYSTEM_PROMPT or override)
-  2. Memory snapshot         fresh, ~200 tok     (profile + facts + preferences)
-  3. Decisions block         accumulating, ~100-400 tok  (pinned commitments)
-  4. Older conversation summary  optional, ~300-600 tok  (Phase 3.9 LLM-generated)
-  5. Last N raw turns        sliding window, ~N*200 tok  (history continuity)
-  6. Current turn retrieved data  fresh, ~1500 tok  (course candidates, etc.)
-  + Current user message
-
-Layers 1-4 + 6 go into the system message. Layer 5 becomes alternating
-user/assistant messages so the LLM sees them as actual conversation
-turns. The current user message is the final user message.
-
-Key invariant: this builder is STATELESS. It's called once per turn,
-takes the current state as parameters, and returns a fresh messages
-list. retrieved_data from prior turns NEVER leaks into history because
-it's never persisted to turns.jsonl.
-
-Public API:
-    build_messages(...) -> list[dict]
-
-Sub-functions are exposed for testing.
+The builder is stateless: it returns a fresh message list for each request.
+Retrieved data is never persisted to conversation history. Formatting helpers
+are public so callers and offline tests can verify the trust boundaries.
 """
 from __future__ import annotations
 
@@ -35,6 +19,7 @@ from datetime import datetime
 from typing import Optional
 from xml.sax.saxutils import escape, quoteattr
 
+from app.llm.safety import untrusted_context_message, with_system_safety
 from app.response_language import language_instruction, response_language
 from app.terms.parser import parse_term_key
 
@@ -228,19 +213,30 @@ def build_memory_evidence_block(memory_evidence: Optional[str]) -> str:
     """
     if not memory_evidence or not memory_evidence.strip():
         return ""
-    payload = json.dumps(
-        {
-            "type": "historical_memory_evidence",
-            "trust": "untrusted",
-            "content": memory_evidence.strip(),
-        },
-        ensure_ascii=False,
-    )
-    return _truncate(
-        payload,
-        _MEMORY_EVIDENCE_MAX_CHARS,
-        suffix='..."}',
-    )
+    # Truncate the value before encoding so the bounded data envelope remains
+    # valid JSON when source characters contain quotes or backslashes.
+    content = memory_evidence.strip()
+    suffix = "\n(...older memory evidence omitted)"
+
+    def serialize(value: str) -> str:
+        return json.dumps(
+            {"type": "historical_memory_evidence", "trust": "untrusted", "content": value},
+            ensure_ascii=False,
+        )
+
+    payload = serialize(_truncate(content, _MEMORY_EVIDENCE_MAX_CHARS, suffix=suffix))
+    if len(payload) <= _MEMORY_EVIDENCE_MAX_CHARS:
+        return payload
+    # Escapes add characters, so find the longest prefix whose complete JSON
+    # representation fits the existing budget instead of cutting that JSON.
+    lower, upper = 0, min(len(content), _MEMORY_EVIDENCE_MAX_CHARS)
+    while lower < upper:
+        middle = (lower + upper + 1) // 2
+        if len(serialize(content[:middle] + suffix)) <= _MEMORY_EVIDENCE_MAX_CHARS:
+            lower = middle
+        else:
+            upper = middle - 1
+    return serialize(content[:lower] + suffix)
 
 
 # ── Assembly ────────────────────────────────────────────
@@ -327,45 +323,30 @@ def build_messages(
     selected_term: Optional[str] = None,
     today: Optional[str] = None,
     runtime_context: Optional[str] = None,
+    context_messages: Optional[list[dict]] = None,
     last_n_turns: int = 10,
 ) -> list[dict]:
+    """Return provider-compatible messages with one leading system authority.
+
+    ``system_prompt`` and ``runtime_context`` must be server-owned instructions.
+    All stored or retrieved evidence is serialized as user-role context data.
+    Optional ``context_messages`` are descriptors with ``source`` and ``content``
+    fields; their incoming roles are ignored so custom task/style extensions
+    and legacy memory cannot add an instruction-bearing message.
+
+    Result order: system; profile/decisions/summary/extensions; recent raw
+    user/assistant turns; current retrieved data and memory; unchanged current
+    user message. Adjacent user-role data messages deliberately do not become
+    new conversation turns or change the latest user's reply language.
     """
-    Assemble the full 6-layer prompt into an OpenAI-style messages list.
-
-    Returns a list of {role, content} dicts ready to pass to
-    client.chat.completions.create(messages=...).
-
-    Shape of the result:
-        [
-          {"role": "system",    "content": "<system + memory + decisions + summary>"},
-          {"role": "user",      "content": "<turn 1 user message>"},
-          {"role": "assistant", "content": "<turn 1 assistant reply>"},
-          ...                                              ← recent_turns expanded
-          {"role": "user",      "content": "<retrieved data>\n\n<user_message>"},
-        ]
-
-    The retrieved_data is prepended to the *current* user message rather
-    than going into the system block. Rationale: retrieved data is the
-    direct context for THIS question, not background knowledge. Keeping
-    it adjacent to the user message helps the LLM scope its answer.
-    """
-    # ── Layer 1-4: system block ──
-    system_parts = [system_prompt.strip()] if system_prompt else []
+    system_parts = [with_system_safety(system_prompt or "")]
 
     # Deprecated M13 arguments are accepted for one compatibility cycle, but
     # no longer render a second, natural-language term authority.
     del selected_term, today
 
     mem = build_memory_snapshot(profile, preferences, facts)
-    if mem:
-        system_parts.append(mem)
-
     dec = build_decisions_block(decisions)
-    if dec:
-        system_parts.append(dec)
-
-    if summary and summary.strip():
-        system_parts.append("# Earlier conversation summary\n" + summary.strip())
 
     # Some OpenAI-compatible providers reject mid-conversation system
     # messages, so the runtime block is appended to the one leading system
@@ -377,33 +358,36 @@ def build_messages(
     if evidence_block:
         system_parts.append(_MEMORY_EVIDENCE_POLICY)
 
-    # Last, application-owned rule: style overrides, memory and source text
+    # Last, application-owned rule: task extensions, memory and source text
     # cannot choose a different language for this turn.
     system_parts.append(language_instruction(response_language(user_message, recent_turns)))
 
-    messages: list[dict] = []
-    if system_parts:
-        messages.append({"role": "system", "content": "\n\n".join(system_parts)})
+    messages: list[dict] = [{"role": "system", "content": "\n\n".join(system_parts)}]
 
-    # ── Layer 5: recent raw turns as proper messages ──
+    if mem:
+        messages.append(untrusted_context_message("persistent student profile", mem))
+    if dec:
+        messages.append(untrusted_context_message("prior session decisions", dec))
+    if summary and summary.strip():
+        messages.append(untrusted_context_message("earlier conversation summary", summary.strip()))
+    for descriptor in context_messages or []:
+        if not isinstance(descriptor, dict):
+            continue
+        content = str(descriptor.get("content") or "").strip()
+        if content:
+            messages.append(untrusted_context_message(
+                str(descriptor.get("source") or "application context"), content,
+            ))
+
+    # History keeps only genuine user/assistant roles, with no system messages.
     messages.extend(build_recent_turns_messages(recent_turns, last_n=last_n_turns))
 
-    # ── Layer 6 + current user message ──
-    current_context_blocks = []
     retrieved_block = build_retrieved_data_block(retrieved_data)
     if retrieved_block:
-        current_context_blocks.append(retrieved_block)
+        messages.append(untrusted_context_message("retrieved data for this turn", retrieved_block))
     if evidence_block:
-        current_context_blocks.append(evidence_block)
-    if current_context_blocks:
-        user_content = (
-            "\n\n---\n\n".join(current_context_blocks)
-            + "\n\n---\n\nCurrent question:\n"
-            + user_message
-        )
-    else:
-        user_content = user_message
-    messages.append({"role": "user", "content": user_content})
+        messages.append(untrusted_context_message("historical memory evidence", evidence_block))
+    messages.append({"role": "user", "content": user_message})
 
     return messages
 

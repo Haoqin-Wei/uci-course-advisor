@@ -259,7 +259,7 @@ async function openSettings() {
   await loadDefaultPromptFromAPI();
   ta.placeholder = defaultSystemPrompt
     ? '(empty — using backend default)'
-    : 'Backend default unavailable. Enter custom prompt to override.';
+    : 'Backend default unavailable. Enter style or task preferences.';
 }
 
 function closeSettings(ev) {

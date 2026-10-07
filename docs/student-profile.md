@@ -28,6 +28,17 @@ Profile entry opens the same page. Requirements and Courses remain out of scope.
   large imported course lists otherwise push the catalog out of view.
   Transcript import uses the existing local PDF
   parser and allow-listed server payload, then refreshes this page and the sidebar.
+- A successful new PDF import replaces the current account's entire academic
+  snapshot: prior imported and manually selected completed courses, GPA, units,
+  exam/transfer credits, and university requirement status. Fields missing from
+  the new PDF clear old values, and the latest successful upload wins regardless
+  of its printed date. For example, importing B's 19 courses and 3.3 GPA after A's
+  10 courses and 4.0 GPA displays only B's academic records. File parsing, request
+  validation, and academic database write failures leave the previous academic
+  snapshot intact; its replacement is one database transaction. Historical
+  import metadata is retained only for request idempotency.
+  Account identity/login and manually supplied fields outside the parser's schema,
+  including major and expected graduation, keep their existing values.
 - The planning link returns to Ask and fills an editable prompt using the existing
   default term only if the composer is empty. It never overwrites an unsent question,
   submits automatically, or changes the default term. See [term rules](term-rules.md).

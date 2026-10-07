@@ -5,7 +5,7 @@
  * are never included.
  */
 
-export const TRANSCRIPT_PARSER_VERSION = 'uci-current-v2';
+export const TRANSCRIPT_PARSER_VERSION = 'uci-current-v3';
 
 const TERM_RE = /^(\d{4})\s+(Fall|Winter|Spring)\s+Quarter$|^(\d{4})\s+(First|Second|Ten-Week)\s+Summer\s+Session$/i;
 const GRADE_RE = '(?:A\\+|A-|A|B\\+|B-|B|C\\+|C-|C|D\\+|D-|D|F|NP|P|W|I|IP|NR|S|U)';
@@ -125,13 +125,17 @@ function parseTransferCredits(lines) {
 
 function parseSummary(lines) {
   const joined = lines.join('\n');
-  const gpa = joined.match(/GRADE UNITS ATTEMPTED\s+([0-9.]+).*?UC GPA\s+([0-9.]+)/s);
-  const completed = joined.match(/TOTAL UNITS PASSED\s+([0-9.]+)\s+UNITS COMPLETED\s+([0-9.]+)/);
+  // Read each printed field independently: PDF positioning can reorder
+  // columns, and some transcripts omit other summary fields.
+  const value = label => {
+    const match = joined.match(new RegExp(`\\b${label}\\s*:?\\s*([0-9]+(?:\\.[0-9]+)?)\\b`, 'i'));
+    return match ? Number(match[1]) : null;
+  };
   return {
-    official_uc_gpa: gpa ? Number(gpa[2]) : null,
-    grade_units_attempted: gpa ? Number(gpa[1]) : null,
-    total_units_passed: completed ? Number(completed[1]) : null,
-    units_completed: completed ? Number(completed[2]) : null,
+    official_uc_gpa: value('UC GPA'),
+    grade_units_attempted: value('GRADE UNITS ATTEMPTED'),
+    total_units_passed: value('TOTAL UNITS PASSED'),
+    units_completed: value('UNITS COMPLETED'),
   };
 }
 
@@ -242,11 +246,59 @@ export function parseUciTranscriptLines(inputLines) {
   };
 }
 
+// In the printed summary, labels wrap while their values sit halfway between
+// the two baselines. Merge only these known labels at the same column; widening
+// the general line tolerance would mix neighboring course rows together.
+function mergeStackedSummaryLabels(pageItems) {
+  const items = (pageItems || []).map(item => ({...item}));
+  const continuations = new Map([
+    ['GRADE UNITS', 'ATTEMPTED'],
+    ['UC', 'GPA'],
+    ['UNITS', 'COMPLETED'],
+  ]);
+  const consumed = new Set();
+  const output = [];
+  for (let index = 0; index < items.length; index += 1) {
+    if (consumed.has(index)) continue;
+    const item = items[index];
+    const label = String(item.str || '').trim().toUpperCase();
+    const continuation = continuations.get(label);
+    if (continuation) {
+      const x = Number(item.transform?.[4] || 0);
+      const y = Number(item.transform?.[5] || 0);
+      const partner = items.findIndex((candidate, candidateIndex) => {
+        if (candidateIndex === index || consumed.has(candidateIndex)) return false;
+        if (String(candidate.str || '').trim().toUpperCase() !== continuation) return false;
+        const dy = y - Number(candidate.transform?.[5] || 0);
+        return Math.abs(x - Number(candidate.transform?.[4] || 0)) <= 2.5 && dy > 2.5 && dy <= 18;
+      });
+      if (partner !== -1) {
+        const other = items[partner];
+        // The content stream may list the lower label before the upper label.
+        // Remove a previously emitted partner as well as consuming later ones.
+        const emitted = output.indexOf(other);
+        if (emitted !== -1) output.splice(emitted, 1);
+        consumed.add(partner);
+        output.push({
+          ...item,
+          str: `${label} ${continuation}`,
+          transform: [...(item.transform || [1, 0, 0, 1, x, y]).slice(0, 5),
+            (y + Number(other.transform?.[5] || 0)) / 2],
+          width: Math.max(Number(item.width || 0), Number(other.width || 0)),
+        });
+        continue;
+      }
+    }
+    output.push(item);
+  }
+  return output;
+}
+
 export function reconstructPdfLines(pages) {
   const lines = [];
   for (const pageItems of pages || []) {
     const groups = [];
-    for (const item of pageItems || []) {
+    for (const item of mergeStackedSummaryLabels(pageItems)) {
       const text = String(item.str || '');
       if (!text.trim()) continue;
       const x = Number(item.transform?.[4] || 0);

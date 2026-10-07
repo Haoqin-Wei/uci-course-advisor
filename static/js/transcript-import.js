@@ -7,6 +7,18 @@ const TRANSCRIPT_MAX_PAGES = 20;
 let transcriptImportSource = 'profile';
 let transcriptImportBusy = false;
 
+// randomUUID is unavailable on HTTP and older Safari. This is an import
+// deduplication key, not an authentication token.
+function transcriptRequestId() {
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === 'function') return cryptoApi.randomUUID();
+  if (typeof cryptoApi?.getRandomValues === 'function') {
+    const bytes = cryptoApi.getRandomValues(new Uint8Array(16));
+    return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+  return `import-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
 function triggerTranscriptPicker(source = 'profile') {
   if (transcriptImportBusy) return;
   transcriptImportSource = source;
@@ -102,11 +114,12 @@ async function extractTranscriptPayload(file) {
   let pdfDocument = null;
   let loadingTask = null;
   try {
+    await import('/static/vendor/pdfjs/compat.mjs');
     const [pdfjs, parser] = await Promise.all([
       import('/static/vendor/pdfjs/pdf.min.mjs'),
       import('/static/js/transcript-parser.mjs'),
     ]);
-    pdfjs.GlobalWorkerOptions.workerSrc = '/static/vendor/pdfjs/pdf.worker.min.mjs';
+    pdfjs.GlobalWorkerOptions.workerSrc = '/static/vendor/pdfjs/worker-entry.mjs';
     loadingTask = pdfjs.getDocument({data: bytes, isEvalSupported: false});
     pdfDocument = await loadingTask.promise;
     if (pdfDocument.numPages > TRANSCRIPT_MAX_PAGES) {
@@ -131,7 +144,7 @@ async function extractTranscriptPayload(file) {
     delete payload.local_issues;
     pages.length = 0;
     lines.fill('');
-    payload.client_request_id = crypto.randomUUID();
+    payload.client_request_id = transcriptRequestId();
     return {payload, localIssues};
   } catch (error) {
     if (error?.name === 'PasswordException') {
@@ -170,13 +183,11 @@ async function importTranscriptFile(file, source = 'profile') {
       ...serverIssues.filter(issue => issue.reason_code !== 'parser_unrecognized' || !localIssues.length),
     ];
     if (typeof wizardState !== 'undefined') {
-      for (const courseId of result.completed_course_ids || []) {
-        wizardState.completed_courses.add(courseId);
-      }
+      wizardState.completed_courses = new Set(result.completed_course_ids || []);
       if (typeof wizardRenderMatrix === 'function' && wizardState.step === 4) wizardRenderMatrix();
       if (typeof wizardSyncFooterCount === 'function') wizardSyncFooterCount();
     }
-    if (transcriptImportSource === 'profile' && typeof loadProfile === 'function') {
+    if ((transcriptImportSource === 'profile' || document.body?.classList.contains('profile-open')) && typeof loadProfile === 'function') {
       await loadProfile();
     }
     transcriptRenderImportResult(result);

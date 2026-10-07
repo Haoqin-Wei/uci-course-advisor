@@ -42,10 +42,10 @@ def get_term_state() -> dict:
 @router.get("/api/system_prompt")
 def get_system_prompt() -> dict:
     """
-    Return the default system prompt used for recommendation requests.
+    Return the application-owned base used by the main chat agent.
     Frontend uses this to seed the Settings modal's textarea so the user
-    can edit a copy of the current prompt rather than starting from
-    scratch.
+    can inspect the current prompt. Customizations are lower-priority
+    style/task extensions and cannot replace server-owned instructions.
 
     Response shape:
         {"prompt": "You are ZotAdvisor, …"}
@@ -65,8 +65,8 @@ def _resolve_default_prompt() -> str:
     missing/renamed adapter without crashing the endpoint.
     """
     try:
-        from app.llm.adapter import get_default_answer_prompt
-        v = get_default_answer_prompt()
+        from app.llm.adapter import get_default_agent_prompt
+        v = get_default_agent_prompt()
         if isinstance(v, str) and v.strip():
             return v
     except (ImportError, AttributeError):
@@ -78,7 +78,7 @@ def _resolve_default_prompt() -> str:
             mod = __import__(module_path, fromlist=["*"])
         except ImportError:
             continue
-        for name in ("ANSWER_SYSTEM_PROMPT",
+        for name in ("AGENT_SYSTEM_PROMPT", "ANSWER_SYSTEM_PROMPT",
                      "RECOMMENDATION_SYSTEM_PROMPT",
                      "SYSTEM_PROMPT",
                      "DEFAULT_SYSTEM_PROMPT"):

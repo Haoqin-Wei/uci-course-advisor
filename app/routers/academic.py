@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from threading import RLock
 
 from fastapi import APIRouter, Depends, Request, Response
 
@@ -15,6 +16,9 @@ from app.memory import get_memory_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/academic", tags=["academic"])
+# Keep academic snapshots and the recommendation/profile course mirror ordered
+# across overlapping requests in this process, without unbounded per-user locks.
+_TRANSCRIPT_LOCKS = tuple(RLock() for _ in range(64))
 
 TRANSCRIPT_IMPORT_LIMIT = RateLimit(
     "academic.transcript_import",
@@ -32,23 +36,19 @@ def import_transcript_data(
     """Persist only the browser's allow-listed structured academic fields."""
     user_id = user["id"]
     check_rate_limit(request, TRANSCRIPT_IMPORT_LIMIT, user_id)
-    result = import_transcript(user_id, body)
+    with _TRANSCRIPT_LOCKS[hash(user_id) % len(_TRANSCRIPT_LOCKS)]:
+        result = import_transcript(user_id, body)
 
-    # Keep the existing recommendation/session compatibility field in sync.
-    # Preserve manual courses that the transcript has never described. For
-    # transcript-known courses, mirror the newest effective pass/fail state.
-    manager = get_memory_manager()
-    profile = manager.get_profile(user_id) or {}
-    existing = profile.get("completed_courses") or []
-    transcript_known = set(result["transcript_course_ids"])
-    manual_only = [course_id for course_id in existing if course_id not in transcript_known]
-    merged = list(dict.fromkeys([*manual_only, *result["completed_course_ids"]]))
-    if merged != existing:
-        manager.update_profile(
-            user_id,
-            {"completed_courses": merged},
-            source_type="transcript_import",
-        )
+        # A new transcript replaces the completed-course compatibility snapshot,
+        # including prior manual selections. An idempotent retry must not undo edits
+        # or replace a newer import already saved under a different request ID.
+        if not result["duplicate"]:
+            manager = get_memory_manager()
+            manager.update_profile(
+                user_id,
+                {"completed_courses": result["completed_course_ids"]},
+                source_type="transcript_import",
+            )
 
     logger.info(
         "transcript_import result=success read=%s accepted=%s added=%s "

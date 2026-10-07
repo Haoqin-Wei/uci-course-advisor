@@ -95,6 +95,8 @@ def test_production_blocks_unsafe_cross_origin_requests(monkeypatch, app_client)
 
 
 def test_system_prompt_endpoint_disabled_by_default_in_production(monkeypatch, app_client):
+    from app.llm.safety import SYSTEM_SAFETY_POLICY
+
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("AUTH_SESSION_SECRET", "production-test-secret")
     monkeypatch.delenv("ALLOW_CUSTOM_SYSTEM_PROMPT", raising=False)
@@ -102,6 +104,22 @@ def test_system_prompt_endpoint_disabled_by_default_in_production(monkeypatch, a
     response = app_client.get("/api/system_prompt")
 
     assert response.status_code == 404
+    assert "prompt" not in response.json()
+    assert SYSTEM_SAFETY_POLICY not in response.text
+
+
+def test_development_prompt_endpoint_shows_actual_agent_base_with_safety(monkeypatch, app_client):
+    from app.llm import adapter
+    from app.llm.safety import SYSTEM_SAFETY_POLICY
+
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.delenv("ALLOW_CUSTOM_SYSTEM_PROMPT", raising=False)
+
+    response = app_client.get("/api/system_prompt")
+
+    assert response.status_code == 200
+    assert response.json()["prompt"] == adapter.AGENT_SYSTEM_PROMPT
+    assert response.json()["prompt"].startswith(SYSTEM_SAFETY_POLICY)
 
 
 def test_auth_login_rate_limit(monkeypatch, app_client):

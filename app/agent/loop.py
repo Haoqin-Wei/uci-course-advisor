@@ -77,6 +77,7 @@ from typing import AsyncIterator, Optional
 from app import observability
 from app.agent import tools as agent_tools
 from app.agent.deep_search_history import (
+    build_history_instruction_message,
     history_refresh_missing,
     load_history_hint,
     record_run_trace,
@@ -88,6 +89,7 @@ from app.agent.workflow_router import (
     build_route_hint_message,
     route_solution,
 )
+from app.llm.safety import untrusted_context_message
 
 logger = logging.getLogger(__name__)
 
@@ -431,6 +433,20 @@ def _workflow_result_message(
     if not results:
         return None
     llm_results = [_compact_workflow_record(record) for record in results]
+    return untrusted_context_message(
+        "Primary workflow results",
+        json.dumps(
+            {"route": route, "results": llm_results},
+            ensure_ascii=False,
+            default=str,
+        ),
+    )
+
+
+def _workflow_instruction_message(results: list[dict]) -> Optional[dict[str, str]]:
+    """Keep trusted execution rules independent from tool/source evidence."""
+    if not results:
+        return None
     restriction_only = all(
         record.get("tool") == "get_department_restrictions"
         for record in results
@@ -449,12 +465,9 @@ def _workflow_result_message(
         "content": (
             "The server already executed the developer-owned primary workflow before "
             "this model call. Do not call these primary tools again. Use the results "
-            "below as the primary evidence, report structured failures honestly, and "
+            "in the separate context data as the primary evidence, report structured failures honestly, and "
             "only use web_search/fetch_page for optional supplemental evidence."
-            f"{restriction_instruction}\n"
-            f"Workflow route: {json.dumps(route, ensure_ascii=False, default=str)}\n"
-            f"Primary workflow results: "
-            f"{json.dumps(llm_results, ensure_ascii=False, default=str)}"
+            f"{restriction_instruction}"
         ),
     }
 
@@ -881,7 +894,9 @@ async def _run_loop(
         hint
         for hint in (
             route_hint_message,
+            _workflow_instruction_message(primary_result_records),
             workflow_result_message,
+            build_history_instruction_message() if history_hint_message else None,
             history_hint_message,
         )
         if hint is not None

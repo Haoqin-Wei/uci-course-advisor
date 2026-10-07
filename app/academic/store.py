@@ -250,11 +250,6 @@ def _course_status(grade: str) -> str:
     return "unknown"
 
 
-def _should_replace(existing: sqlite3.Row, source_time: str) -> bool:
-    previous = existing["source_printed_at"] or ""
-    return not previous or source_time >= previous
-
-
 def import_transcript(user_id: str, body: TranscriptImportRequest) -> dict:
     imported_at = _now_iso()
     source_time = _source_time(body, imported_at)
@@ -278,6 +273,9 @@ def import_transcript(user_id: str, body: TranscriptImportRequest) -> dict:
     titles = _catalog_titles()
 
     with _conn() as conn:
+        # Serialize replacement snapshots before reading counters/idempotency.
+        # Every delete and insert below commits together or rolls back together.
+        conn.execute("BEGIN IMMEDIATE")
         if body.client_request_id:
             duplicate = conn.execute(
                 "SELECT * FROM transcript_imports WHERE user_id = ? AND client_request_id = ?",
@@ -299,6 +297,21 @@ def import_transcript(user_id: str, body: TranscriptImportRequest) -> dict:
                     "completed_course_ids": _completed_ids(conn, user_id),
                     "transcript_course_ids": _known_ids(conn, user_id),
                 }
+
+        previous_courses = {
+            row["course_id"]: row
+            for row in conn.execute(
+                "SELECT * FROM student_courses WHERE user_id = ?", (user_id,)
+            ).fetchall()
+        }
+        for table in (
+            "student_courses",
+            "student_academic_profiles",
+            "exam_credits",
+            "transfer_credits",
+            "university_requirements",
+        ):
+            conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
 
         for course in body.courses:
             submitted_id = " ".join((course.course_id or "").strip().upper().split()) or None
@@ -343,21 +356,7 @@ def import_transcript(user_id: str, body: TranscriptImportRequest) -> dict:
                 continue
             transcript_title = course.title.strip().upper()
             catalog_title = titles.get(course_id)
-            existing = conn.execute(
-                "SELECT * FROM student_courses WHERE user_id = ? AND course_id = ?",
-                (user_id, course_id),
-            ).fetchone()
-            if existing and not _should_replace(existing, source_time):
-                older_ignored += 1
-                issues.append(
-                    _import_issue(
-                        "older_record_ignored",
-                        "A newer transcript record is already stored for this course.",
-                        course_id=course_id,
-                        level="info",
-                    )
-                )
-                continue
+            existing = previous_courses.get(course_id)
 
             record_values = {
                 "transcript_title": transcript_title,
@@ -378,35 +377,34 @@ def import_transcript(user_id: str, body: TranscriptImportRequest) -> dict:
                 source_time,
                 imported_at,
             )
+            conn.execute(
+                """
+                INSERT INTO student_courses (
+                    user_id, course_id, transcript_title, catalog_title,
+                    effective_grade, grade_points, units, status, credit_code,
+                    catalog_matched, repeat_applied, effective_term,
+                    source_printed_at, first_seen_at, last_seen_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, course_id) DO UPDATE SET
+                    transcript_title = excluded.transcript_title,
+                    catalog_title = excluded.catalog_title,
+                    effective_grade = excluded.effective_grade,
+                    grade_points = excluded.grade_points,
+                    units = excluded.units,
+                    status = excluded.status,
+                    credit_code = excluded.credit_code,
+                    catalog_matched = excluded.catalog_matched,
+                    repeat_applied = excluded.repeat_applied,
+                    effective_term = excluded.effective_term
+                """,
+                (user_id, course_id, *values[:-1], imported_at, imported_at),
+            )
             if existing:
-                same_values = _same_course_values(existing, record_values)
-                conn.execute(
-                    """
-                    UPDATE student_courses SET
-                        transcript_title = ?, catalog_title = ?, effective_grade = ?,
-                        grade_points = ?, units = ?, status = ?, credit_code = ?,
-                        transcript_seen = 1, catalog_matched = ?, repeat_applied = ?,
-                        effective_term = ?, source_printed_at = ?, last_seen_at = ?
-                    WHERE user_id = ? AND course_id = ?
-                    """,
-                    (*values, user_id, course_id),
-                )
-                if same_values:
+                if _same_course_values(existing, record_values):
                     unchanged += 1
                 else:
                     updated += 1
             else:
-                conn.execute(
-                    """
-                    INSERT INTO student_courses (
-                        user_id, course_id, transcript_title, catalog_title,
-                        effective_grade, grade_points, units, status, credit_code,
-                        catalog_matched, repeat_applied, effective_term,
-                        source_printed_at, first_seen_at, last_seen_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (user_id, course_id, *values[:-1], imported_at, imported_at),
-                )
                 added += 1
 
         _upsert_profile(conn, user_id, body, source_time, imported_at)
@@ -487,37 +485,12 @@ def _upsert_profile(
     imported_at: str,
 ) -> None:
     summary = body.summary
-    existing = conn.execute(
-        "SELECT * FROM student_academic_profiles WHERE user_id = ?",
-        (user_id,),
-    ).fetchone()
-    if (
-        existing
-        and existing["official_uc_gpa"] is not None
-        and existing["gpa_as_of"]
-        and source_time < existing["gpa_as_of"]
-    ):
-        return
     conn.execute(
         """
         INSERT INTO student_academic_profiles (
             user_id, official_uc_gpa, gpa_as_of, gpa_imported_at,
             grade_units_attempted, total_units_passed, units_completed, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(user_id) DO UPDATE SET
-            official_uc_gpa = COALESCE(excluded.official_uc_gpa, student_academic_profiles.official_uc_gpa),
-            gpa_as_of = CASE
-                WHEN excluded.official_uc_gpa IS NOT NULL THEN excluded.gpa_as_of
-                ELSE student_academic_profiles.gpa_as_of
-            END,
-            gpa_imported_at = CASE
-                WHEN excluded.official_uc_gpa IS NOT NULL THEN excluded.gpa_imported_at
-                ELSE student_academic_profiles.gpa_imported_at
-            END,
-            grade_units_attempted = COALESCE(excluded.grade_units_attempted, student_academic_profiles.grade_units_attempted),
-            total_units_passed = COALESCE(excluded.total_units_passed, student_academic_profiles.total_units_passed),
-            units_completed = COALESCE(excluded.units_completed, student_academic_profiles.units_completed),
-            updated_at = excluded.updated_at
         """,
         (
             user_id,
