@@ -348,17 +348,24 @@ def _summarize_tool_result(result: dict) -> dict:
 
 
 def _agent_web_research_summary(tool_name: str, result: dict) -> Optional[dict]:
-    """Summarize only URLs that the tool actually fetched, not search hits."""
+    """Summarize only URLs that the tool actually fetched, not search hits.
+
+    Sources read from the local snapshot or reused from the 24-hour page cache
+    were not requested this time; they are counted separately as ``reused``.
+    """
     if not isinstance(result, dict):
         return None
     fetched_urls: list[str] = []
     failure_count = 0
+    reused_count = 0
     if tool_name == "get_department_restrictions":
-        fetches = [
+        sources = [
             item
             for item in (result.get("fetch_summary") or [])
             if isinstance(item, dict)
         ]
+        fetches = [item for item in sources if not item.get("local") and not item.get("cached")]
+        reused_count = len(sources) - len(fetches)
         fetched_urls.extend(
             item.get("final_url") or item.get("url")
             for item in fetches
@@ -380,6 +387,7 @@ def _agent_web_research_summary(tool_name: str, result: dict) -> Optional[dict]:
         "fetched_urls": fetched_urls,
         "success_count": success_count,
         "failure_count": failure_count,
+        "reused_count": reused_count,
     }
 
 
@@ -724,6 +732,12 @@ async def _run_loop(
              "args": {"course_id": course, "terms": list(allowed_query_terms)}}
             for course in list(dict.fromkeys(offering_course_ids))[:8]
         ]
+    if primary_plan.get("deferred"):
+        observability.log_event(
+            logger, logging.INFO, "workflow_primary_deferred",
+            workflow_ids=workflow_route.get("workflow_ids"),
+            reason=primary_plan["deferred"].get("reason"), selected_term=term,
+        )
     clarification = primary_plan.get("clarification")
     if clarification:
         clarification_text = _clarification_text(

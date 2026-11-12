@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 from app.catalog.departments import DEPARTMENT_ALIASES
 from app.catalog.normalization import iter_course_mentions, parse_course_mention
-from app.data.restriction_timeline import classify_restriction_type
+from app.data.restriction_timeline import RESTRICTION_QUESTION_PATTERNS, classify_restriction_type
 from app.terms import parse_term_key, parse_term_text
 
 
@@ -38,23 +38,23 @@ WORKFLOW_REGISTRY: tuple[WorkflowRule, ...] = (
         tools=("get_live_sections",),
         primary_source="live_anteater_websoc",
         patterns=(
-            r"\bopen\b",
-            r"\bfull\b",
+            r"\b(?:is|are|was|were)\b[^.!?\n]{0,35}\b(?:open|full)\b",
+            r"\b(?:open|full)\s+(?:sections?|classes|seats?|spots?)\b",
+            r"\b(?:open|full)\s*[?？]",
             r"\bwaitl(?:ist)?\b",
             r"\bseat[s]?\b",
             r"\bspot[s]?\b",
             r"\bcapacity\b",
-            r"\benrolled\b",
-            r"\bstatus\b",
+            r"\b(?:enrollment|section|class|course)\s+status\b",
+            r"\b(?:how many|number of)\b.{0,20}\benrolled\b",
             r"\bNOR\b",
             r"\bNew Only Reserved\b",
             r"\brestriction code[s]?\b",
             r"空位",
-            r"位置",
-            r"剩",
+            r"(?:还有|还剩|剩余|剩下|几个|多少).{0,6}(?:位置|名额|座位)",
             r"waitlist",
             r"候补",
-            r"满",
+            r"满员|额满|已满|(?:课|班|名额|座位).{0,6}满(?:了|吗|没|不|[？?])|(?<!修)(?<!学分)满了(?:吗)?[？?]",
             r"现在.*能不能选",
         ),
     ),
@@ -63,35 +63,7 @@ WORKFLOW_REGISTRY: tuple[WorkflowRule, ...] = (
         intent="department_restriction",
         tools=("get_department_restrictions",),
         primary_source="registrar_websoc_department_comments",
-        patterns=(
-            r"\bmajor restriction[s]?\b",
-            r"\bNew Only Restriction[s]?\b",
-            r"\bNORS\b",
-            r"\bnon[- ]?major\b",
-            r"\benrollment restriction[s]?\b",
-            r"\bdepartment restriction[s]?\b",
-            r"\bschool restriction[s]?\b",
-            r"\bauthorization code[s]?\b",
-            r"\b[ABX][ -]?restriction[s]?\b",
-            r"\badd/drop/change\b",
-            r"\badd\b.*\bdrop\b.*\bchange\b",
-            r"专业限制",
-            r"选课限制",
-            r"课程限制",
-            r"院系限制",
-            r"major.*限制",
-            r"限制.*解除",
-            r"解除.*限制",
-            r"限制.*什么时候",
-            r"什么时候.*解除",
-            r"不是.*major",
-            r"非.*major",
-            r"外专业.*能选",
-            r"什么时候.*能选",
-            r"加课.*截止",
-            r"退课.*截止",
-            r"改.*grade",
-        ),
+        patterns=RESTRICTION_QUESTION_PATTERNS,
     ),
 )
 
@@ -170,13 +142,14 @@ def build_primary_workflow_plan(route: dict[str, Any]) -> dict[str, Any]:
             },
         }
     if not departments and not courses:
+        # The router only knows registrar codes and a few aliases. A department
+        # written another way ("计算机系") is not a missing department, so the
+        # question goes to the model instead of a canned "which department?".
+        # The model can map the name, use the student's profile, or ask.
         return {
             "calls": [],
-            "clarification": {
-                "reason": "missing_department",
-                "message_en": "Which department or course should I check in WebSoc?",
-                "message_zh": "请说明要查询的 Department 或课程。",
-            },
+            "clarification": None,
+            "deferred": {"reason": "missing_department"},
         }
 
     calls: list[dict[str, Any]] = []
@@ -253,8 +226,15 @@ def build_route_hint_message(route: Optional[dict[str, Any]]) -> Optional[dict[s
         if department in _route_string_list(route.get("departments"))
     ]
     has_restriction = "websoc_department_restrictions" in safe_workflow_ids
+    deferred = build_primary_workflow_plan(route).get("deferred")
     execution_instruction = (
-        "The server executes the required primary workflow tools before the model "
+        "The server could not identify a department or course code in the request, so "
+        "it did not run the primary workflow. Work out which single UCI department the "
+        "user means (for example from a department name in another language, or their "
+        "profile) and call the primary tool yourself with that registrar department "
+        "code. Ask which department only if none can be inferred. "
+        if deferred
+        else "The server executes the required primary workflow tools before the model "
         "acts, and their results are supplied as separate untrusted context data. Do not "
         "repeat those primary calls. "
         if has_restriction
@@ -285,6 +265,26 @@ def _route_string_list(value: Any) -> list[str]:
     return [item for item in value if isinstance(item, str)] if isinstance(value, (list, tuple)) else []
 
 
+# Chinese department names that map to one registrar code without guessing.
+# Longest first: a matched name is removed before shorter ones are tried, so
+# "信息与计算机科学" is not also read as "计算机". Anything not listed here is
+# left for the model to resolve; this list is a shortcut, not the vocabulary.
+_CHINESE_DEPARTMENT_NAMES: tuple[tuple[str, str], ...] = (
+    ("信息与计算机科学", "I&C SCI"),
+    ("信息与计算机", "I&C SCI"),
+    ("计算机科学", "COMPSCI"),
+    ("计算机", "COMPSCI"),
+    ("统计学", "STATS"),
+    ("统计", "STATS"),
+    ("数学", "MATH"),
+    ("物理", "PHYSICS"),
+    ("经济", "ECON"),
+    ("哲学", "PHILOS"),
+    ("历史", "HISTORY"),
+)
+_CHINESE_DEPARTMENT_SUFFIX = r"(?:学)?(?:系|专业|学院|课)"
+
+
 def _extract_departments(text: str) -> list[str]:
     found: list[str] = []
     for canonical, aliases in DEPARTMENT_ALIASES.items():
@@ -292,6 +292,12 @@ def _extract_departments(text: str) -> list[str]:
             if _contains_token(text, token):
                 found.append(canonical)
                 break
+    remaining = text or ""
+    for name, canonical in _CHINESE_DEPARTMENT_NAMES:
+        pattern = re.compile(re.escape(name) + r"(?:的)?" + _CHINESE_DEPARTMENT_SUFFIX)
+        if pattern.search(remaining):
+            found.append(canonical)
+            remaining = pattern.sub(" ", remaining)
     return list(dict.fromkeys(found))
 
 
