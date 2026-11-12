@@ -76,6 +76,7 @@ from typing import AsyncIterator, Optional
 
 from app import observability
 from app.agent import tools as agent_tools
+from app.agent import restriction_payload
 from app.agent.deep_search_history import (
     build_history_instruction_message,
     history_refresh_missing,
@@ -754,6 +755,7 @@ async def _run_loop(
     total_tool_calls = start_tool_count
     forced_results: dict[str, dict] = {}
     idempotent_results: dict[str, dict] = {}
+    restriction_dedupe = restriction_payload.RestrictionPayloadDeduper()
     primary_result_records: list[dict] = []
     for primary_call in primary_plan.get("calls") or []:
         tool_name = primary_call["tool"]
@@ -1190,10 +1192,20 @@ async def _run_loop(
             )
             if cache_key is not None and not term_error:
                 idempotent_results[cache_key] = result
+            model_result = result
+            if tc["name"] == restriction_payload.TOOL_NAME:
+                # A second department that links to the same official page
+                # points back to the copy the model already has this turn.
+                model_result, omitted = restriction_dedupe.model_view(result)
+                if omitted:
+                    observability.log_event(
+                        logger, logging.INFO, "restriction_payload_deduplicated",
+                        tool=tc["name"], department=result.get("department"), **omitted,
+                    )
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc["id"],
-                "content": json.dumps(result, default=str),
+                "content": json.dumps(model_result, default=str),
             })
 
             tool_ok = "error" not in result and result.get("ok", True) is not False
