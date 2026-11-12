@@ -9,6 +9,10 @@ This project is not an official UCI advisor, degree audit, or enrollment system.
 - Streaming chat through `/api/chat/stream` with SSE events, tool chips, limit-reached continuation, and persisted history.
 - New conversations center the existing composer beneath a randomly selected greeting. The first send animates into the chat layout without delaying the request; restored conversations skip the transition, and system reduced-motion preferences are respected. Offline browser coverage: `scripts/verify_welcome_motion.cjs`.
 - Tool-backed course, section, professor, grade, prerequisite, policy, and schedule-conflict lookups.
+- Zotistics historical professor-course grade evidence, labeled professor-wide fallback, and persisted raw grade charts. The independent Phase 1 A-rate/RMP ranker is opt-in (`RECOMMENDATION_RANKING_ENABLED=false` by default); see [ranking rules, configuration and examples](docs/recommendation-ranking.md).
+- Intent-aware dynamic prefilter with validated hard/soft constraints, full-pool retrieval, explicit exclusions and verification states; independently opt-in (`DYNAMIC_PREFILTER_ENABLED=false`). See [architecture, audit, contracts and rollout](docs/dynamic-prefilter.md).
+- Official annual GE evidence and per-primary WebSoc co-class rules now feed the local recommendation/schedule pipeline; see [S-001–S-003 changes and real public-data acceptance](docs/recommendation-s001-s003-2026-10-20.md). Shared defaults remain off; the user's local development environment enables both flags.
+- The user-confirmed discussion policy now reads complete target-term listings: listed Dis requires a choice, no Dis needs none, and explicit co-class references trigger bounded same-term checks. See [policy, screenshot-course acceptance, and rollback](docs/discussion-pairing-policy-2026-10-20.md).
 - Controlled `web_search` agent tool with source classification, default-off safety, fake-provider tests, and markdown citations for web-sourced facts.
 - Fixed WebSoc restriction evidence pipeline: the backend follows query-relevant official links, parses cross-row timelines, and selects dates/scopes/exceptions deterministically.
 - Expandable fetch audit under restriction tool chips showing each real GET/POST request, response status, byte count, source role, depth, and whether it supplied the final facts.
@@ -28,6 +32,9 @@ This project is not an official UCI advisor, degree audit, or enrollment system.
 - MemoryBear-inspired evidence memory with SQLite/FTS5 recall, source quotes, confidence, temporal supersession, soft forgetting, and an audit trail.
 - Profile course selection reads the checked-in local UCI catalog first, then a restart-safe runtime snapshot; a full paginated Anteater crawl is only a last resort.
 - Local catalog coverage manifest that distinguishes `complete`, `partial`, `stale`, and `unavailable` data.
+- WebSoc section payloads preserve all meetings and school/department/course/section comments, including scoped range notices. Tool messages deduplicate shared comments without discarding their scope; the model reads the original notices. Source cancellation booleans are retained, with missing/invalid evidence marked unknown. Conflict checks, hard time filters, cards and calendar use every meeting; known meetings remain visible alongside TBA notices. New CSV imports and schedule refresh snapshots retain these fields. Standalone `webURL` is not added.
+- Course-identity and prior-credit fact questions use ordinary lookup rather than recommendation prefiltering. Tool results include `course_code_normalizations` for known aliases mentioned in comments (for example, `INF 43` → `IN4MATX 43`), with the original comment path and the existing alias rules as their basis. The original notice supplies any former-code relationship or explicit enrollment prohibition; alias normalization alone establishes neither. Missing notices remain unknown, and an observed notice term is not a change's effective date.
+- A missing old-code listing can include `related_course_notices` discovered by reverse-searching the same term's course comments across departments. Candidates are source references, not automatic replacements; the agent reads explicit former-code wording and verifies the new code in the unchanged target term. Discovery failures remain unknown. The in-process notice cache retains at most two terms for five minutes. Historical multi-term offering surveys do not automatically scan every term for aliases.
 - Private-beta hardening: rate limits, production cookie/CSRF defaults, no shared writable demo user in production, and traceable logs.
 - Health and observability endpoints: `/health/live`, `/health/ready`, `/health/metrics`.
 
@@ -268,6 +275,25 @@ Current catalog coverage:
 | Spring 2025 | complete | Local section data available. |
 | Spring 2026 | complete | Local section data available. |
 | Fall 2026 | partial | Only partial local section coverage; answers must not treat missing rows as definitive no-offering facts. |
+
+### Synced term snapshots (SQLite)
+
+Whole-term section listings are synced from Anteater WebSoc into `data/catalog.db`
+(`CATALOG_DB_PATH`, git-ignored, rebuildable). A term stored there supersedes the CSV
+section rows for that term; terms without a snapshot keep using the CSVs. Course metadata
+(titles, prerequisites, GE labels) still comes from `courses.csv`, so a course that is new
+since that file was built has sections and a title but unknown prerequisites/GE.
+
+```bash
+python scripts/sync_term_sections.py --term "2027 Winter"   # one request, about 8 MB
+python scripts/sync_term_sections.py --status               # what is stored, and how fresh
+python scripts/import_catalog_csv_to_sqlite.py              # seed the store from the CSVs
+```
+
+A failed, empty or sharply smaller fetch keeps the rows already stored and records the
+reason. Running servers pick up a new snapshot within 30 seconds
+(`CATALOG_VERSION_CHECK_SECONDS`). Syncing is manual for now; tests always run against an
+empty per-test store, so they keep exercising the versioned CSV data.
 
 Useful checks:
 

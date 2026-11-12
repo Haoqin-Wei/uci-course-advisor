@@ -28,4 +28,7 @@ data/academic.db
 data/academic.db-shm
 data/academic.db-wal
 data/auth.secret
+data/catalog.db
+data/catalog.db-shm
+data/catalog.db-wal
 data/professor/summaries/

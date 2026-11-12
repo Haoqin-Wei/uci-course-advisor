@@ -27,6 +27,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from app.catalog.types import CourseRef, CourseRecord, SectionRecord, Provenance
+from app.catalog.ge import parse_ge_categories
 from app.catalog.term import Term
 from app.catalog.loaders.base import CatalogLoader
 
@@ -78,6 +79,31 @@ def _parse_json_field(s):
 def _parse_json_list(s) -> list:
     value = _parse_json_field(s)
     return value if isinstance(value, list) else []
+
+
+def _section_meetings(row: dict):
+    import json
+    raw = row.get("meetings_json")
+    if not raw:
+        return None
+    try:
+        value = json.loads(raw)
+    except (ValueError, TypeError):
+        return []  # Broken complete snapshots must not use stale flat times.
+    if value == [] and not row.get("payload_version"):
+        # Older importers used [] as an empty placeholder alongside valid
+        # flat times. New imports distinguish an explicit empty source list.
+        return None
+    return value
+
+
+def _cancelled_value(value):
+    normalized = str(value or "").strip().lower()
+    if normalized in {"true", "1"}:
+        return True
+    if normalized in {"false", "0"}:
+        return False
+    return None
 
 
 def _course_ref_from_row(row: dict, *, department_key: str, number_key: str) -> CourseRef | None:
@@ -135,13 +161,7 @@ def _string_list_from_json(s) -> tuple[str, ...]:
 
 
 def _ge_values_from_course_row(row: dict) -> list[str]:
-    raw = (row.get("ge_list") or "").strip()
-    if not raw:
-        return []
-    parsed = _parse_json_field(raw)
-    if isinstance(parsed, list):
-        return [str(item).strip() for item in parsed if str(item).strip()]
-    return [raw]
+    return parse_ge_categories(row.get("ge_list"))["categories"]
 
 
 class UCIRelationalLoader(CatalogLoader):
@@ -193,8 +213,22 @@ class UCIRelationalLoader(CatalogLoader):
                     seen.add(t)
         return sorted(seen, reverse=True)
 
-    def load(self, target_term: Term) -> tuple[list[CourseRecord], list[SectionRecord]]:
-        self._ensure_loaded()
+    def _provenance(self, target_term: Term) -> Provenance:
+        return Provenance(
+            source_term=target_term.term_id,
+            target_term=target_term.term_id,
+            loader=self.name,
+            source_file=str(self.data_dir),
+        )
+
+    def _load_sections(
+        self, target_term: Term, provenance: Provenance,
+    ) -> tuple[list[SectionRecord], dict[CourseRef, int | None]]:
+        """Section records for the term plus each course's numeric level.
+
+        Subclasses may replace the section source; course metadata is still
+        assembled by ``load`` from courses.csv.
+        """
         source_term_id = target_term.term_id
 
         # ── 1. Filter sections to this term ──
@@ -221,13 +255,6 @@ class UCIRelationalLoader(CatalogLoader):
                 code = (r.get("ge_code") or "").strip()
                 if code:
                     ge_by_section[sid].append(code)
-
-        provenance = Provenance(
-            source_term=source_term_id,
-            target_term=source_term_id,
-            loader=self.name,
-            source_file=str(self.data_dir),
-        )
 
         # ── 3. Build SectionRecords ──
         sections: list[SectionRecord] = []
@@ -263,23 +290,33 @@ class UCIRelationalLoader(CatalogLoader):
                 section_enrolled=_int_or_none(r.get("section_enrolled")) or _int_or_none(r.get("total_enrolled")),
                 num_on_waitlist= _int_or_none(r.get("num_on_waitlist")),
                 status=          _str_or_none(r.get("status")),
-                is_cancelled=    (r.get("is_cancelled") or "").strip().lower() == "true",
+                is_cancelled=    _cancelled_value(r.get("is_cancelled")),
                 restrictions=    _str_or_none(r.get("restrictions")),
                 final_exam=      _parse_json_field(r.get("final_exam_json")),
                 provenance=provenance,
+                meetings=       _section_meetings(r),
+                comments=       _parse_json_field(r.get("comments_json")),
+                section_comment=r.get("section_comment") if r.get("payload_version") else _str_or_none(r.get("section_comment")),
             )
             sections.append(section)
             section_pairs.append((r, section))
 
-        # ── 4. Index sections by course without relying on zip alignment.
-        sections_by_ref: dict[CourseRef, list[SectionRecord]] = defaultdict(list)
         numeric_by_ref: dict[CourseRef, int | None] = {}
         for sec_row, sec in section_pairs:
-            sections_by_ref[sec.course].append(sec)
             try:
                 numeric_by_ref[sec.course] = int(sec_row.get("courseNumeric") or 0)
             except (TypeError, ValueError):
                 numeric_by_ref[sec.course] = None
+        return sections, numeric_by_ref
+
+    def load(self, target_term: Term) -> tuple[list[CourseRecord], list[SectionRecord]]:
+        self._ensure_loaded()
+        provenance = self._provenance(target_term)
+        sections, numeric_by_ref = self._load_sections(target_term, provenance)
+        sections_by_ref: dict[CourseRef, list[SectionRecord]] = defaultdict(list)
+        for sec in sections:
+            sections_by_ref[sec.course].append(sec)
+        source_term_id = target_term.term_id
 
         # ── 5. Build CourseRecords from courses.csv plus section-only fallbacks.
         rows_by_ref: dict[CourseRef, dict] = {}
@@ -302,7 +339,7 @@ class UCIRelationalLoader(CatalogLoader):
         for ref in sorted(refs_for_term, key=lambda r: (r.department, r.course_number)):
             row = rows_in_term.get(ref) or rows_by_ref.get(ref) or {}
             secs = sections_by_ref.get(ref, [])
-            ge_union = sorted({g for s in secs for g in s.ge_categories})
+            ge_union = sorted({g for s in secs for g in parse_ge_categories(s.ge_categories)["categories"]})
             ge_union = sorted(set(ge_union) | set(_ge_values_from_course_row(row)))
             min_units = _float_or_none(row.get("min_units"))
             max_units = _float_or_none(row.get("max_units"))
@@ -323,6 +360,12 @@ class UCIRelationalLoader(CatalogLoader):
                 prerequisite_tree=_parse_json_field(row.get("prerequisite_tree_json")),
                 major_requirements=tuple(),          # not in this feed
                 ge_categories=tuple(ge_union),
+                # Parsing syntax does not prove a label's official edition.
+                ge_categories_verified=False,
+                ge_provenance={"source": "local_catalogue", "status": "unknown", "catalogue_year": None,
+                               "source_file": str(self.data_dir / "courses.csv"),
+                               "raw_labels": row.get("ge_list"),
+                               "unrecognized_labels": parse_ge_categories(row.get("ge_list"))["unrecognized"]},
                 course_level=_str_or_none(row.get("course_level")),
                 school=_str_or_none(row.get("school")),
                 department_name=_str_or_none(row.get("department_name")),

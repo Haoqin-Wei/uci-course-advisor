@@ -7,6 +7,7 @@ monkeypatch production/dev behavior without re-importing the app.
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 
 
@@ -26,6 +27,34 @@ def bool_env(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in TRUE_VALUES
+
+
+def recommendation_ranking_enabled() -> bool:
+    """Phase 1 ranking is an explicit opt-in; legacy ordering is the default."""
+    return bool_env("RECOMMENDATION_RANKING_ENABLED", default=False)
+
+
+def dynamic_prefilter_enabled() -> bool:
+    """Constrained intent prefilter is opt-in independently of fixed ranking."""
+    return bool_env("DYNAMIC_PREFILTER_ENABLED", default=False)
+
+
+def _ranking_dict(name: str):
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    value = json.loads(raw)
+    if not isinstance(value, dict):
+        raise ValueError(f"{name} must be a JSON object")
+    return value
+
+
+def recommendation_ranking_weights():
+    return _ranking_dict("RECOMMENDATION_RANKING_WEIGHTS")
+
+
+def recommendation_ranking_reliability():
+    return _ranking_dict("RECOMMENDATION_RANKING_RELIABILITY")
 
 
 def allow_shared_demo() -> bool:
@@ -133,3 +162,8 @@ def memory_max_active_items() -> int:
 def academic_db_path() -> Path:
     """Server-side structured academic record store for the private beta."""
     return Path(os.environ.get("ACADEMIC_DB_PATH", "data/academic.db"))
+
+
+def catalog_db_path() -> Path:
+    """Public term/section snapshots; kept apart from student records."""
+    return Path(os.environ.get("CATALOG_DB_PATH", "data/catalog.db"))

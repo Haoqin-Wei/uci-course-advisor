@@ -179,12 +179,21 @@ def isolated_test_environment(
     monkeypatch.setenv("MEMORY_ROOT", str(runtime_paths.memory_root))
     monkeypatch.setenv("MEMORY_DB_PATH", str(runtime_paths.memory_root / "long_term_memory.db"))
     monkeypatch.setenv("ACADEMIC_DB_PATH", str(runtime_paths.academic_db))
+    # An empty per-test catalog store keeps tests on the versioned CSV rows
+    # no matter which terms the developer has synced locally.
+    monkeypatch.setenv("CATALOG_DB_PATH", str(runtime_paths.root / "catalog.db"))
+    monkeypatch.setenv("CATALOG_VERSION_CHECK_SECONDS", "0")
     # Legacy characterization tests still exercise the old demo/guest routes.
     # Product defaults are auth-only; tests opt into compatibility explicitly.
     monkeypatch.setenv("ALLOW_SHARED_DEMO", "true")
     monkeypatch.setenv("ALLOW_GUEST_USERS", "true")
 
     if not live_test:
+        # Local development deliberately enables both features in .env.
+        # Legacy characterizations must not inherit those machine preferences;
+        # feature-specific fixtures explicitly opt in after this fixture.
+        monkeypatch.setenv("DYNAMIC_PREFILTER_ENABLED", "false")
+        monkeypatch.setenv("RECOMMENDATION_RANKING_ENABLED", "false")
         monkeypatch.setattr(requests.sessions.Session, "request", _blocked_network)
         monkeypatch.setattr(socket.socket, "connect", _blocked_network)
         monkeypatch.setattr(socket, "create_connection", _blocked_network)
@@ -261,6 +270,14 @@ def isolated_test_environment(
     from app.data.uci_general import anteater_programs
     agent_loop._continuation_store.clear()
     db._course_info_cache.clear()
+    db._pairing_evidence_cache.clear()
+    from app.data import ge_evidence
+    ge_evidence._cache.clear()
+    monkeypatch.setattr(ge_evidence, "CACHE_DIR", runtime_paths.root / "ge_evidence")
+    if not live_test:
+        def unavailable_ge_page(_url):
+            raise requests.ConnectionError("Offline tests require an explicit official GE snapshot")
+        monkeypatch.setattr(ge_evidence, "_get_html", unavailable_ge_page)
     anteater._course_cache.clear()
     anteater._sections_cache.clear()
     anteater._live_sections_cache.clear()

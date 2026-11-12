@@ -112,6 +112,12 @@ class CourseRecord:
     terms_offered: tuple[str, ...] = field(default_factory=tuple)
     all_known_instructors: tuple[str, ...] = field(default_factory=tuple)
     provenance: Optional[Provenance] = None
+    # Missing GE data and an explicitly empty course GE list are different.
+    # Kept internal so legacy API envelopes do not gain fields when flags are off.
+    ge_categories_verified: bool = False
+    # Annual GE evidence is separate from term/offering provenance. Old CSVs
+    # have labels but no authenticated catalogue edition.
+    ge_provenance: Optional[dict] = None
 
 
 # ── Section-level record ─────────────────────────────────
@@ -143,10 +149,15 @@ class SectionRecord:
     section_enrolled: Optional[int] = None
     num_on_waitlist: Optional[int] = None
     status: Optional[str] = None                 # "OPEN" / "Waitl" / "FULL" / "NewOnly"
-    is_cancelled: bool = False
+    is_cancelled: Optional[bool] = False
     restrictions: Optional[str] = None           # SOC 'Rstr' column, e.g. "A" / "BX" / "EJL"
     final_exam: Optional[dict] = None            # Anteater finalExam shape — examStatus + (if SCHEDULED) dayOfWeek/month/day/startTime/endTime/bldg
     provenance: Optional[Provenance] = None
+    # None denotes a legacy snapshot without the complete meeting payload.
+    # An explicit empty list is source evidence of unknown arrangements.
+    meetings: Optional[list[dict]] = None
+    comments: Optional[dict] = None
+    section_comment: Optional[str] = None
 
     @property
     def seats_open(self) -> Optional[int]:

@@ -90,7 +90,39 @@ def _get_coverage_manifest_cached(data_dir_str: str) -> dict:
     }
 
 
+def _store_coverage(term: Term) -> Optional[dict]:
+    """Coverage of a synced snapshot, which supersedes the CSV rows for its term."""
+    from app.catalog import store
+
+    try:
+        if store.snapshot_token(term.term_id) is None:
+            return None
+        snapshot = store.get_term_snapshot(term.term_id)
+    except Exception:
+        return None  # A broken cache file must not take section lookups down.
+    if not snapshot or not snapshot.get("section_count"):
+        return None
+    updated_at = snapshot.get("last_synced_at")
+    status = "stale" if _is_stale(updated_at) else snapshot["status"]
+    return {
+        "term_id": term.term_id,
+        "name": term.display(),
+        "coverage_status": status if status in {"complete", "partial", "stale"} else "partial",
+        "section_count": snapshot["section_count"],
+        "course_count": snapshot["course_count"],
+        "department_count": snapshot["department_count"],
+        "departments": [],
+        "source": f"catalog_store:{snapshot.get('source')}",
+        "updated_at": updated_at,
+        "schema_version": f"catalog-store-v{store.SCHEMA_VERSION}",
+    }
+
+
 def get_term_coverage(term: Term, data_dir: str | Path = DATA_DIR) -> dict:
+    if Path(data_dir) == DATA_DIR:
+        stored = _store_coverage(term)
+        if stored:
+            return stored
     manifest = get_coverage_manifest(data_dir)
     for item in manifest["terms"]:
         if item["term_id"] == term.term_id:
