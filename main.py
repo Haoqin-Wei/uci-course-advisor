@@ -51,6 +51,26 @@ async def lifespan(app: FastAPI):
 
     threading.Thread(target=_refresh_terms_periodically, daemon=True, name="term-state-sync").start()
 
+    def _sync_catalog_periodically():
+        # Runs after the term thread's first pass has had a chance to refresh the
+        # calendar; the scheduler itself decides which terms are due.
+        if stop_term_sync.wait(20):
+            return
+        while not stop_term_sync.is_set():
+            try:
+                from app.catalog.scheduler import run_due
+                run_due()
+            except Exception as e:
+                observability.log_event(
+                    logger, logging.WARNING, "catalog_sync_failed",
+                    error=f"{type(e).__name__}: {e}",
+                )
+            if stop_term_sync.wait(900):
+                break
+
+    if config.catalog_auto_sync_enabled():
+        threading.Thread(target=_sync_catalog_periodically, daemon=True, name="catalog-sync").start()
+
     try:
         yield
     finally:

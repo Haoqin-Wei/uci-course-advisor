@@ -167,3 +167,8 @@ def academic_db_path() -> Path:
 def catalog_db_path() -> Path:
     """Public term/section snapshots; kept apart from student records."""
     return Path(os.environ.get("CATALOG_DB_PATH", "data/catalog.db"))
+
+
+def catalog_auto_sync_enabled() -> bool:
+    """Background refresh of term snapshots; the manual script works either way."""
+    return bool_env("CATALOG_AUTO_SYNC_ENABLED", True)

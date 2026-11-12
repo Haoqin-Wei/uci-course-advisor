@@ -292,8 +292,29 @@ python scripts/import_catalog_csv_to_sqlite.py              # seed the store fro
 
 A failed, empty or sharply smaller fetch keeps the rows already stored and records the
 reason. Running servers pick up a new snapshot within 30 seconds
-(`CATALOG_VERSION_CHECK_SECONDS`). Syncing is manual for now; tests always run against an
-empty per-test store, so they keep exercising the versioned CSV data.
+(`CATALOG_VERSION_CHECK_SECONDS`). Tests always run against an empty per-test store, so they
+keep exercising the versioned CSV data.
+
+The course catalogue itself (titles, prerequisites, GE labels, plus corequisites, grading
+option, repeatability and overlapping courses) is synced the same way into the same file:
+
+```bash
+python scripts/sync_course_catalog.py            # ~95 requests, under a minute
+python scripts/sync_course_catalog.py --status
+```
+
+Once a catalogue is stored, every reader of course metadata (catalog views, department
+lookup, transcript-import titles, the profile course picker) uses it through
+`app/catalog/course_source.py`; without one they all read `data/uci/courses.csv`.
+
+The server also syncs in the background (`CATALOG_AUTO_SYNC_ENABLED=true`, checked every
+15 minutes): the current term, the next regular term, and last year's same quarter as a
+reference. A timetable has one life cycle. Nothing is requested for the next term until the
+day before the calendar's Schedule-of-Classes date (Week 5 of the current term when the
+calendar has no date); from then it is probed every 6 hours until it arrives. A published
+term is refreshed daily until its own Week 2 Friday, fetched once more after that deadline,
+and then left alone. The reference term is fetched once. The course catalogue is fetched
+once per term, when a tracked term's timetable first arrives. See `app/catalog/scheduler.py`.
 
 Useful checks:
 
