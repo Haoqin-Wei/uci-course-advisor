@@ -28,6 +28,7 @@ the LLM is expected to say so honestly.
 from __future__ import annotations
 
 import logging
+import time
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Optional
@@ -41,12 +42,14 @@ from app import observability
 from app.data import anteater, websoc_workflow
 from app.data import professors as profs
 from app.data.prerequisites import evaluate_prerequisite_tree
+from app.data.websoc_payload import cancellation_fields
 from app.memory import get_memory_manager
 from app.academic import get_ai_academic_context
 
 logger = logging.getLogger(__name__)
 
 _course_info_cache: dict[str, dict] = {}
+_pairing_evidence_cache: dict[tuple[str, str, str, int], tuple[float, dict]] = {}
 
 
 # ══════════════════════════════════════════════════════════
@@ -147,6 +150,8 @@ def _course_record_to_dict(course: CourseRecord) -> dict:
         "prerequisites": [ref.display() for ref in course.prerequisites],
         "dependencies": [ref.display() for ref in course.dependencies],
         "ge_categories": list(course.ge_categories),
+        "ge_labels_verified": course.ge_categories_verified,
+        "ge_provenance": getattr(course, "ge_provenance", None),
         "terms_offered": list(course.terms_offered),
         "all_known_instructors": list(course.all_known_instructors),
         "provenance": provenance_dict,
@@ -187,27 +192,31 @@ def _section_record_to_dict(s: SectionRecord) -> dict:
         "seats_open":    s.seats_open,
         "waitlisted":    s.num_on_waitlist,
         "status":        s.status,
-        "is_cancelled":  s.is_cancelled,
+        **cancellation_fields(getattr(s, "is_cancelled", None)),
         "ge_categories": list(s.ge_categories),
         "restrictions":  getattr(s, "restrictions", None),
         # CSV loader doesn't carry finalExam — None is fine, frontend
         # gracefully shows "TBA" in that case.
         "final_exam":    getattr(s, "final_exam", None),
+        "meetings":      deepcopy(getattr(s, "meetings", None)),
+        "comments":      deepcopy(getattr(s, "comments", None)),
+        "section_comment": deepcopy(getattr(s, "section_comment", None)),
     }
 
 
 def _api_section_to_dict(sec: dict) -> dict:
     """Anteater websoc section → same shape as _section_record_to_dict."""
-    meetings = sec.get("meetings") or []
-    primary  = meetings[0] if meetings else {}
-    start = primary.get("startTime") or {}
-    end   = primary.get("endTime") or {}
-    days  = primary.get("days")
-    st = (f"{start['hour']:02d}:{start['minute']:02d}"
-          if start and start.get("hour") is not None else None)
-    et = (f"{end['hour']:02d}:{end['minute']:02d}"
-          if end and end.get("hour") is not None else None)
-    location = ", ".join(primary.get("bldg") or []) or None
+    from app.scheduling.service import section_meetings
+
+    # Build the compatibility view only from the source array, never from
+    # incidental flat fields. Missing arrangements remain explicitly unknown,
+    # and malformed clocks must not crash or become an invented time. Retain
+    # the original payload (including None versus []) independently.
+    meetings = sec.get("meetings")
+    primary = section_meetings({"meetings": meetings})[0]
+    days = primary["days"]
+    st, et = primary["start_time"], primary["end_time"]
+    location = primary["location"] or None
     cap = _safe_int(sec.get("maxCapacity"))
     enrolled = _safe_int(sec.get("numCurrentlyEnrolled", {}).get("totalEnrolled")
                          if isinstance(sec.get("numCurrentlyEnrolled"), dict)
@@ -221,7 +230,8 @@ def _api_section_to_dict(sec: dict) -> dict:
         "days":          days,
         "start_time":    st,
         "end_time":      et,
-        "time_display":  (f"{days} {st}-{et}" if days and st else None),
+        "time_display":  (f"{days} {st}-{et}" if not primary["time_is_tba"] else None),
+        "time_is_tba":   primary["time_is_tba"],
         "location":      location,
         "instructors":   list(sec.get("instructors") or []),
         "max_capacity":  cap,
@@ -229,7 +239,7 @@ def _api_section_to_dict(sec: dict) -> dict:
         "seats_open":    seats_open,
         "waitlisted":    _safe_int(sec.get("numOnWaitlist")),
         "status":        sec.get("status"),
-        "is_cancelled":  False,
+        **cancellation_fields(sec.get("isCancelled")),
         "ge_categories": [],
         # Anteater returns `restrictions` as a concatenated string like
         # "A" or "AB" or "EJL" — the SOC Rstr column. Surface as-is
@@ -239,6 +249,11 @@ def _api_section_to_dict(sec: dict) -> dict:
         # month, day, startTime/endTime {hour, minute}, bldg.
         # Pass through verbatim so the frontend can format.
         "final_exam":    sec.get("finalExam"),
+        # Keep every meeting block and source-scoped comment. The flat time
+        # fields above remain a first-meeting compatibility view only.
+        "meetings":      deepcopy(meetings),
+        "comments":      deepcopy(sec.get("comments")),
+        "section_comment": deepcopy(sec.get("sectionComment", sec.get("section_comment"))),
     }
 
 
@@ -304,7 +319,7 @@ def get_student_profile(student_id: str) -> dict:
     profile = dict(profile)
     academic = get_ai_academic_context(student_id)
     graded = {
-        item["course_id"]: {
+        (_to_ref(item["course_id"]) or item["course_id"]): {
             "course_id": item["course_id"],
             "grade": item.get("effective_grade"),
         }
@@ -312,13 +327,27 @@ def get_student_profile(student_id: str) -> dict:
         if isinstance(item, dict) and item.get("course_id")
     }
     profile["completed_course_attempts"] = [
-        graded.get(course_id, course_id)
+        graded.get(_to_ref(course_id) or course_id, course_id)
         for course_id in profile.get("completed_courses") or []
     ]
     return {"found": True, "source": "db", "profile": profile}
 
 
 # ── Single course catalog metadata ───────────────────────
+
+_course_info_cache_version: Optional[tuple] = None
+
+
+def _drop_course_info_cache_if_catalogue_changed() -> None:
+    """Cached course metadata must not outlive the catalogue it was read from."""
+    global _course_info_cache_version
+    from app.catalog import course_source
+
+    version = course_source.version()
+    if version != _course_info_cache_version:
+        _course_info_cache.clear()
+        _course_info_cache_version = version
+
 
 def get_course_info(course_id: str) -> dict:
     """
@@ -331,6 +360,7 @@ def get_course_info(course_id: str) -> dict:
         return {"found": False, "source": "none",
                 "reason": f"could not parse course id {course_id!r}"}
 
+    _drop_course_info_cache_if_catalogue_changed()
     cache_key = _course_cache_key(ref)
     if cache_key in _course_info_cache:
         return deepcopy(_course_info_cache[cache_key])
@@ -361,6 +391,7 @@ def get_course_info(course_id: str) -> dict:
                 "department":  data.get("departmentName"),
                 "description": data.get("description"),
                 "prerequisite_text": data.get("prerequisiteText"),
+                "prerequisite_tree": deepcopy(data.get("prerequisiteTree")),
                 "prerequisites":     [p.get("id") for p in (data.get("prerequisites") or [])],
                 "all_known_instructors": data.get("instructors") or [],
             },
@@ -458,7 +489,7 @@ def get_sections(course_id: str, term: str) -> dict:
     if cv:
         records = cv.get_sections(ref)
         if records and coverage_status != "stale":
-            return {
+            result = {
                 **base,
                 "found": True,
                 "source": "db",
@@ -467,6 +498,7 @@ def get_sections(course_id: str, term: str) -> dict:
                 "retrieved_at": coverage.get("updated_at"),
                 "sections": [_section_record_to_dict(s) for s in records],
             }
+            return _pairing_if_enabled(ref.display(), t.display(), result)
 
     # The Registrar's fixed POST workflow is the authoritative fallback for
     # every local miss, even if a legacy manifest calls the term "complete".
@@ -504,7 +536,7 @@ def get_sections(course_id: str, term: str) -> dict:
     if (registrar_result.get("ok") and registrar_result.get("authoritative")
             and registrar_result.get("offering_status") in {"offered", "not_offered"}):
         sections = list(registrar_result.get("sections") or [])
-        return {
+        result = {
             **base,
             "ok": True,
             "found": bool(sections),
@@ -517,8 +549,13 @@ def get_sections(course_id: str, term: str) -> dict:
             "fetches": registrar_result.get("fetches") or [],
             "lookup_attempts": attempts,
             "sections": sections,
+            "pairing": deepcopy(registrar_result.get("pairing")),
+            "source_proof": deepcopy(registrar_result.get("source_proof")),
+            **{key: deepcopy(registrar_result[key]) for key in ("co_class_sources", "co_class_lookup_audit")
+               if key in registrar_result},
             "reason": registrar_result.get("reason"),
         }
+        return _pairing_if_enabled(ref.display(), t.display(), result)
 
     if registrar_result.get("error_code") == "websoc_term_unavailable":
         # The official form was read successfully. Preserve that evidence so
@@ -560,6 +597,10 @@ def get_sections(course_id: str, term: str) -> dict:
         )
         sections_raw = None
         secondary_error = {"error_code": type(e).__name__, "message": str(e)}
+    comment_metadata = ({
+        "comment_contexts": deepcopy(getattr(sections_raw, "comment_contexts", {})),
+        "course_notices": deepcopy(getattr(sections_raw, "course_notices", [])),
+    } if getattr(sections_raw, "comment_contexts", None) else {})
     attempts.append({
         "source": "api", "source_url": anteater.WEBSOC_URL,
         "checked_at": secondary_checked_at,
@@ -570,7 +611,7 @@ def get_sections(course_id: str, term: str) -> dict:
         })),
     })
     if sections_raw:
-        return {
+        result = {
             **base,
             "found": True,
             "source": "api",
@@ -582,7 +623,9 @@ def get_sections(course_id: str, term: str) -> dict:
             "retrieved_at": None,
             "lookup_attempts": attempts,
             "sections": [_api_section_to_dict(s) for s in sections_raw],
+            **comment_metadata,
         }
+        return _pairing_if_enabled(ref.display(), t.display(), result)
 
     return {
         **base,
@@ -592,6 +635,7 @@ def get_sections(course_id: str, term: str) -> dict:
         "authoritative": False,
         "error_code": "offering_lookup_unavailable",
         "sections": [],
+        **comment_metadata,
         "registrar_websoc": attempts[0],
         "lookup_attempts": attempts,
         "reason": (
@@ -600,6 +644,95 @@ def get_sections(course_id: str, term: str) -> dict:
             "nor the secondary API supplied a verified result"
         ),
     }
+
+
+def _pairing_cache_key(ref, target):
+    from app.data.websoc_pairing import POLICY_ID, POLICY_VERSION
+    return ref.display(), target.term_id, POLICY_ID, POLICY_VERSION
+
+
+def _current_pairing_for(pairing, ref, target):
+    from app.recommendations.pairing import discussion_policy_current
+    if not discussion_policy_current(pairing):
+        return False
+    evidence = pairing.get("evidence") or {}
+    return (_to_ref(evidence.get("course_id")) == ref and _to_term(evidence.get("term")) == target)
+
+
+def _unknown_current_pairing(ref, target, response, reason):
+    from app.data.websoc_pairing import POLICY_MARKER
+    evidence = {**deepcopy(POLICY_MARKER), "source": "registrar_websoc", "status": "unverified",
+                "course_id": ref.display(), "term": f"{target.year} {target.quarter}",
+                "source_url": websoc_workflow.WEBSOC_URL, "reason_codes": [reason]}
+    primaries = {}
+    for section in response.get("sections") or []:
+        if not isinstance(section, dict) or str(section.get("section_type") or section.get("type") or "").lower() not in {"lec", "lecture", "sem", "seminar"}:
+            continue
+        code = str(section.get("section_code") or section.get("code") or "")
+        if code:
+            primaries[code] = {"requirement": "unknown", "required_components": [],
+                               "relationship": "unknown", "relationship_complete": False,
+                               "allowed_bundles": [], "evidence": deepcopy(evidence)}
+    return {"version": 2, "per_primary": primaries, "evidence": evidence}
+
+
+def _pairing_if_enabled(course_id, term, result):
+    from app.recommendations.pairing import contract_enabled
+    return enrich_sections_pairing(course_id, term, result) if contract_enabled() else result
+
+
+def enrich_sections_pairing(course_id: str, term: str, response: dict, *, force_refresh=False,
+                            request_timeout_s=None) -> dict:
+    """Obtain a full official rule snapshot even when local sections exist.
+
+    Timetable/seat snapshots remain independent: an explicit live refresh is
+    never replaced by the rows accompanying the pairing rule. Rules are always
+    parsed from the unfiltered official course response, not this input subset.
+    """
+    ref, target = _to_ref(course_id), _to_term(term)
+    if not ref or not target:
+        return response
+    key = _pairing_cache_key(ref, target)
+    if _current_pairing_for(response.get("pairing"), ref, target) and not force_refresh:
+        if response.get("source_proof") and response.get("source") == "registrar_websoc" and response.get("authoritative"):
+            _pairing_evidence_cache[key] = (time.monotonic() + 300, deepcopy(response))
+        return deepcopy(response)
+    cached = _pairing_evidence_cache.get(key)
+    if (not force_refresh and cached and time.monotonic() < cached[0]
+            and (not cached[1].get("pairing") or _current_pairing_for(cached[1]["pairing"], ref, target))):
+        result = deepcopy(cached[1])
+    else:
+        try:
+            kwargs = {"request_timeout_s": request_timeout_s} if request_timeout_s is not None else {}
+            result = websoc_workflow.fetch_websoc_course_offering(
+                term=target.display(), department=ref.department, course_number=ref.course_number, **kwargs)
+        except Exception as exc:
+            logger.info("Pairing evidence unavailable for %s %s: %s", ref.display(), target.display(), type(exc).__name__)
+            result = {"ok": False, "error_code": type(exc).__name__}
+        # Failed lookups are cached briefly, never transformed into not_required.
+        ttl = 300 if _current_pairing_for(result.get("pairing"), ref, target) else 30
+        _pairing_evidence_cache[key] = (time.monotonic() + ttl, deepcopy(result))
+    from app.recommendations.pairing import normalize_pairing_evidence
+    current = _current_pairing_for(result.get("pairing"), ref, target)
+    raw_pair = result.get("pairing") if current else _unknown_current_pairing(
+        ref, target, response, "official_pairing_lookup_unavailable")
+    pair = normalize_pairing_evidence({"course_id": ref.display(), "pairing": raw_pair}, term=term)
+    out = {**deepcopy(response), "pairing": pair,
+           "pairing_source_proof": deepcopy(result.get("source_proof")),
+           "pairing_lookup_status": "available" if current else "unavailable",
+           **{key: deepcopy(result[key]) for key in ("co_class_sources", "co_class_lookup_audit") if key in result}}
+    # When replacing stale/local metadata, use the same complete official rows
+    # whose identities the proof describes; a live snapshot keeps its own rows.
+    identity_matches = (_to_term(result.get("term")) == target
+                        and (result.get("department") == ref.department)
+                        and str(result.get("course_number")) == ref.course_number)
+    if (identity_matches and result.get("ok") and result.get("authoritative") and result.get("offering_status") == "offered"
+            and not response.get("is_live")):
+        out.update(sections=deepcopy(result.get("sections") or []), found=bool(result.get("sections")),
+                   source="registrar_websoc", source_url=result.get("source_url"),
+                   retrieved_at=result.get("retrieved_at"), term=target.display(),
+                   offering_status="offered", authoritative=True)
+    return out
 
 
 def get_live_sections(
@@ -682,6 +815,7 @@ def get_live_sections(
             "retrieved_at": live.get("retrieved_at"),
             "cache_hit": bool(live.get("cache_hit")),
             "sections": sections,
+            **{key: deepcopy(live[key]) for key in ("comment_contexts", "course_notices") if key in live},
             "reason": None if sections else (
                 f"live WebSoc returned no sections for {ref.display()} in {t.display()}"
             ),
@@ -800,20 +934,16 @@ def check_prerequisites_met(
 
 # ── Search courses (DB-only, term-scoped) ────────────────
 
-def search_courses(
+def retrieve_course_candidates(
     term: str,
     department: Optional[str] = None,
     ge_category: Optional[str] = None,
     exclude_ids: Optional[list[str]] = None,
 ) -> dict:
-    """
-    Catalog search restricted to a single term. We list CourseRefs from
-    that term's CatalogView; the agent can call get_course_info on any
-    candidate to get title/units/description.
+    """Full term-scoped catalog pool, before ranking or display limits.
 
-    Anteater has no multi-criteria search endpoint, so DB-only here.
-    If the local CSV doesn't have that term, we report no results
-    rather than silently returning data from a different term.
+    This shares the legacy search filters. An absent local catalog means
+    unknown coverage, not confirmed absence of an offering.
     """
     t = _to_term(term)
     if not t:
@@ -853,10 +983,22 @@ def search_courses(
         "found": True,
         "source": "db",
         "term": t.display(),
-        "courses": out[:30],
+        "courses": out,
         "total_found": len(out),
-        "truncated": len(out) > 30,
+        "truncated": False,
     }
+
+
+def search_courses(
+    term: str,
+    department: Optional[str] = None,
+    ge_category: Optional[str] = None,
+    exclude_ids: Optional[list[str]] = None,
+) -> dict:
+    """Preserve the legacy first-30 catalog search when ranking is off."""
+    result = retrieve_course_candidates(term, department, ge_category, exclude_ids)
+    return {**result, "courses": result["courses"][:30],
+            "truncated": result.get("total_found", 0) > 30}
 
 
 # ── Professor / instructor rating ────────────────────────
@@ -1031,6 +1173,25 @@ def get_professor_tags(
 
 
 # ── Grade distribution (delegates to grades.py) ─────────
+
+def get_zotistics_grades(
+    course_id: Optional[str] = None,
+    instructor_name: Optional[str] = None,
+    department: Optional[str] = None,
+) -> dict:
+    """Historical grade evidence with source, coverage and explicit lookup status.
+
+    Preserve the Zotistics envelope so missing data, transport failures and
+    ambiguous instructor names cannot be confused with grading outcomes.
+    """
+    from app.data import zotistics
+
+    return zotistics.get_grade_distribution(
+        course_id=course_id,
+        instructor_name=instructor_name,
+        department=department,
+    )
+
 
 def get_grade_distribution(course_id: str) -> dict:
     """

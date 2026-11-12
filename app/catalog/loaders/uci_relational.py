@@ -206,12 +206,38 @@ class UCIRelationalLoader(CatalogLoader):
             t = Term.parse(row.get("term_id", ""))
             if t:
                 seen.add(t)
-        for row in self._course_rows:
-            for term_text in _terms_from_json(row.get("terms_offered_json")):
-                t = Term.parse(term_text)
-                if t:
-                    seen.add(t)
+        seen.update(self._course_index()[1])
         return sorted(seen, reverse=True)
+
+    def _course_index(self) -> tuple[dict[CourseRef, dict], dict[Term, dict[CourseRef, dict]]]:
+        """(course → row, term → courses the catalogue lists for it), built once per row set.
+
+        Every term view needs both lookups; parsing each row's term list again
+        for every term made a catalogue refresh cost seconds per view.
+        """
+        rows = self._get_course_rows()
+        cached = getattr(self, "_course_index_cache", None)
+        if cached is not None and cached[0] is rows:
+            return cached[1], cached[2]
+        by_ref: dict[CourseRef, dict] = {}
+        by_term: dict[Term, dict[CourseRef, dict]] = defaultdict(dict)
+        for row in rows:
+            ref = _course_ref_from_row(row, department_key="department", number_key="course_number")
+            if ref is None:
+                logger.warning("Skipping malformed course row %r", row.get("course_id"))
+                continue
+            by_ref[ref] = row
+            for term_text in _terms_from_json(row.get("terms_offered_json")):
+                term = Term.parse(term_text)
+                if term:
+                    by_term[term][ref] = row
+        self._course_index_cache = (rows, by_ref, dict(by_term))
+        return by_ref, self._course_index_cache[2]
+
+    def _get_course_rows(self) -> list[dict]:
+        """Course-catalogue rows; subclasses may supply a fresher source."""
+        self._ensure_loaded()
+        return self._course_rows
 
     def _provenance(self, target_term: Term) -> Provenance:
         return Provenance(
@@ -319,20 +345,8 @@ class UCIRelationalLoader(CatalogLoader):
         source_term_id = target_term.term_id
 
         # ── 5. Build CourseRecords from courses.csv plus section-only fallbacks.
-        rows_by_ref: dict[CourseRef, dict] = {}
-        rows_in_term: dict[CourseRef, dict] = {}
-        for row in self._course_rows:
-            ref = _course_ref_from_row(
-                row,
-                department_key="department",
-                number_key="course_number",
-            )
-            if ref is None:
-                logger.warning("Skipping malformed course row %r", row.get("course_id"))
-                continue
-            rows_by_ref[ref] = row
-            if _row_mentions_term(row, target_term):
-                rows_in_term[ref] = row
+        rows_by_ref, rows_by_term = self._course_index()
+        rows_in_term = rows_by_term.get(target_term, {})
 
         refs_for_term: set[CourseRef] = set(rows_in_term) | set(sections_by_ref)
         courses: list[CourseRecord] = []

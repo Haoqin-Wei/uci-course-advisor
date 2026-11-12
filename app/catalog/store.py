@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS sections (
     num_on_waitlist   INTEGER,
     waitlist_cap      INTEGER,
     num_requested     INTEGER,
+    new_only_reserved INTEGER,
     source_updated_at TEXT,
     fetched_at        TEXT NOT NULL,
     PRIMARY KEY (term_id, section_code)
@@ -110,7 +111,7 @@ _TEXT_FIELDS = (
 )
 _INT_FIELDS = (
     "course_numeric", "max_capacity", "total_enrolled", "section_enrolled",
-    "num_on_waitlist", "waitlist_cap", "num_requested",
+    "num_on_waitlist", "waitlist_cap", "num_requested", "new_only_reserved",
 )
 _BOOL_FIELDS = ("time_is_tba", "is_cancelled")
 _JSON_FIELDS = ("meetings_json", "final_exam_json")
@@ -121,7 +122,7 @@ _COLUMNS = (
     "meetings_json", "final_exam_json", "restrictions", "comment_scope",
     "course_comment_json", "section_comment", "payload_version", "is_cancelled", "status",
     "max_capacity", "total_enrolled", "section_enrolled", "num_on_waitlist",
-    "waitlist_cap", "num_requested", "source_updated_at", "fetched_at",
+    "waitlist_cap", "num_requested", "new_only_reserved", "source_updated_at", "fetched_at",
 )
 
 
@@ -165,9 +166,23 @@ def _conn(path: Optional[Path] = None):
         conn.close()
 
 
+# Columns added after schema 2 shipped. They are appended in place, so a
+# database that already holds synced terms keeps its rows.
+_ADDED_COLUMNS = {"sections": (("new_only_reserved", "INTEGER"),)}
+
+
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    for table, columns in _ADDED_COLUMNS.items():
+        present = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for name, kind in columns:
+            if name not in present:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
+
+
 def _ensure_schema(conn: sqlite3.Connection) -> None:
     version = conn.execute("PRAGMA user_version").fetchone()[0]
     if version == SCHEMA_VERSION:
+        _add_missing_columns(conn)
         return
     has_tables = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sections'"
@@ -573,6 +588,19 @@ def snapshot_token(term_id: str, *, path: Optional[Path] = None) -> Optional[tup
     finally:
         conn.close()
     return tuple(row) if row else None
+
+
+def stored_departments(*, path: Optional[Path] = None) -> list[str]:
+    """Registrar department codes present in any stored term. Read-only."""
+    conn = _read_only(path)
+    if conn is None:
+        return []
+    try:
+        return [row[0] for row in conn.execute("SELECT DISTINCT department FROM sections ORDER BY 1")]
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
 
 
 def stored_term_ids(*, path: Optional[Path] = None) -> list[str]:

@@ -2,11 +2,12 @@
 
 Sections for a term come from the catalog store when a snapshot is stored
 there; otherwise the checked-in CSV rows are used unchanged. Course-level
-metadata (titles, prerequisites, GE labels) always comes from courses.csv:
-the WebSoc feed describes sections, not the catalogue.
+metadata (titles, prerequisites, GE labels) comes from the synced course
+catalogue when one is stored, otherwise from courses.csv. The two sources are
+independent: either, both or neither may be synced.
 
-A course that appears in a synced term but not yet in courses.csv keeps
-unknown metadata, except its title, which the WebSoc listing carries.
+A course that appears in a synced term but in neither catalogue keeps unknown
+metadata, except its title, which the WebSoc listing carries.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from app.catalog import store
+from app.catalog import course_source, store
 from app.catalog.loaders.uci_relational import UCIRelationalLoader
 from app.catalog.term import Term
 from app.catalog.types import CourseRecord, CourseRef, Provenance, SectionRecord
@@ -67,16 +68,27 @@ class CatalogStoreLoader(UCIRelationalLoader):
     def name(self) -> str:
         return "catalog_store"
 
-    def snapshot_token(self, term: Term) -> Optional[tuple]:
-        """Change marker for the stored snapshot; None means "use the CSV rows"."""
+    def _section_token(self, term: Term) -> Optional[tuple]:
+        """Change marker of the term's stored sections; None means "use the CSV rows"."""
         token = store.snapshot_token(term.term_id, path=self._db_path)
         if token is None:
             return None
         return (str(self._db_path or store.config.catalog_db_path()), *token)
 
+    def snapshot_token(self, term: Term) -> Optional[tuple]:
+        """Marker for everything a term view is built from: sections and course rows."""
+        sections = self._section_token(term)
+        courses = course_source.course_rows_token(self._db_path)
+        return (sections, courses) if sections or courses else None
+
+    def _get_course_rows(self) -> list[dict]:
+        if course_source.course_rows_token(self._db_path) is None:
+            return super()._get_course_rows()
+        return course_source.course_rows(csv_path=self.data_dir / "courses.csv", db_path=self._db_path)
+
     def _provenance(self, target_term: Term) -> Provenance:
         provenance = super()._provenance(target_term)
-        if self.snapshot_token(target_term) is None:
+        if self._section_token(target_term) is None:
             # CSV-backed terms keep the CSV loader's provenance label.
             return dataclasses.replace(provenance, loader="uci_relational")
         return dataclasses.replace(
@@ -91,7 +103,7 @@ class CatalogStoreLoader(UCIRelationalLoader):
         return sorted(terms, reverse=True)
 
     def _load_sections(self, target_term: Term, provenance: Provenance):
-        if self.snapshot_token(target_term) is None:
+        if self._section_token(target_term) is None:
             return super()._load_sections(target_term, provenance)
         term_id = target_term.term_id
         stored = provenance

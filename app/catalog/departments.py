@@ -103,6 +103,41 @@ def _catalog_department_lookup() -> dict[str, str]:
     return lookup
 
 
+_synced_departments: tuple[float, str, dict[str, str]] | None = None
+
+
+def _synced_department_lookup() -> dict[str, str]:
+    """Department codes seen in synced term snapshots.
+
+    A whole-term sync brings in departments (medical school, new programs)
+    that courses.csv predates. Without them a canonical ID such as
+    ``INT MED 605A`` cannot be parsed, or worse, falls back to its last
+    token and resolves to a different department. Re-read at the same
+    interval as the catalog views so a sync is picked up without a restart.
+    """
+    global _synced_departments
+    import os
+    import time
+
+    from app import config
+    from app.catalog import store
+
+    try:
+        ttl = max(0.0, float(os.environ.get("CATALOG_VERSION_CHECK_SECONDS", 30.0)))
+    except ValueError:
+        ttl = 30.0
+    path = str(config.catalog_db_path())
+    now = time.monotonic()
+    cached = _synced_departments
+    if cached and cached[1] == path and now - cached[0] < ttl:
+        return cached[2]
+    from app.catalog import course_store
+    names = [*store.stored_departments(), *course_store.stored_course_departments()]
+    lookup = {name.lower(): name for name in names}
+    _synced_departments = (now, path, lookup)
+    return lookup
+
+
 def resolve_department(text: str) -> str | None:
     """Map any known alias to canonical dept. Returns None if unknown.
 
@@ -111,12 +146,14 @@ def resolve_department(text: str) -> str | None:
     if not text:
         return None
     normalized = " ".join(text.split()).lower()
-    return _ALIAS_TO_CANONICAL.get(normalized) or _catalog_department_lookup().get(normalized)
+    return (_ALIAS_TO_CANONICAL.get(normalized) or _catalog_department_lookup().get(normalized)
+            or _synced_department_lookup().get(normalized))
 
 
 def known_departments() -> set[str]:
     """All canonical department names."""
-    return set(DEPARTMENT_ALIASES.keys()) | set(_catalog_department_lookup().values())
+    return (set(DEPARTMENT_ALIASES.keys()) | set(_catalog_department_lookup().values())
+            | set(_synced_department_lookup().values()))
 
 
 # ── Colloquial course-ID form ────────────────────────────

@@ -259,3 +259,67 @@ def test_cache_rechecks_only_after_the_interval_and_on_invalidate(catalog_fixtur
     second = cache.get(WINTER)
     assert second is not first and len(second.all_course_refs()) == 2
     assert get_catalog_cache() is not cache
+
+
+# ── departments and IDs that only exist in synced terms ──
+
+def _sync_unfamiliar_departments():
+    sync_term("2027_Winter", fetcher=fetcher(websoc({
+        ("INT MED", "605A", "INTERNAL MEDICINE"): [raw("60001")],
+        ("MIC BIO", "510", "MICROBIOLOGY"): [raw("60002")],
+        ("PATH", "A", "NO DIGIT NUMBER"): [raw("60003")],
+        ("COMPSCI", "161", "DES&ANALYS OF ALGOR"): [raw("34220")],
+    })))
+
+
+def test_synced_departments_are_parsed_exactly_not_by_last_token():
+    from app.catalog.departments import known_departments, resolve_department
+    from app.catalog.normalization import parse_course_mention
+
+    assert resolve_department("INT MED") is None
+    # Before the sync the last-token fallback silently picks another department.
+    assert parse_course_mention("MIC BIO 510") == CourseRef("BIO SCI", "510")
+
+    _sync_unfamiliar_departments()
+
+    assert resolve_department("int  med") == "INT MED"
+    assert parse_course_mention("INT MED 605A") == CourseRef("INT MED", "605A")
+    assert parse_course_mention("MIC BIO 510") == CourseRef("MIC BIO", "510")
+    assert {"INT MED", "MIC BIO", "COMPSCI"} <= known_departments()
+    view = get_catalog(WINTER)
+    assert view.ref_for_display("path  a") == CourseRef("PATH", "A")     # not parseable as free text
+    assert parse_course_mention("PATH A") is None
+    assert view.ref_for_display("NOPE 1") is None
+
+
+def test_recommendation_pool_survives_ids_the_text_parser_cannot_read(monkeypatch):
+    import asyncio
+
+    from app.agent import prefilter
+    from app.data.recommendations import rank_courses
+    from app.llm import filter_plan
+    from app.recommendations.filter_plan import empty_filter_plan, validate_filter_plan
+
+    _sync_unfamiliar_departments()
+    monkeypatch.setenv("DYNAMIC_PREFILTER_ENABLED", "true")
+    message = "推荐几门 Winter 2027的课"
+
+    async def parse(text, _context=None, profile=None):
+        return {**validate_filter_plan(empty_filter_plan(), text, profile),
+                "metrics": {"llm_calls": 1, "parse_elapsed_ms": 0.1, "failure_reason": None}}
+
+    monkeypatch.setattr(filter_plan, "parse_filter_plan", parse)
+    context = {"user_query": message, "query_term_source": "explicit", "user_id": "nobody",
+               "term": "Winter 2027", "allowed_query_terms": ["Winter 2027"]}
+    asyncio.run(prefilter.initialize(context, [{"role": "user", "content": message}]))
+
+    pool = prefilter.search_candidates(context, "Winter 2027")
+    assert pool["found"]
+    assert {c["course_id"] for c in pool["courses"]} == {"INT MED 605A", "MIC BIO 510", "PATH A", "COMPSCI 161"}
+    by_id = {c["course_id"]: c for c in pool["courses"]}
+    assert [s["section_code"] for s in by_id["MIC BIO 510"]["sections"]] == ["60002"]   # its own sections
+    assert [s["section_code"] for s in by_id["PATH A"]["sections"]] == ["60003"]
+
+    ranked = rank_courses("Winter 2027", top_k=None)
+    assert {c["course_id"] for c in ranked["courses"]} == {"INT MED 605A", "MIC BIO 510", "PATH A", "COMPSCI 161"}
+    assert {c["course_id"]: c["section_code"] for c in ranked["courses"]}["PATH A"] == "60003"

@@ -118,6 +118,7 @@ def sections_from_websoc(data: dict) -> list[dict]:
                         "num_on_waitlist": sec.get("numOnWaitlist"),
                         "waitlist_cap": sec.get("numWaitlistCap"),
                         "num_requested": sec.get("numRequested"),
+                        "new_only_reserved": sec.get("numNewOnlyReserved"),
                         "source_updated_at": sec.get("updatedAt"),
                     })
     return rows

@@ -7,13 +7,11 @@ PostgreSQL service without changing the API contract.
 
 from __future__ import annotations
 
-import csv
 import re
 import sqlite3
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Iterable
 
@@ -172,19 +170,26 @@ def _init_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-@lru_cache(maxsize=1)
+_catalog_titles_cache: tuple[list, dict[str, str]] | None = None
+
+
 def _catalog_titles() -> dict[str, str]:
-    path = _REPO_ROOT / "data" / "uci" / "courses.csv"
-    if not path.exists():
-        return {}
+    """Course titles from the shared catalogue source (synced store, else CSV)."""
+    global _catalog_titles_cache
+    from app.catalog import course_source
+
+    rows = course_source.course_rows()
+    cached = _catalog_titles_cache
+    if cached and cached[0] is rows:
+        return cached[1]
     out: dict[str, str] = {}
-    with path.open("r", encoding="utf-8", newline="") as stream:
-        for row in csv.DictReader(stream):
-            department = resolve_department(row.get("department") or "")
-            number = (row.get("course_number") or "").strip().upper()
-            title = (row.get("title") or "").strip()
-            if department and _COURSE_NUMBER_RE.fullmatch(number) and title:
-                out[f"{department} {number}"] = title
+    for row in rows:
+        department = resolve_department(row.get("department") or "")
+        number = (row.get("course_number") or "").strip().upper()
+        title = (row.get("title") or "").strip()
+        if department and _COURSE_NUMBER_RE.fullmatch(number) and title:
+            out[f"{department} {number}"] = title
+    _catalog_titles_cache = (rows, out)
     return out
 
 

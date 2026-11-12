@@ -76,6 +76,19 @@ class CatalogView:
     def all_course_refs(self) -> set[CourseRef]:
         return set(self._courses_by_ref.keys())
 
+    def ref_for_display(self, course_id: str) -> Optional[CourseRef]:
+        """Exact lookup of a catalog-produced ID such as 'INT MED 605A'.
+
+        IDs that this view handed out must map back to their own course
+        without going through the free-text parser, which only understands
+        department spellings and number shapes that students type.
+        """
+        index = self.__dict__.get("_refs_by_display")
+        if index is None:
+            index = {ref.display(): ref for ref in self._courses_by_ref}
+            self.__dict__["_refs_by_display"] = index
+        return index.get(" ".join(str(course_id or "").split()).upper())
+
     # ── Section queries ──────────────────────────────────
 
     def get_sections(self, ref: CourseRef) -> list[SectionRecord]:

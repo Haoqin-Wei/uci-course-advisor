@@ -130,6 +130,22 @@ class TermResolutionService:
                 return self._resolved(key, state)
         return None
 
+    def calendar_dates(self, key: TermKey) -> dict:
+        """Calendar facts for one term; each value is None when the calendar lacks it.
+
+        ``soc_available`` is the day UCI publishes that term's Schedule of Classes.
+        """
+        state = self.synchronizer.state_for_use()
+        records, duplicates = self._calendar_records(state)
+        record = None if key in duplicates else records.get(key)
+        published = None
+        if record and record.get("socAvailable"):
+            try:
+                published = date.fromisoformat(str(record["socAvailable"])[:10])
+            except ValueError:
+                published = None
+        return {"instruction_start": _instruction_start(record), "soc_available": published}
+
     def relative_base(self) -> TermKey:
         """During breaks, 'next quarter' is the next regular quarter."""
         current = self.current_term()

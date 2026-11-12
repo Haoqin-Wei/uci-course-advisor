@@ -57,6 +57,7 @@ _ext_req_cache:     dict[str, Optional[dict]] = {}
 _courses_cache:     dict[str, list[dict]] = {}   # dept code → list of slim courses
 _all_courses_cache: Optional[list[dict]] = None  # whole UCI catalog (slim rows)
 _all_courses_source: Optional[str] = None
+_all_courses_token: Optional[tuple] = None       # synced-catalogue marker the cache was built from
 
 LOCAL_COURSES_PATH = Path("data/uci/courses.csv")
 ALL_COURSES_DISK_CACHE_PATH = Path("data/runtime/onboarding_courses.json")
@@ -307,9 +308,19 @@ def list_all_courses() -> list[dict]:
     restarts.  Only when neither local source exists do we paginate Anteater's
     ``coursesCursor`` endpoint, then persist the successful result.
     """
-    global _all_courses_cache, _all_courses_source
-    if _all_courses_cache is not None:
+    global _all_courses_cache, _all_courses_source, _all_courses_token
+    from app.catalog import course_source
+
+    version = course_source.version()
+    if _all_courses_cache is not None and version == _all_courses_token:
         return list(_all_courses_cache)
+    _all_courses_token = version
+
+    if version[1] is not None:
+        synced = _slim_catalogue_rows(course_source.course_rows())
+        if synced:
+            _all_courses_cache, _all_courses_source = synced, "catalog_store"
+            return list(_all_courses_cache)
 
     local = _load_local_courses()
     if local:
@@ -397,6 +408,11 @@ def _load_local_courses() -> list[dict]:
         )
         return []
 
+    return _slim_catalogue_rows(rows)
+
+
+def _slim_catalogue_rows(rows: list[dict]) -> list[dict]:
+    """CSV-shaped catalogue rows → the profile picker's slim payload."""
     slim: list[dict] = []
     for row in rows:
         department = str(row.get("department") or "").strip()

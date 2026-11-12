@@ -183,6 +183,7 @@ def isolated_test_environment(
     # no matter which terms the developer has synced locally.
     monkeypatch.setenv("CATALOG_DB_PATH", str(runtime_paths.root / "catalog.db"))
     monkeypatch.setenv("CATALOG_VERSION_CHECK_SECONDS", "0")
+    monkeypatch.setenv("CATALOG_AUTO_SYNC_ENABLED", "false")
     # Legacy characterization tests still exercise the old demo/guest routes.
     # Product defaults are auth-only; tests opt into compatibility explicitly.
     monkeypatch.setenv("ALLOW_SHARED_DEMO", "true")
@@ -289,6 +290,9 @@ def isolated_test_environment(
     anteater_programs._courses_cache.clear()
     anteater_programs._all_courses_cache = None
     anteater_programs._all_courses_source = None
+    anteater_programs._all_courses_token = None
+    from app.catalog import course_source
+    course_source.clear_cache(keep_csv=True)
     web_search.clear_web_search_state()
     deep_search.clear_deep_search_state()
 

@@ -81,7 +81,7 @@ class CatalogCache:
         self._tokens[term] = token
         self._views.pop(term, None)
         if any(token):
-            get_term_registry().register(term)  # Terms synced after startup.
+            get_term_registry().register(term)  # Terms or catalogue synced after startup.
 
         all_courses = []
         all_sections = []
