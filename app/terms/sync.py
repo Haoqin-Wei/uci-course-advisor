@@ -1,10 +1,17 @@
-"""Freshness-gated Anteater synchronization for automatic term state."""
+"""Once-per-term Anteater synchronization of the calendar and the term list.
+
+The UCI calendar is published about a year ahead, so it is fetched when a new
+regular term begins (and after a long gap, as a safety net) rather than on a
+fixed monthly timer. Whether a term's timetable has been published is no
+longer probed here: the catalog sync stores whole terms and that record is
+read locally (see ``app.terms.availability``).
+"""
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Callable, Optional
 
 from app import config, observability
@@ -17,8 +24,11 @@ from app.terms.store import JsonFileTermStateStore, TermStateSnapshot, TermState
 
 logger = logging.getLogger(__name__)
 
-SYNC_INTERVAL = timedelta(days=30)
-MAX_CACHE_AGE = timedelta(days=45)
+# A refresh is due when a regular term has started since the last success.
+# SAFETY_INTERVAL covers a calendar that stops listing terms; MAX_CACHE_AGE is
+# how long the last good calendar stays usable when refreshes keep failing.
+SAFETY_INTERVAL = timedelta(days=120)
+MAX_CACHE_AGE = timedelta(days=180)
 FALLBACK_AUTOMATIC_TERM = TermKey(2026, "Fall")
 
 
@@ -48,6 +58,37 @@ def cache_age(state: TermStateSnapshot, now: datetime) -> Optional[timedelta]:
     if last_success is None:
         return None
     return now - last_success.astimezone(now.tzinfo)
+
+
+def _latest_term_start(state: TermStateSnapshot, today: date) -> Optional[date]:
+    """Instruction start of the most recent regular term that has begun."""
+    starts: list[date] = []
+    for record in state.calendar_records:
+        if not isinstance(record, dict):
+            continue
+        key = _calendar_term(record)
+        raw = record.get("instructionStart") or record.get("instruction_start")
+        if key is None or not key.is_regular or not raw:
+            continue
+        try:
+            start = date.fromisoformat(str(raw)[:10])
+        except ValueError:
+            continue
+        if start <= today:
+            starts.append(start)
+    return max(starts) if starts else None
+
+
+def sync_due(state: TermStateSnapshot, now: datetime) -> bool:
+    """True when the calendar has never synced, a term began since, or it is very old."""
+    last_success = _parse_instant(state.last_success_at)
+    if last_success is None:
+        return True
+    last_success = last_success.astimezone(now.tzinfo)
+    if now - last_success > SAFETY_INTERVAL:
+        return True
+    started = _latest_term_start(state, now.date())
+    return started is not None and last_success.date() < started
 
 
 def fallback_state(
@@ -100,14 +141,12 @@ class TermStateSynchronizer:
         clock: Optional[Clock] = None,
         calendar_fetcher: Callable = anteater.fetch_calendar_all,
         terms_fetcher: Callable = anteater.fetch_websoc_terms,
-        availability_checker: Callable = anteater.check_term_data_availability,
         fallback_term: TermKey = FALLBACK_AUTOMATIC_TERM,
     ):
         self.store = store
         self.clock = clock or SystemClock()
         self.calendar_fetcher = calendar_fetcher
         self.terms_fetcher = terms_fetcher
-        self.availability_checker = availability_checker
         self.fallback_term = fallback_term
 
     def state_for_use(self) -> TermStateSnapshot:
@@ -136,8 +175,7 @@ class TermStateSynchronizer:
         if state is None:
             state = fallback_state(now=now, fallback_term=self.fallback_term)
 
-        age = cache_age(state, now)
-        if not force and age is not None and age <= SYNC_INTERVAL:
+        if not force and not sync_due(state, now):
             return SyncResult("skipped_fresh", state)
 
         with self.store.sync_lock() as acquired:
@@ -147,8 +185,7 @@ class TermStateSynchronizer:
 
             # Re-read after lock acquisition in case another caller just synced.
             current = self.store.load() or state
-            current_age = cache_age(current, now)
-            if not force and current_age is not None and current_age <= SYNC_INTERVAL:
+            if not force and not sync_due(current, now):
                 return SyncResult("skipped_fresh", current)
 
             current = replace(current, last_attempt_at=_iso(now))
@@ -164,61 +201,18 @@ class TermStateSynchronizer:
                 return self._sync_failed(current, now, f"websoc_terms:{terms_result.status}")
 
             calendar_records = calendar_result.data or []
-            calendar_keys = {
-                key for record in calendar_records if (key := _calendar_term(record))
-            }
             websoc_keys: set[TermKey] = set()
             for record in terms_result.data or []:
                 parsed = parse_term_key(str(record.get("shortName") or ""))
                 if parsed.kind == "single":
                     websoc_keys.add(parsed.terms[0])
 
-            candidates = sorted(
-                (
-                    key
-                    for key in calendar_keys & websoc_keys
-                    if key.is_regular and _term_sort_key(key) >= _term_sort_key(self.fallback_term)
-                ),
-                key=_term_sort_key,
-            )[:12]
-
-            availability: dict[str, dict] = {}
-            for candidate in candidates:
-                checked = self.availability_checker(candidate)
-                observability.log_event(
-                    logger,
-                    logging.INFO,
-                    "term_availability_checked",
-                    term=candidate.canonical_name,
-                    status=checked.status,
-                    course_count=checked.course_count,
-                    section_count=checked.section_count,
-                    content_length=checked.content_length,
-                    source_url=checked.source_url,
-                )
-                if checked.status != "ok":
-                    # Course publication is independent of calendar validity.
-                    # Preserve a probe failure as unknown data, not a failed
-                    # calendar refresh that can pin the planning default.
-                    availability[candidate.canonical_name] = {
-                        "available": None, "status": checked.status,
-                        "checked_at": checked.checked_at, "source_url": checked.source_url,
-                    }
-                    continue
-                availability[candidate.canonical_name] = {
-                    "available": checked.available,
-                    "course_count": checked.course_count,
-                    "section_count": checked.section_count,
-                    "checked_at": checked.checked_at,
-                    "source_url": checked.source_url,
-                    "content_length": checked.content_length,
-                }
-
             synced = replace(
                 current,
                 calendar_records=calendar_records,
                 websoc_terms=[key.canonical_name for key in sorted(websoc_keys, key=_term_sort_key)],
-                availability=availability,
+                # Timetable publication is read from the catalog store now.
+                availability={},
                 automatic_term=current.automatic_term or self.fallback_term.canonical_name,
                 source="anteater",
                 status="fresh",
@@ -239,7 +233,6 @@ class TermStateSynchronizer:
                 "term_sync_completed",
                 calendar_records=len(calendar_records),
                 websoc_terms=len(websoc_keys),
-                availability_probes=len(availability),
             )
             return SyncResult("synced", synced)
 

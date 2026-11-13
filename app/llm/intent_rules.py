@@ -182,7 +182,83 @@ def _has_course_before(text: str, offset: int) -> bool:
     return bool(iter_course_mentions(text[start:offset]))
 
 
+_QUOTED_REQUEST_TEXT = re.compile(
+    r'"[^"\n]*"|“[^”\n]*”|「[^」\n]*」|『[^』\n]*』|`[^`\n]*`|'
+    r"(?<!\w)'[^'\n]*'(?!\w)|‘[^’\n]*’"
+)
+_EXPLICIT_RECOMMENDATION = re.compile(
+    r"推荐|建议|帮我[选排]|怎么选|选什么|排课|"
+    r"哪(?:一|个|门|些|两门)*[^，。；！？\n]{0,16}(?:更适合|更好|更简单|更容易|应该选|该选|值得选)|"
+    r"(?:应该|该|要)?选哪(?:个|门)|"
+    r"(?:应该|应当|该)(?:选择|[选修上])[^，。；！？\n]{0,80}还是|"
+    r"\b(?:recommend(?:ations?|ing)?|suggest(?:ions?|ing)?)\b|"
+    r"\bwhat\s+(?:(?:courses?|classes?)\s+)?should\s+I\s+(?:take|choose|enroll)|"
+    r"\bshould\s+I\s+(?:take|choose|enroll(?:\s+in)?)\b[^,.!?;\n]{0,80}\bor\b|"
+    r"\bwhich\b[^,.!?;\n]{0,50}\b(?:should\s+I\s+(?:take|choose)|better\s+for\s+me)\b",
+    re.IGNORECASE,
+)
+_NEGATED_RECOMMENDATION_PREFIX = re.compile(
+    r"(?:不要|不用|无需|不必|不需要|别|不是要|不是让|并非|不想|不求|不做|不要求|"
+    r"\b(?:don't|don’t|do\s+not|not\s+asking|not\s+looking|no|without)\b)"
+    r"[^，。；！？,.!?;\n]{0,24}$",
+    re.IGNORECASE,
+)
+_IDENTITY_TOPIC = re.compile(
+    r"更名|改名|原名|旧(?:课|课程|编号|代码)|新(?:编号|代码)|曾(?:用名|叫)|"
+    r"同一门|同一(?:个)?课程|是否相同|是不是一样|等同|什么关系|之间的关系|"
+    r"\b(?:rename[ds]?|formerly\s+offered|previously\s+offered|"
+    r"old\s+(?:course\s+)?(?:code|number)|new\s+(?:course\s+)?(?:code|number)|"
+    r"same\s+course|equivalent|relationship)\b",
+    re.IGNORECASE,
+)
+_PRIOR_CREDIT = re.compile(
+    r"修过|上过|学过|已(?:经)?(?:完成|修完|修读)|(?:获得|取得|拿到|已有).{0,12}学分|"
+    r"\b(?:took|taken|completed|passed|prior\s+credit|(?:have|earned|received).{0,16}credit)\b",
+    re.IGNORECASE,
+)
+_REPEAT_ENROLLMENT = re.compile(
+    r"重复(?:修|选|学分)|重修|再.{0,12}[修选上读]|还(?:能|可以|可).{0,12}[修选上读]|"
+    r"能不能.{0,12}[修选上读]|是否.{0,12}(?:可修|能修)|"
+    r"\b(?:retake|repeat|(?:can|may|could)\s+I\s+(?:still\s+)?(?:take|enroll)|"
+    r"take\b.{0,35}\bagain|credit\b.{0,35}\bagain)\b",
+    re.IGNORECASE,
+)
+
+
+def has_explicit_recommendation_request(text: str) -> bool:
+    """Recognize requests, rather than quoted or locally negated request words.
+
+    Shared with the prefilter so a factual answer cannot acquire recommendation
+    output merely because the user said "do not recommend".
+    """
+    unquoted = _QUOTED_REQUEST_TEXT.sub(" ", text or "")
+    for match in _EXPLICIT_RECOMMENDATION.finditer(unquoted):
+        if not _NEGATED_RECOMMENDATION_PREFIX.search(unquoted[max(0, match.start() - 50):match.start()]):
+            return True
+    return False
+
+
+def _has_course_identity_topic(text: str) -> bool:
+    # No identity intent is inferred from bare "same course" / "prior credit"
+    # prose without an identifiable course. These ambiguous turns still use the
+    # existing semantic classifier and conversation context.
+    return bool(_extract_course_ids(text)) and bool(
+        _IDENTITY_TOPIC.search(text)
+        or (_PRIOR_CREDIT.search(text) and _REPEAT_ENROLLMENT.search(text))
+    )
+
+
+def is_factual_course_identity_query(text: str) -> bool:
+    """Identity and prior-credit facts, excluding an actual request to choose."""
+    return _has_course_identity_topic(text or "") and not has_explicit_recommendation_request(text)
+
+
 def _classify_course_pattern(text: str) -> Optional[tuple[str, str]]:
+    if _has_course_identity_topic(text):
+        if has_explicit_recommendation_request(text):
+            return "course_recommendation", "course-identity-with-recommendation"
+        return "single_query", "course-identity-fact"
+
     for pattern, intent, rule_id in _COURSE_PREFIX_RULES:
         for match in pattern.finditer(text):
             if _has_course_after(text, match.end()):

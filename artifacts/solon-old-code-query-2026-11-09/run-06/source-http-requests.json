@@ -1,0 +1,136 @@
+[
+  {
+    "method": "GET",
+    "url": "https://anteaterapi.com/v2/rest/websoc",
+    "params": {
+      "year": "2026",
+      "quarter": "Fall",
+      "department": "IN4MATX",
+      "courseNumber": "43"
+    },
+    "form": null,
+    "started_at_utc": "2026-11-10T00:03:22.753910+00:00",
+    "status": 200,
+    "bytes": 33,
+    "response_file": "source-http-01.json",
+    "response_sha256": "113e4c374bbc91f2dfc2e93fcffc668995b4d78283120e603bce3733117c56e6"
+  },
+  {
+    "method": "GET",
+    "url": "https://anteaterapi.com/v2/rest/websoc",
+    "params": {
+      "year": "2026",
+      "quarter": "Fall"
+    },
+    "form": null,
+    "started_at_utc": "2026-11-10T00:03:24.078758+00:00",
+    "status": 200,
+    "bytes": 8182751,
+    "response_file": "source-http-02.json",
+    "response_sha256": "83fdd6933b342e6cd055616244ec22b43a7595ac616ba89f6b33aae0f084e5ef"
+  },
+  {
+    "method": "GET",
+    "url": "https://www.reg.uci.edu/perl/WebSoc",
+    "params": null,
+    "form": null,
+    "started_at_utc": "2026-11-10T00:03:27.048564+00:00",
+    "status": 200,
+    "bytes": 40889,
+    "response_file": "source-http-03.html",
+    "response_sha256": "ab8aab69cdb3c4e5716d8246ab8473fbd1596b0d77335977f05e7601649fa8bd"
+  },
+  {
+    "method": "POST",
+    "url": "https://www.reg.uci.edu/perl/WebSoc",
+    "params": null,
+    "form": {
+      "Submit": "Display Web Results",
+      "YearTerm": "2026-92",
+      "ShowComments": "on",
+      "ShowFinals": "on",
+      "Breadth": "ANY",
+      "Dept": "IN4MATX",
+      "CourseNum": "43",
+      "CourseCodes": "",
+      "InstrName": "",
+      "CourseTitle": "",
+      "ClassType": "ALL",
+      "Units": "",
+      "Days": "",
+      "StartTime": "",
+      "EndTime": "",
+      "MaxCap": "",
+      "FullCourses": "ANY",
+      "FontSize": "100",
+      "CancelledCourses": "Include",
+      "Bldg": "",
+      "Room": ""
+    },
+    "started_at_utc": "2026-11-10T00:03:27.428557+00:00",
+    "status": 200,
+    "bytes": 7620,
+    "response_file": "source-http-04.html",
+    "response_sha256": "94ff764289a6c64c5ba74b54b134d95cffa9932debfb02acdd28cf7593d20345"
+  },
+  {
+    "method": "GET",
+    "url": "https://anteaterapi.com/v2/rest/websoc",
+    "params": {
+      "year": "2026",
+      "quarter": "Fall",
+      "department": "SWE",
+      "courseNumber": "43"
+    },
+    "form": null,
+    "started_at_utc": "2026-11-10T00:03:30.918311+00:00",
+    "status": 200,
+    "bytes": 14823,
+    "response_file": "source-http-05.json",
+    "response_sha256": "9496b92c080214038248e12ff71c7dd5b86d82be9a182908531c3dfccd015802"
+  },
+  {
+    "method": "GET",
+    "url": "https://www.reg.uci.edu/perl/WebSoc",
+    "params": null,
+    "form": null,
+    "started_at_utc": "2026-11-10T00:03:31.532049+00:00",
+    "status": 200,
+    "bytes": 40889,
+    "response_file": "source-http-06.html",
+    "response_sha256": "ab8aab69cdb3c4e5716d8246ab8473fbd1596b0d77335977f05e7601649fa8bd"
+  },
+  {
+    "method": "POST",
+    "url": "https://www.reg.uci.edu/perl/WebSoc",
+    "params": null,
+    "form": {
+      "Submit": "Display Web Results",
+      "YearTerm": "2026-92",
+      "ShowComments": "on",
+      "ShowFinals": "on",
+      "Breadth": "ANY",
+      "Dept": "SWE",
+      "CourseNum": "43",
+      "CourseCodes": "",
+      "InstrName": "",
+      "CourseTitle": "",
+      "ClassType": "ALL",
+      "Units": "",
+      "Days": "",
+      "StartTime": "",
+      "EndTime": "",
+      "MaxCap": "",
+      "FullCourses": "ANY",
+      "FontSize": "100",
+      "CancelledCourses": "Include",
+      "Bldg": "",
+      "Room": ""
+    },
+    "started_at_utc": "2026-11-10T00:03:31.810999+00:00",
+    "status": 200,
+    "bytes": 29261,
+    "response_file": "source-http-07.html",
+    "response_sha256": "58a957cb11ca2411ff21225f09b0e2ba7ce416bf6202c77b8764de2ed01f6deb"
+  }
+]

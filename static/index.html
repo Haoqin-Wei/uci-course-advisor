@@ -421,7 +421,7 @@
 <div class="modal-backdrop" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle" onclick="closeSettings(event)">
   <div class="modal-panel" onclick="event.stopPropagation()">
     <div class="modal-header">
-      <div class="modal-title" id="settingsModalTitle">System Prompt</div>
+      <div class="modal-title" id="settingsModalTitle">Response preferences</div>
       <button class="modal-close" onclick="closeSettings()" aria-label="Close settings">&#x2715;</button>
     </div>
     <div class="modal-body">
@@ -430,12 +430,18 @@
         Leave the textarea empty (and click <em>Save</em>) to use the backend defaults.
       </p>
       <textarea class="modal-textarea" id="promptTextarea"
-                placeholder="Loading default prompt…"
+                aria-label="Style or task preferences"
+                placeholder="Optional style or task preferences; server rules always apply."
                 spellcheck="false"></textarea>
       <div class="modal-meta" id="promptMeta">&nbsp;</div>
+      <details id="defaultPromptDetails" ontoggle="if (this.open) loadDefaultPrompt()">
+        <summary>View server rules (read only)</summary>
+        <textarea class="modal-textarea" id="defaultPromptPreview"
+                  aria-label="Server rules, read only" readonly spellcheck="false"
+                  placeholder="Loading server rules…"></textarea>
+      </details>
     </div>
     <div class="modal-footer">
-      <button class="modal-btn modal-btn-ghost" onclick="loadDefaultPrompt()">Load default</button>
       <button class="modal-btn modal-btn-ghost" onclick="clearPrompt()">Clear</button>
       <div class="modal-footer-spacer"></div>
       <button class="modal-btn modal-btn-ghost" onclick="closeSettings()">Cancel</button>

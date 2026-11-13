@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from app.data.anteater import AnteaterResult, TermAvailabilityResult
+from app.data.anteater import AnteaterResult
 from app.terms import FixedClock, LOS_ANGELES, TermKey
 from app.terms.store import (
     InMemoryTermStateStore,
@@ -35,19 +35,6 @@ def terms_data():
     ]
 
 
-def available(term: TermKey):
-    return TermAvailabilityResult(
-        term=term,
-        available=True,
-        course_count=1,
-        section_count=2,
-        status="ok",
-        source_url="https://anteater.test/websoc",
-        checked_at=iso(NOW),
-        content_length=123,
-    )
-
-
 def test_json_store_round_trip_and_corrupt_cache(tmp_path) -> None:
     path = tmp_path / "runtime" / "term_state.json"
     store = JsonFileTermStateStore(path)
@@ -62,12 +49,28 @@ def test_json_store_round_trip_and_corrupt_cache(tmp_path) -> None:
     assert store.load() is None
 
 
-def test_fresh_cache_skips_all_network_fetchers() -> None:
-    state = TermStateSnapshot(last_success_at=iso(NOW - timedelta(days=30)))
-    store = InMemoryTermStateStore(state)
+def fetchers(calls):
+    def calendar():
+        calls.append("calendar")
+        return api_result(calendar_data(), "https://anteater.test/calendar/all")
+
+    def terms():
+        calls.append("terms")
+        return api_result(terms_data(), "https://anteater.test/websoc/terms")
+    return {"calendar_fetcher": calendar, "terms_fetcher": terms}
+
+
+def state_synced(days_ago: float, **extra) -> TermStateSnapshot:
+    return TermStateSnapshot(calendar_records=calendar_data(),
+                             last_success_at=iso(NOW - timedelta(days=days_ago)), **extra)
+
+
+def test_same_term_cache_skips_all_network_fetchers() -> None:
+    # NOW is 22 Jul 2026: no regular term in the calendar has started yet.
+    store = InMemoryTermStateStore(state_synced(100))
 
     def should_not_call():
-        raise AssertionError("fresh startup cache must not fetch")
+        raise AssertionError("no term has started since the last sync")
 
     result = TermStateSynchronizer(
         store,
@@ -78,37 +81,48 @@ def test_fresh_cache_skips_all_network_fetchers() -> None:
     assert result.action == "skipped_fresh"
 
 
-def test_cache_over_30_days_syncs_and_saves_availability() -> None:
-    state = TermStateSnapshot(last_success_at=iso(NOW - timedelta(days=30, seconds=1)))
+def test_calendar_is_fetched_once_per_term_when_a_term_begins() -> None:
+    fall_start = datetime(2026, 9, 24, 8, 0, tzinfo=LOS_ANGELES)
+    last = fall_start - timedelta(days=40)
+    state = TermStateSnapshot(calendar_records=calendar_data(), last_success_at=iso(last),
+                              availability={"2026 Fall": {"available": True}})
     store = InMemoryTermStateStore(state)
-    calls = []
+    calls: list[str] = []
 
-    def checker(term):
-        calls.append(term.canonical_name)
-        return available(term)
+    def sync_at(instant):
+        return TermStateSynchronizer(store, clock=FixedClock(instant), **fetchers(calls)).sync_if_due()
 
-    result = TermStateSynchronizer(
-        store,
-        clock=FixedClock(NOW),
-        calendar_fetcher=lambda: api_result(calendar_data(), "https://anteater.test/calendar/all"),
-        terms_fetcher=lambda: api_result(terms_data(), "https://anteater.test/websoc/terms"),
-        availability_checker=checker,
-    ).sync_if_due()
-    assert result.action == "synced"
-    assert calls == ["2026 Fall", "2027 Winter"]
-    assert result.state.last_success_at == iso(NOW)
-    assert result.state.availability["2027 Winter"]["available"] is True
-    assert result.state.source == "anteater"
+    assert sync_at(fall_start - timedelta(days=1)).action == "skipped_fresh"    # 39 days old: not monthly
+    assert calls == []
+    first = sync_at(fall_start)                                                  # Fall began
+    assert first.action == "synced" and calls == ["calendar", "terms"]
+    assert first.state.last_success_at == iso(fall_start) and first.state.source == "anteater"
+    assert first.state.websoc_terms == ["2026 Fall", "2027 Winter"]
+    assert first.state.availability == {}                  # publication is no longer probed here
+    assert sync_at(fall_start + timedelta(days=60)).action == "skipped_fresh"   # same term
+    assert sync_at(datetime(2027, 1, 4, 0, 30, tzinfo=LOS_ANGELES)).action == "synced"   # Winter began
+    assert calls == ["calendar", "terms"] * 2
 
 
-def test_failed_sync_keeps_last_known_good_within_45_days() -> None:
+def test_never_synced_or_very_old_cache_is_due() -> None:
+    calls: list[str] = []
+    fresh = InMemoryTermStateStore(TermStateSnapshot())
+    assert TermStateSynchronizer(fresh, clock=FixedClock(NOW), **fetchers(calls)).sync_if_due().action == "synced"
+    recent = InMemoryTermStateStore(TermStateSnapshot(last_success_at=iso(NOW - timedelta(days=120))))
+    assert TermStateSynchronizer(recent, clock=FixedClock(NOW), **fetchers(calls)).sync_if_due().action == "skipped_fresh"
+    old = InMemoryTermStateStore(TermStateSnapshot(last_success_at=iso(NOW - timedelta(days=120, seconds=1))))
+    assert TermStateSynchronizer(old, clock=FixedClock(NOW), **fetchers(calls)).sync_if_due().action == "synced"
+    assert calls == ["calendar", "terms"] * 2
+
+
+def test_failed_sync_keeps_last_known_good_within_180_days() -> None:
     old_records = calendar_data()
     state = TermStateSnapshot(
         calendar_records=old_records,
         automatic_term="2026 Fall",
         source="anteater",
         status="fresh",
-        last_success_at=iso(NOW - timedelta(days=44)),
+        last_success_at=iso(NOW - timedelta(days=179)),
     )
     store = InMemoryTermStateStore(state)
     failed = AnteaterResult("timeout", "https://anteater.test/calendar", iso(NOW), error="slow")
@@ -123,12 +137,12 @@ def test_failed_sync_keeps_last_known_good_within_45_days() -> None:
     assert result.state.status == "stale"
 
 
-def test_failed_sync_after_45_days_activates_explicit_code_fallback() -> None:
+def test_failed_sync_after_180_days_activates_explicit_code_fallback() -> None:
     state = TermStateSnapshot(
         automatic_term="2025 Spring",
         source="anteater",
         status="fresh",
-        last_success_at=iso(NOW - timedelta(days=45, seconds=1)),
+        last_success_at=iso(NOW - timedelta(days=180, seconds=1)),
     )
     store = InMemoryTermStateStore(state)
     failed = AnteaterResult("non_200", "https://anteater.test/calendar", iso(NOW), error="HTTP 503")
@@ -157,20 +171,3 @@ def test_nonblocking_process_lock_prevents_duplicate_sync() -> None:
         assert acquired is True
         result = synchronizer.sync_if_due(force=True)
     assert result.action == "skipped_locked"
-
-
-def test_failed_course_probe_does_not_discard_successful_calendar_refresh():
-    store = InMemoryTermStateStore()
-
-    def unavailable(term):
-        return TermAvailabilityResult(term=term, available=False, course_count=0,
-            section_count=0, status="timeout", source_url="https://anteater.test/websoc",
-            checked_at=iso(NOW))
-
-    result = TermStateSynchronizer(store, clock=FixedClock(NOW),
-        calendar_fetcher=lambda: api_result(calendar_data()),
-        terms_fetcher=lambda: api_result(terms_data()),
-        availability_checker=unavailable).sync_if_due()
-    assert result.action == "synced"
-    assert result.state.calendar_records == calendar_data()
-    assert result.state.availability["2027 Winter"]["available"] is None

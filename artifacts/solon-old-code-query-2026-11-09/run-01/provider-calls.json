@@ -1,0 +1,26 @@
+[
+  {
+    "index": 1,
+    "started_at_utc": "2026-11-09T23:59:24.179420+00:00",
+    "model": "deepseek-v4-flash",
+    "stream": true,
+    "tool_message_count": 0,
+    "elapsed_seconds": 1.8073622090159915
+  },
+  {
+    "index": 2,
+    "started_at_utc": "2026-11-09T23:59:31.207668+00:00",
+    "model": "deepseek-v4-flash",
+    "stream": true,
+    "tool_message_count": 2,
+    "elapsed_seconds": 4.703016166982707
+  },
+  {
+    "index": 3,
+    "started_at_utc": "2026-11-10T00:00:06.540081+00:00",
+    "model": "deepseek-v4-flash",
+    "stream": true,
+    "tool_message_count": 4,
+    "elapsed_seconds": 8.035642000031658
+  }
+]

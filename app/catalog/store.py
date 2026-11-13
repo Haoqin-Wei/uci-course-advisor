@@ -590,6 +590,48 @@ def snapshot_token(term_id: str, *, path: Optional[Path] = None) -> Optional[tup
     return tuple(row) if row else None
 
 
+def read_term_snapshots(*, path: Optional[Path] = None) -> list[dict]:
+    """Every term snapshot row, without creating the database. [] when none."""
+    conn = _read_only(path)
+    if conn is None:
+        return []
+    try:
+        conn.row_factory = sqlite3.Row
+        return [_snapshot_dict(row) for row in conn.execute("SELECT * FROM term_snapshots")]
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+
+
+def get_department_scope(term_id: str, department: str, *, path: Optional[Path] = None) -> Optional[dict]:
+    """School/department notices stored for one department in one term. Read-only.
+
+    Returns the parent comment scope ({"school": {...}, "department": {...}})
+    shared by that department's sections, or None when nothing is stored.
+    """
+    term = _term(term_id)
+    conn = _read_only(path)
+    if conn is None:
+        return None
+    try:
+        row = conn.execute(
+            """
+            SELECT scopes.scope_json
+            FROM sections JOIN comment_scopes AS scopes
+              ON scopes.term_id = sections.term_id AND scopes.scope_hash = sections.comment_scope
+            WHERE sections.term_id = ? AND sections.department = ?
+            ORDER BY scopes.scope_hash LIMIT 1
+            """,
+            (term.term_id, " ".join(str(department or "").split()).upper()),
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    return json.loads(row[0]) if row else None
+
+
 def stored_departments(*, path: Optional[Path] = None) -> list[str]:
     """Registrar department codes present in any stored term. Read-only."""
     conn = _read_only(path)

@@ -1,0 +1,66 @@
+[
+  {
+    "index": 1,
+    "started_at_utc": "2026-11-06T01:23:54.052120+00:00",
+    "model": "deepseek-v4-flash",
+    "stream": null,
+    "tool_message_count": 0,
+    "elapsed_seconds": 2.581825624976773
+  },
+  {
+    "index": 2,
+    "started_at_utc": "2026-11-06T01:23:57.478700+00:00",
+    "model": "deepseek-v4-flash",
+    "stream": true,
+    "tool_message_count": 0,
+    "elapsed_seconds": 1.72841654100921
+  },
+  {
+    "index": 3,
+    "started_at_utc": "2026-11-06T01:24:30.578416+00:00",
+    "model": "deepseek-v4-flash",
+    "stream": true,
+    "tool_message_count": 3,
+    "elapsed_seconds": 3.411529042001348
+  },
+  {
+    "index": 4,
+    "started_at_utc": "2026-11-06T01:24:36.552228+00:00",
+    "model": "deepseek-v4-flash",
+    "stream": true,
+    "tool_message_count": 6,
+    "elapsed_seconds": 7.189662415999919
+  },
+  {
+    "index": 5,
+    "started_at_utc": "2026-11-06T01:24:43.782291+00:00",
+    "model": "deepseek-v4-flash",
+    "stream": true,
+    "tool_message_count": 7,
+    "elapsed_seconds": 5.224647541006561
+  },
+  {
+    "index": 6,
+    "started_at_utc": "2026-11-06T01:24:49.035814+00:00",
+    "model": "deepseek-v4-flash",
+    "stream": true,
+    "tool_message_count": 8,
+    "elapsed_seconds": 3.019147499988321
+  },
+  {
+    "index": 7,
+    "started_at_utc": "2026-11-06T01:24:52.419484+00:00",
+    "model": "deepseek-v4-flash",
+    "stream": true,
+    "tool_message_count": 9,
+    "elapsed_seconds": 1.9492058330215514
+  },
+  {
+    "index": 8,
+    "started_at_utc": "2026-11-06T01:24:55.448858+00:00",
+    "model": "deepseek-v4-flash",
+    "stream": true,
+    "tool_message_count": 11,
+    "elapsed_seconds": 2.151577292010188
+  }
+]

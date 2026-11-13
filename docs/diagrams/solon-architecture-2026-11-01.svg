@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2160" height="1480" viewBox="0 0 2160 1480" role="img" aria-labelledby="title desc">
+<title id="title">Solon 系统模块与组织架构</title>
+<desc id="desc">四个上层逻辑模块为浏览器前端、FastAPI API 与上下文编排、Agent 与工具执行、课程领域与推荐服务。后三者属于同一 FastAPI 后端。下层为本地持久化、外部模型与事实数据、安全与可观测性。浏览器通过 HTTP 与 SSE 同 API 交互；Agent 调用外部 DeepSeek；数据适配器查询外部课程来源。会话和规划课表以 JSON 或 JSONL 持久化，账号、学业与长期证据记忆使用独立 SQLite 存储。</desc>
+<defs>
+  <marker id="main" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9 z" fill="#52637a"/></marker>
+  <marker id="model" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9 z" fill="#466ea4"/></marker>
+  <marker id="cross" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9 z" fill="#88819f"/></marker>
+</defs>
+<style>
+text { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; }
+</style>
+<rect x="0" y="0" width="2160" height="1480" rx="0" fill="#f6f4fb" stroke="none" stroke-width="1.6" />
+<rect x="64" y="44" width="2032" height="194" rx="24" fill="#1c324f" stroke="none" stroke-width="1.6" />
+<text x="106" y="88" font-size="18" font-weight="500" fill="#bacce0" text-anchor="start" letter-spacing="2.6">UCI COURSE ADVISOR</text>
+<text x="104" y="153" font-size="62" font-weight="600" fill="#ffffff" text-anchor="start" >Solon</text>
+<text x="340" y="151" font-size="43" font-weight="600" fill="#ffffff" text-anchor="start" >系统模块与组织架构</text>
+<text x="106" y="198" font-size="24" font-weight="400" fill="#dce5f0" text-anchor="start" >课程规划助手 · 前端交互、Agent 执行、领域规则与证据数据的分层协作</text>
+<text x="2046" y="104" font-size="18" font-weight="500" fill="#c5d5e8" text-anchor="end" letter-spacing="1.9">SYSTEM ARCHITECTURE</text>
+<text x="2046" y="196" font-size="20" font-weight="400" fill="#dce5f0" text-anchor="end" >2026.11  /  当前代码的逻辑模块</text>
+<rect x="48" y="278" width="2064" height="1044" rx="24" fill="#fffefe" stroke="#e7e3ef" stroke-width="1.6" />
+<rect x="584" y="320" width="1512" height="432" rx="20" fill="#f8f9fe" stroke="#d1d8e7" stroke-width="1.6" />
+<text x="608" y="356" font-size="20" font-weight="600" fill="#3c506f" text-anchor="start" letter-spacing="1.6">APPLICATION SERVER</text>
+<text x="914" y="356" font-size="22" font-weight="400" fill="#68758b" text-anchor="start" >Uvicorn / FastAPI · 同一后端内的逻辑模块</text>
+<text x="88" y="356" font-size="20" font-weight="600" fill="#536981" text-anchor="start" letter-spacing="1.6">BROWSER CLIENT</text>
+<path d="M 820 416 V 390 H 1860 V 416" fill="none" stroke="#52637a" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#main)"/>
+<rect x="1114" y="367" width="455" height="30" rx="5" fill="#f8f9fe" stroke="none" stroke-width="1.6" />
+<text x="1341" y="389" font-size="19" font-weight="400" fill="#66738b" text-anchor="middle" >档案 / 课表等 REST 请求</text>
+<g data-box="frontend" data-bounds="88,416,424,300">
+<rect x="88" y="416" width="424" height="300" rx="18" fill="#e3efff" stroke="#758198" stroke-width="1.6" />
+<text x="300.0" y="460" font-size="30" font-weight="600" fill="#20354e" text-anchor="middle" >前端界面</text>
+<text x="300.0" y="490" font-size="17" font-weight="500" fill="#62718a" text-anchor="middle" letter-spacing="1.5">PRESENTATION LAYER</text>
+<text x="114" y="534" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">原生 HTML / CSS / JavaScript</text>
+<text x="114" y="572" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">Ask · Student Profile · Schedule</text>
+<text x="114" y="610" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">Fetch + SSE · 流式交互与卡片</text>
+<text x="114" y="648" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">PDF.js · 浏览器内解析成绩单</text>
+<path d="M 114 668 H 486" stroke="#8590a5" stroke-opacity="0.24"/>
+<text x="114" y="697" font-size="18" font-weight="400" fill="#5d6b80" text-anchor="start" data-box-text="true">static/index.html · static/js/</text>
+</g>
+<g data-box="api" data-bounds="608,416,424,300">
+<rect x="608" y="416" width="424" height="300" rx="18" fill="#e9e0fa" stroke="#758198" stroke-width="1.6" />
+<text x="820.0" y="460" font-size="30" font-weight="600" fill="#20354e" text-anchor="middle" >API 与上下文编排</text>
+<text x="820.0" y="490" font-size="17" font-weight="500" fill="#62718a" text-anchor="middle" letter-spacing="1.5">APPLICATION LAYER</text>
+<text x="634" y="534" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">FastAPI 路由 / Pydantic 校验</text>
+<text x="634" y="572" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">Chat / Auth / Profile / Schedule</text>
+<text x="634" y="610" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">学生、会话与学期上下文</text>
+<text x="634" y="648" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">SSE 输出 / 历史保存与恢复</text>
+<path d="M 634 668 H 1006" stroke="#8590a5" stroke-opacity="0.24"/>
+<text x="634" y="697" font-size="18" font-weight="400" fill="#5d6b80" text-anchor="start" data-box-text="true">main.py · app/routers/</text>
+</g>
+<g data-box="agent" data-bounds="1128,416,424,300">
+<rect x="1128" y="416" width="424" height="300" rx="18" fill="#ffead0" stroke="#758198" stroke-width="1.6" />
+<text x="1340.0" y="460" font-size="30" font-weight="600" fill="#20354e" text-anchor="middle" >Agent 与工具执行</text>
+<text x="1340.0" y="490" font-size="17" font-weight="500" fill="#62718a" text-anchor="middle" letter-spacing="1.5">ORCHESTRATION LAYER</text>
+<text x="1154" y="534" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">固定工作流 + Agent 工具循环</text>
+<text x="1154" y="572" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">LLM adapter / 上下文与预算</text>
+<text x="1154" y="610" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">Schema / dispatch / 查询范围</text>
+<text x="1154" y="648" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">Continue 续答 / 执行快照</text>
+<path d="M 1154 668 H 1526" stroke="#8590a5" stroke-opacity="0.24"/>
+<text x="1154" y="697" font-size="18" font-weight="400" fill="#5d6b80" text-anchor="start" data-box-text="true">app/agent/ · app/llm/</text>
+</g>
+<g data-box="domain" data-bounds="1648,416,424,300">
+<rect x="1648" y="416" width="424" height="300" rx="18" fill="#e1f1e2" stroke="#758198" stroke-width="1.6" />
+<text x="1860.0" y="460" font-size="30" font-weight="600" fill="#20354e" text-anchor="middle" >课程领域与推荐</text>
+<text x="1860.0" y="490" font-size="17" font-weight="500" fill="#62718a" text-anchor="middle" letter-spacing="1.5">DOMAIN &amp; DATA SERVICES</text>
+<text x="1674" y="534" font-size="21" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">先修 / GE 证据 / 学期规则</text>
+<text x="1674" y="572" font-size="21" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">时间冲突 / Lec–Dis–Lab 配对</text>
+<text x="1674" y="610" font-size="21" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">动态预筛 / A 率与 RMP 排名＊</text>
+<text x="1674" y="648" font-size="21" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">数据适配 / 证据状态与呈现＊</text>
+<path d="M 1674 668 H 2046" stroke="#8590a5" stroke-opacity="0.24"/>
+<text x="1674" y="697" font-size="18" font-weight="400" fill="#5d6b80" text-anchor="start" data-box-text="true">catalog · terms · scheduling · data</text>
+</g>
+<path d="M 515 568 H 605" fill="none" stroke="#52637a" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#main)" marker-start="url(#main)"/>
+<text x="560.0" y="547" font-size="19" font-weight="500" fill="#53647b" text-anchor="middle" >HTTP</text>
+<text x="560.0" y="600" font-size="19" font-weight="400" fill="#718095" text-anchor="middle" >SSE</text>
+<path d="M 1035 568 H 1125" fill="none" stroke="#52637a" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#main)" marker-start="url(#main)"/>
+<text x="1080.0" y="547" font-size="19" font-weight="500" fill="#53647b" text-anchor="middle" >调用</text>
+<text x="1080.0" y="600" font-size="19" font-weight="400" fill="#718095" text-anchor="middle" >事件</text>
+<path d="M 1555 568 H 1645" fill="none" stroke="#52637a" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#main)" marker-start="url(#main)"/>
+<text x="1600.0" y="547" font-size="19" font-weight="500" fill="#53647b" text-anchor="middle" >工具</text>
+<text x="1600.0" y="600" font-size="19" font-weight="400" fill="#718095" text-anchor="middle" >证据</text>
+<path d="M 700 752 V 856 H 400 V 1000" fill="none" stroke="#52637a" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#main)" marker-start="url(#main)"/>
+<text x="500" y="836" font-size="21" font-weight="500" fill="#53647b" text-anchor="middle" >后端共享数据访问</text>
+<text x="444" y="913" font-size="20" font-weight="400" fill="#6c788c" text-anchor="start" >状态 / 记忆 / 目录 / 缓存</text>
+<path d="M 1290 716 V 812 H 900 V 1000" fill="none" stroke="#466ea4" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#model)" marker-start="url(#model)"/>
+<text x="1086" y="790" font-size="21" font-weight="500" fill="#466ea4" text-anchor="middle" >模型请求 / Tool calls</text>
+<path d="M 1810 716 V 896 H 1220 V 1000" fill="none" stroke="#52637a" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#main)" marker-start="url(#main)"/>
+<text x="1515" y="873" font-size="21" font-weight="500" fill="#53647b" text-anchor="middle" >课程 / 政策 / 历史成绩</text>
+<path d="M 1810 1000 V 940 H 2112 V 728 H 2096" fill="none" stroke="#88819f" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#cross)" stroke-dasharray="7 7"/>
+<text x="1947" y="920" font-size="20" font-weight="500" fill="#817793" text-anchor="middle" >贯穿后端运行链路</text>
+<g data-box="persistence" data-bounds="88,1000,600,294">
+<rect x="88" y="1000" width="600" height="294" rx="18" fill="#fff1cf" stroke="#758198" stroke-width="1.6" />
+<text x="388.0" y="1044" font-size="30" font-weight="600" fill="#20354e" text-anchor="middle" >本地数据与持久化</text>
+<text x="388.0" y="1074" font-size="17" font-weight="500" fill="#62718a" text-anchor="middle" letter-spacing="1.5">LOCAL DATA &amp; PERSISTENCE</text>
+<text x="114" y="1118" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">SQLite · 账号 / 结构化学业记录</text>
+<text x="114" y="1156" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">SQLite + FTS5 · 档案与证据记忆</text>
+<text x="114" y="1194" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">JSON / JSONL · 会话 / 卡片 / 课表</text>
+<text x="114" y="1232" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">课程 CSV / RMP 本地快照 / 查询缓存</text>
+<path d="M 114 1246 H 662" stroke="#8590a5" stroke-opacity="0.24"/>
+<text x="114" y="1275" font-size="18" font-weight="400" fill="#5d6b80" text-anchor="start" data-box-text="true">data/uci · data/memory · 独立 SQLite 库</text>
+</g>
+<g data-box="external" data-bounds="808,1000,600,294">
+<rect x="808" y="1000" width="600" height="294" rx="18" fill="#fce1e5" stroke="#758198" stroke-width="1.6" />
+<text x="1108.0" y="1044" font-size="30" font-weight="600" fill="#20354e" text-anchor="middle" >外部模型与事实来源</text>
+<text x="1108.0" y="1074" font-size="17" font-weight="500" fill="#62718a" text-anchor="middle" letter-spacing="1.5">EXTERNAL MODEL &amp; EVIDENCE</text>
+<text x="834" y="1118" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">DeepSeek API · 语言模型推理</text>
+<text x="834" y="1156" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">UCI WebSoc / Catalog / 政策页面</text>
+<text x="834" y="1194" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">Anteater API / Zotistics 历史成绩</text>
+<text x="834" y="1232" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">受控 Web Search / 网页读取</text>
+<path d="M 834 1246 H 1382" stroke="#8590a5" stroke-opacity="0.24"/>
+<text x="834" y="1275" font-size="18" font-weight="400" fill="#5d6b80" text-anchor="start" data-box-text="true">模型推理接口与各数据源分别适配</text>
+</g>
+<g data-box="runtime" data-bounds="1528,1000,544,294">
+<rect x="1528" y="1000" width="544" height="294" rx="18" fill="#e8eafb" stroke="#758198" stroke-width="1.6" />
+<text x="1800.0" y="1044" font-size="30" font-weight="600" fill="#20354e" text-anchor="middle" >安全与可观测性</text>
+<text x="1800.0" y="1074" font-size="17" font-weight="500" fill="#62718a" text-anchor="middle" letter-spacing="1.5">CROSS-CUTTING RUNTIME</text>
+<text x="1554" y="1118" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">鉴权 / 所有权 / CSRF / 限流</text>
+<text x="1554" y="1156" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">不可信输入边界 / 工具参数校验</text>
+<text x="1554" y="1194" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">来源与状态审计 / 执行预算</text>
+<text x="1554" y="1232" font-size="22" font-weight="400" fill="#20354e" text-anchor="start" data-box-text="true">Trace ID / Metrics / Health</text>
+<path d="M 1554 1246 H 2046" stroke="#8590a5" stroke-opacity="0.24"/>
+<text x="1554" y="1275" font-size="18" font-weight="400" fill="#5d6b80" text-anchor="start" data-box-text="true">auth · privacy · observability</text>
+</g>
+<rect x="64" y="1346" width="2032" height="68" rx="14" fill="#eaf0f7" stroke="none" stroke-width="1.6" />
+<text x="1080" y="1389" font-size="25" font-weight="500" fill="#294260" text-anchor="middle" >问答主链路：Browser → FastAPI → Agent / Tools → 领域与数据服务 → SSE 响应与会话保存</text>
+<text x="1080" y="1450" font-size="21" font-weight="400" fill="#69778c" text-anchor="middle" >＊动态预筛、排名及受控推荐呈现按配置启用。Schedule 为规划课表；原始成绩单 PDF 留在浏览器。</text>
+</svg>

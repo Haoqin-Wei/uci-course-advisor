@@ -1,0 +1,44 @@
+{
+  "overall_acceptance": "partial_not_passed",
+  "real_model": "deepseek-v4-flash",
+  "full_application_run": {
+    "question": "请核实 SWE43 和 IN4MATX43 是什么关系，并说明依据。假设我在 2026 Winter 修过 IN4MATX43，而且已经获得这门课的学分，还能在 2026 Fall 再修 SWE43 吗？请根据课程说明回答。",
+    "provider_requests": 8,
+    "recommendation_route_triggered_for_factual_query": true,
+    "course_comment_visible_before_final": true,
+    "final_display_text": "本次核实尚未完成，暂未生成有完整证据的正式推荐。",
+    "acceptance_passed": false,
+    "test_limit_note": "The harness stopped a ninth request after 8 successful configured-model requests. The app then emitted model_unavailable; this is not a provider availability failure."
+  },
+  "isolated_reading_check": {
+    "provider_requests": 1,
+    "purpose": "isolated_comment_comprehension_only_not_app_routing_acceptance",
+    "read_and_quoted_source_comment": true,
+    "interpreted_prior_INF43_credit_restriction_correctly": true,
+    "confirmed_IN4MATX43_INF43_alias": false,
+    "answered_original_IN4MATX43_question_unconditionally": false,
+    "scope_expansion": [
+      "Unrequested add/drop deadlines",
+      "Unverified same-content claim",
+      "Unverified credit-accounting consequence"
+    ],
+    "answer_file": "reading-check/answer.txt",
+    "acceptance_passed": false
+  },
+  "existing_backend_normalization": {
+    "actual_outputs": {
+      "INF43": "IN4MATX 43",
+      "INF 43": "IN4MATX 43",
+      "IN4MATX43": "IN4MATX 43"
+    },
+    "all_equal": true,
+    "source_file": "app/catalog/departments.py:27"
+  },
+  "identified_next_changes": [
+    "Expose existing INF to IN4MATX normalization in model-visible tool evidence.",
+    "Keep factual course-identity/credit questions out of recommendation routing and candidate filtering."
+  ],
+  "application_code_changed_for_this_test": false,
+  "source_results_fabricated": false,
+  "separate_reading_test_does_not_establish_application_end_to_end_success": true
+}

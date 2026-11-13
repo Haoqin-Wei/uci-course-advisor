@@ -5,16 +5,17 @@
 ## 一、默认学期按美西时间和 UCI 校历计算
 
 - 使用 `America/Los_Angeles`，由时区库处理夏令时，不使用浏览器时区或固定 UTC 偏移。
-- 第八教学周之前，默认学期为正在进行的常规学期；进入第八周时切换到下一个常规学期。
-- 切换点固定为美西时间第八教学周周一 **00:00**。
+- **2026-11-11 用户确认修订**：默认学期在以下两个条件中**先满足的那个**时刻切换到下一个常规学期：(a) 下一学期的完整课表已同步到本地（`data/catalog.db` 中该学期状态为 `complete`）；(b) 进入第七教学周。此前的规则是固定在第八周切换。
+- 日期兜底的切换点为美西时间第七教学周周一 **00:00**。按校历的课表发布日，条件 (a) 通常在第五周周末前后先满足。
+- 只看紧邻的下一个常规学期；只发布一部分（`partial`）、确认未发布或仅有失败记录都不触发提前切换。一旦切换，同一学期内不回退。
 - 常规学期顺序为 Fall → Winter → Spring → Fall，Spring 直接跳到同年的 Fall。
-- 假期保持即将开始的常规学期。目标学期课表是否发布，不影响默认学期的日期切换。
-- 根据 instruction start 计算教学周。现有算法把开课日当天或之后的第一个周一作为 Week 1，再加七周；Fall 开课后的短周按 Week 0 处理。
-- `current_term` 表示实际正在进行的学期，`default_term` 表示规划默认学期。第八周后两者可以不同；假期内可以没有 `current_term`。
+- 假期保持即将开始的常规学期。课表发布只会让切换提前；到第七周时即使课表未发布也照常切换，此时目标学期标记为数据不可用，不能把缺失当作未开课。
+- 根据 instruction start 计算教学周。现有算法把开课日当天或之后的第一个周一作为 Week 1，再加六周得到第七周周一；Fall 开课后的短周按 Week 0 处理。
+- `current_term` 表示实际正在进行的学期，`default_term` 表示规划默认学期。切换后两者可以不同；假期内可以没有 `current_term`。
 
-官方依据：[UCI Enrollment Windows](https://www.reg.uci.edu/enrollment/windows.html) 说明选课从第八教学周周一开始，个人窗口在美西时间 07:00–19:00 开放。**00:00 是本产品的默认学期切换时间，不是声称 WebReg 在午夜开放。**
+官方依据：[UCI Enrollment Windows](https://www.reg.uci.edu/enrollment/windows.html) 说明选课从第八教学周周一开始，个人窗口在美西时间 07:00–19:00 开放。默认学期提前到课表发布或第七周切换，是为了给学生留出做计划的时间；**切换时刻是本产品的规划默认值，不是声称 WebReg 已经开放。**
 
-例如，[2026–27 官方校历](https://reg.uci.edu/calendars/quarterly/2026-2027/quarterly26-27.html) 列出 Fall 2026 于 9 月 24 日开始上课，Winter 2027 选课于 11 月 16 日开始。按上述规则，默认学期在 `2026-11-16T00:00:00-08:00` 从 `2026 Fall` 切到 `2027 Winter`，实际正在进行的学期仍为 Fall。
+例如，[2026–27 官方校历](https://reg.uci.edu/calendars/quarterly/2026-2027/quarterly26-27.html) 列出 Fall 2026 于 9 月 24 日开始上课，Winter 2027 选课于 11 月 16 日开始。校历同时给出 Winter 2027 课表发布日为 10 月 31 日。按上述规则，默认学期在 Winter 2027 完整课表同步完成时从 `2026 Fall` 切到 `2027 Winter`，最迟为 `2026-11-09T00:00:00-08:00`；实际正在进行的学期仍为 Fall，选课本身仍从 11 月 16 日开始。
 
 ## 二、本轮时间表达 > 相关对话 > 默认学期
 
@@ -22,7 +23,7 @@
 2. 没有新的时间表达且确实是相关追问时，沿用对话中的查询目标。例如上一问查询 ICS 33 的 2025 Winter，再问“那 ICS 32 呢”，仍查询 2025 Winter。
 3. 无关的新问题重新判断，不能因为同一会话里出现过历史学期，就沿用那个年份。
 4. 缺少年份的 `Winter`，结合相关上下文及过去／未来语气推断；没有其他线索时使用即将到来的 Winter，并在回答中明确年份。不能把推断年份伪装成用户明确指定的年份。
-5. “本学期”使用实际正在进行的 `current_term`，不能被第八周之后已经前进的规划默认学期替代。没有正在进行的常规学期时，应说明或澄清。
+5. “本学期”使用实际正在进行的 `current_term`，不能被已经前进的规划默认学期替代。没有正在进行的常规学期时，应说明或澄清。
 
 实现中的角色必须分开：
 
@@ -74,7 +75,7 @@
 
 | 规则 | 当前状态 | 主要实现与证据 |
 | --- | --- | --- |
-| 1. 美西时间、第八周、跳过 Summer、假期保持 | 已实现，有时区和边界测试 | `app/terms/clock.py`、`calendar.py`、`service.py`；`test_week8_uses_teaching_weeks_and_pacific_dst`、`test_utc_boundary_changes_default_without_publication_and_keeps_current`、`test_spring_skips_summer_and_breaks_keep_upcoming_default` |
+| 1. 美西时间、课表发布或第七周、跳过 Summer、假期保持 | 已实现，有时区和边界测试（2026-11-11 按修订规则更新） | `app/terms/clock.py`、`calendar.py`、`service.py`、`availability.py`；`tests/test_default_term_switch.py`、`test_default_switch_is_week7_monday_in_pacific_time`、`test_utc_boundary_changes_default_without_publication_and_keeps_current`、`test_spring_skips_summer_and_breaks_keep_upcoming_default` |
 | 2. 时间优先级、相关追问、无年份推断 | 主流程已实现，存在下列解析缺口 | `app/terms/query_scope.py`、`intent.py`、`app/routers/chat.py`；`tests/test_unified_term_context.py` |
 | 3. 分学期查询、教授聚合、三列表格 | 数据查询和聚合已实现；表格由提示词约束 | `app/data/offerings.py`、`app/agent/loop.py`、`app/llm/adapter.py` 的 Term resolution and offering evidence 段；`test_comparison_fetches_both_terms_before_model_answer`。目前没有服务端强制表格渲染器 |
 | 4. 两年多季节历史 | 默认六学期已实现；自定义年份范围有缺口 | `recent_regular_terms`、`resolve_query_scope`；`test_only_winter_question_checks_other_seasons_and_two_completed_years` |
@@ -97,6 +98,28 @@
 现有相关回归在本次核对中 **134 项通过**，但并未覆盖上面四个反例；因此不能把“现有测试全通过”表述为六条规则在所有边界上均已实现。
 
 ### 维护入口与验证
+
+2026-11-09（旧编号单独查询补验）：前次验收同时给出新旧编号，未覆盖“我能上 in4matx43 吗”。现对单个目标学期的旧代码查无课结果附加同学期所有院系课程注释的反向检索候选，再由明确注释建立关系、查询新代码；不修改旧代码的 not_offered 事实，不自动推断等价，不从旧代码历史推断未来季节，也不修改查询学期。注释缓存为进程内最多两学期、五分钟，不保存推断身份表。允许已确认开设的新代码补取原始注释，仍禁止反复查询已确认未开设的同一旧代码。顺带修复 API 回退遗漏 prerequisiteTree 及档案简称无法匹配成绩的问题；OR 与最低成绩继续交给原评估器。完整回归 1510 项通过（五项可选浏览器检查跳过），后续聚焦回归另计。真实运行记录位于 `artifacts/solon-old-code-query-2026-11-09/`，不等同 solon.school 已部署验收。
+
+2026-11-11（默认学期切换规则修订）：用户确认把规则一从“第八周固定切换”改为“下一学期完整课表同步到本地即切换，最迟第七周周一 00:00”。实现：`calculate_default_switch_cutoff`（第七周）、`TermResolutionService.automatic_term` 读取本地课表快照状态，转换记录的 `source` 为 `timetable_published` 或 `calendar_week7`；`ResolvedTerm.week8_cutoff` 更名为 `switch_cutoff`；`calculate_week8_cutoff` 保留，含义为选课开放时间。提示词与导出的系统提示词同步。规则二至六未变：`current_term`、`query_terms`、默认标签只读等职责分离不变，“本学期”仍指实际进行中的学期。**尚未实现**：第七周已切换但课表未发布时，推荐以去年同季作为带标注的参考（用户已确认该方向）；目前这种情况下目标学期只标记为数据不可用。回归见 `tests/test_default_term_switch.py`。
+
+2026-11-11（选课限制问题被误判为开课规律）：真实模型将“计算机系的课什么时候对外专业开放”判为 `offering_pattern`，查询范围变成最近六个已结束学期，正在选课的目标学期反被工具学期守卫拒绝；回答内容来自与学期无关的院系页面，结论碰巧正确。修复：`app/data/restriction_timeline.py` 新增 `is_enrollment_restriction_question`，补充“对外专业／全校开放”“外专业能选”“open to non-majors”“restrictions lifted”等不含“限制”字样的问法，与工作流路由共用同一组规则；`apply_semantic_plan` 对这类问题拒绝 `offering_pattern`，保持默认学期；语义提示词同步说明。确定性的开课规律措辞（如“通常什么时候开”）和真正的规律问题不受影响。没有放宽工具学期限制。反例回归见 `tests/test_restriction_question_term_scope.py`；离线通过不代表每次真实模型输出，上表四个既有解析缺口仍保留。
+
+2026-11-09（课程关系与既有学分事实查询）：修复“两门课＋和／compare”把更名、旧代码、既有学分能否再修等事实问题误判为推荐的缺口。意图规则、推荐预筛与推荐展示复用判断；明确要求推荐或选课的混合问题仍走推荐。整理后的工具结果新增 `course_code_normalizations`，只对原注释中的已知简称提供现有院系规则的规范拼写和原始注释路径，例如 INF 43 → IN4MATX 43；原始 comments 与 meetings 不变，不自动建立更名表、抵扣关系或生效学期。模型须区分“曾以旧编号开设”和“已有旧课学分不得再修”，不能由前者推断后者。回归覆盖原问题的 Winter/Fall 双查询学期、默认标签不变及拒绝擅自改查其他年份；未修改六条学期规则或既有时间解析缺口。离线验证与真实模型结果分列记录于 [课程注释修复验收](course-comment-acceptance-2026-11-09.md)。
+
+2026-11-05（WebSoc 完整说明与多时段）：按用户要求，保留学院、院系、课程、教学班及编号范围说明，按原作用域交给模型读取；注释中观察到的学期不自动成为更名生效学期，不自动建立跨学期身份或学分抵扣关系。修复 Anteater `isCancelled` 被固定转换为 false 的问题，缺失／非法取消证据保持未知。完整 `meetings` 随来源、CSV、推荐、刷新和会话恢复保存；冲突、硬时间筛选及课表逐条使用，已知时段与 TBA 共存时保留已知日历块并显示待核实。只有缺失／None 的 legacy 数组可回退平铺字段，显式空／坏数组不能用旧时间补齐；旧版 CSV 的空占位兼容由导入版本区分。暂不接入独立 `webURL` 字段。本次不修改六条学期规则和已有解析缺口；来源回放、离线及浏览器验证不代表真实模型输出保证。
+
+2026-10-20（Dis 判断新规则）：用户确认使用完整当期课表的 Dis 存在性判断是否必选，有 co-class 等额外说明时补查同一目标学期。证据按课程、学期和规则版本保存；部分页、查询失败和筛选后缺项不能当作无需 Dis。不会回退到历史学期找未来 Dis，也不修改六条时间规则、默认标签或已有解析缺口。详见 [Dis 规则实施与验收](discussion-pairing-policy-2026-10-20.md)。
+
+2026-10-20（S-001～S-003）：推荐的课程 GE 标签改为按目标修课学年核对官方目录；2026 Fall 与 2027 Winter/Spring 可复用 2026–27 目录证据，其他学年不能继承认证。卡片仍绑定本轮目标学期，年度 GE 证明独立于开课历史代理；课程类别不等于个人抵扣。配对证据使用当期完整 WebSoc 声明与班次，按主班分列，刷新失败不能继承旧 verified。没有修改六条学期规则、默认标签、学期解析或其既有缺口。真实数据回放、离线及 Chrome 回归不等于新的真实模型保证，详见 [S 系列实施记录](recommendation-s001-s003-2026-10-20.md)。
+
+2026-10-20（F-001～F-004）：推荐展示新增确定性证据渲染。GE 与配对证据绑定同课程、同目标学期；历史成绩范围独立展示，不把历史教授或时间写成目标学期事实。正常、预算结束、Continue 仍沿用后端查询学期，不改默认标签；未修改学期解析，也未修复 P-015 后仍保留的三个既有解析缺口。离线回归和余额恢复后的真实模型补验分别记录于 [F 系列实施记录](recommendation-f001-f004-2026-10-20.md)。
+
+2026-10-19（P-015）：已修复上表第三个反例中的**明确历史年份范围被默认六学期覆盖**问题。`2023 至 2024 年是不是只在 Winter 开`、`2023 至 2024 年开课记录` 及英文 offerings/from/through 表达均按指定年份检查 Winter、Spring、Fall，相关旧对话不会改写范围；语义提示也不得覆盖确定性的范围。当前单轮上限为四年／十二个常规学期，倒序或更大范围明确要求缩小范围，不静默查询默认值。反例回归见 `tests/test_prompt_term_range.py`。上表其他三个解析缺口仍保留，不能将本次修复表述为全部时间边界均已解决。P-010 同时移除推荐 Prompt 和工具返回中的自动换学期指令及固定“第二周后锁定”断言；注册期限依工具证据解释，不改变 `query_terms` 或默认标签。离线通过与真实模型验收另行记录。
+
+2026-10-13 动态预筛：继续使用后端已解析的 `query_terms`，无指定学期使用第八周切换的默认学期，明确“本学期”使用尚未结束的 `current_term`；预筛和续答不重算或写入默认标签。已修与在修 GE 贡献保持分列，只有可信审计中已确认的“预计覆盖剩余要求”才可在用户明确要求只补剩余 GE 时减少推荐缺项；不把在修课程标为已完成。只有可靠的目标学期未开课证据支持排除，历史班次／教授不填补目标学期；不同学期的待核实提醒互不合并。详见 [动态预筛实施记录](dynamic-prefilter.md)。本次未修复上表四个既有解析缺口。
+
+2026-10-12 历史给分接入：推荐及明确的教授评价／给分比较可查询 Zotistics 教授＋课程历史分布；只有可靠的配对无记录才退回教授全部课程、全部院系汇总，并保持单独标注。历史成绩范围不替代 `query_terms`、目标学期教授或默认标签；纯开课／跨学期授课教授比较仍不自动扩展为给分分析。排名与原始图表的口径、样本调整和默认关闭开关见 [docs/recommendation-ranking.md](recommendation-ranking.md)。本次不修改上表已知时间解析缺口；离线和浏览器回归与真实模型输出保证仍需区分。
 
 2026-09-21 显示偏好更新：周课表默认覆盖 08:00–22:00，末尾显示 22:00 边界；若已有真实班次在范围外，继续扩展显示以避免隐藏已选课程。第四栏检查当前所看学期的已选课：周五中午 12:00 后无课且时间信息完整时显示 `Free` 和随机庆祝／笑脸 emoji（每次加载页面选择一次，重绘时保持稳定）。有课显示 `Busy`，存在时间待定班次时仍为 `Unknown`；只改变展示，不改变默认学期或选课记录。
 

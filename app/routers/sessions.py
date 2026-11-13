@@ -22,6 +22,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from app import config
 from app.auth.deps import current_user_optional
 from app.auth.rate_limit import RateLimit, check_rate_limit
 from app.data import sessions as S
@@ -32,6 +33,7 @@ from app.terms.conversation import (
     sync_automatic_default,
 )
 from app.terms.service import get_term_resolution_service
+from app.response_language import response_language
 
 
 router = APIRouter()
@@ -152,6 +154,29 @@ def get_session(
     out = dict(meta)
     out.update(get_term_resolution_service().conversation_state(meta))
     if include_turns:
+        if config.dynamic_prefilter_enabled() or config.recommendation_ranking_enabled():
+            from app.recommendations.presentation import normalize_recommendation_card
+
+            # Normalize only the response snapshot. Never rewrite historical
+            # records or turn a legacy pairing/GE hint into verified evidence.
+            history = []
+            normalized = []
+            for turn in turns:
+                if turn.get("role") == "user":
+                    history.append(turn)
+                if turn.get("role") == "assistant" and turn.get("cards"):
+                    language = response_language("", history)
+                    cards = []
+                    for card in turn["cards"]:
+                        presentation = card.get("presentation") if isinstance(card, dict) else None
+                        saved_language = presentation.get("language") if isinstance(presentation, dict) else None
+                        cards.append(normalize_recommendation_card(
+                            card, language=(saved_language if isinstance(saved_language, str)
+                                            and saved_language in {"zh", "en"} else language),
+                        ))
+                    turn = {**turn, "cards": cards}
+                normalized.append(turn)
+            turns = normalized
         out["turns"] = turns
     return out
 

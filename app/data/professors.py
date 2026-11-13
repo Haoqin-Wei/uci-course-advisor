@@ -454,6 +454,37 @@ def build_profile(record: dict) -> dict:
     }
 
 
+def verify_rating_identity(requested_name: str, result: dict) -> dict:
+    """Do not turn a conflicting full-name match into another person's rating.
+
+    Canonical registrar initials keep their existing resolution behavior.
+    An explicitly supplied full name requires the returned full name to
+    agree; matching only surname and first initial is insufficient.
+    """
+    if not result.get("found"):
+        return result
+    requested = " ".join((requested_name or "").upper().split())
+    if "," in requested:
+        surname, given = requested.split(",", 1)
+        full_name = any(len(token) > 2 for token in re.findall(r"[A-Z]+", given))
+        expected = f"{given.strip()} {surname.strip()}"
+    else:
+        full_name = len(requested.split()) > 1
+        expected = requested
+    if not full_name:
+        return result
+    profile = result.get("instructor") or {}
+    actual = profile.get("name") or " ".join(
+        part for part in (profile.get("first_name"), profile.get("last_name")) if part
+    )
+    key = lambda value: re.sub(r"[.\s]+", "", str(value).upper())
+    if not actual or key(actual) != key(expected):
+        return {"found": False, "source": result.get("source"),
+                "status": "ambiguous_instructor", "instructor_name": requested_name,
+                "reason": "The returned professor full name does not match the requested full name."}
+    return result
+
+
 # ══════════════════════════════════════════════════════════
 #  Review DB access
 # ══════════════════════════════════════════════════════════

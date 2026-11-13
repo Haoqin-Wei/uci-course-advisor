@@ -1,0 +1,42 @@
+**SWE 43 · Introduction to Software Engineering**
+
+> **结论：不能。** SWE 43 的官方课程说明明确禁止：已取得 INF 43（即现 IN4MATX 43）学分的学生，不得再修 SWE 43。
+
+──────────────────────────────────
+
+**两门课的关系** （UCI Registrar WebSoc 课程注释，2026 Fall）
+
+| 项目 | 内容 |
+|---|---|
+| 说明原文 | “Previously offered as INF 43, "Intro Software Engr". Students with prior credit for INF 43 … may not take SWE 43” |
+| 代码对应 | 注释中的 **INF 43** 经系别别名表正规化为 **IN4MATX 43** |
+| 判定 | SWE 43 是原 INF 43 → IN4MATX 43 的**改编号后续课程**，属于同一门课，并非两门并列课程 |
+
+**辅助证据** （课程目录 + WebSoc 开课记录）
+
+| 项目 | SWE 43 | IN4MATX 43 |
+|---|---|---|
+| 课名 | Introduction to Software Engineering | Introduction to Software Engineering |
+| 学分 / 层级 | 4 分·低阶 | 4 分·低阶 |
+| 课程描述 | 与右侧几乎逐字相同（软件工程概念、大型软件开发、生命周期模型） | 同上 |
+| 2026 Winter | 官方课表无匹配（not_offered） | 开设，教师 **Ziv, H.** |
+| 2026 Fall | 开设，教师 **Gillespie, J.** / **Mannan, U.** | 官方课表无匹配（not_offered） |
+
+两学期恰好互换，与“改编号”的解释一致（来源：Registrar WebSoc）。
+
+──────────────────────────────────
+
+**对你这种情况的判断**
+
+| 项目 | 结论 |
+|---|---|
+| 2026 Winter 修完 IN4MATX 43 并取得学分 | 按上面注释，等同于“已持 INF 43 学分” |
+| 2026 Fall 注册 SWE 43 | **不允许**；课程说明本身构成禁止，且两课为同一门课，重复修读不产生第二个学分 |
+| 注册可行性 | 已无关紧要：2026 Fall 的 ICS 课程 WebReg add 截止为 10 月 9 日 2026，现已过期 |
+
+一处需要标注的不确定性：注释文字针对的是 “INF 43” 这个旧代码，别名表提供的是代码拼写/系别层面的对应（INF → IN4MATX）；“改编号”这一关系由注释原文确立，而非由别名表推断。若你要在成绩单上做学分核算或申诉，需由 ICS 本科学生事务确认。
+
+**下一步：** 要不要我查一下 2026 Fall 有哪些课程可以作为这门课的替代（不重复学分）？
+
+Sources:
+- Database verified: live WebSoc 课程注释与开课记录 · 2026 Winter / 2026 Fall · registrar_websoc（[UCI Registrar WebSoc](https://www.reg.uci.edu/perl/WebSoc)）

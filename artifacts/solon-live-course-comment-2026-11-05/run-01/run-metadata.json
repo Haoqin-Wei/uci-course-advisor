@@ -1,0 +1,53 @@
+{
+  "question": "请核实 SWE43 和 IN4MATX43 是什么关系，并说明依据。假设我在 2026 Winter 修过 IN4MATX43，而且已经获得这门课的学分，还能在 2026 Fall 再修 SWE43 吗？请根据课程说明回答。",
+  "started_at_utc": "2026-11-06T01:23:54.003777+00:00",
+  "model": "deepseek-v4-flash",
+  "provider_host": "api.deepseek.com",
+  "dynamic_prefilter_enabled": true,
+  "recommendation_ranking_enabled": true,
+  "state": {
+    "automatic_term": "2026 Fall",
+    "source": "anteater",
+    "status": "fresh",
+    "last_success_at": "2026-10-06T22:24:31-07:00",
+    "last_attempt_at": "2026-10-06T22:24:31-07:00",
+    "last_error": null,
+    "next_cutoff": "2026-11-16T00:00:00-08:00",
+    "checked_at": "2026-11-05T17:23:54.003639-08:00",
+    "cache_age_days": 29.791,
+    "availability": {
+      "available": true,
+      "course_count": 53,
+      "section_count": 458,
+      "checked_at": "2026-10-07T05:24:32.696857Z",
+      "source_url": "https://anteaterapi.com/v2/rest/websoc",
+      "content_length": 263218
+    },
+    "transition": null,
+    "fallback": false,
+    "default_term": "2026 Fall",
+    "query_terms": [
+      "2026 Winter",
+      "2026 Fall"
+    ],
+    "query_term_source": "explicit",
+    "query_intent": "lookup",
+    "query_course_ids": [
+      "SWE 43",
+      "IN4MATX 43"
+    ],
+    "pending_schedule": [],
+    "completed_courses": [],
+    "selected_courses": []
+  },
+  "synthetic_context": true,
+  "max_wall_seconds": 180,
+  "max_provider_requests": 8,
+  "prompt_modified_for_test": false,
+  "source_results_mocked": false,
+  "outcome": "completed",
+  "elapsed_seconds": 64.70531004201621,
+  "provider_requests": 8,
+  "source_http_requests": 20,
+  "default_term_unchanged": true
+}

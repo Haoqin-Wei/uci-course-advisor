@@ -1,0 +1,18 @@
+[
+  {
+    "index": 1,
+    "started_at_utc": "2026-11-10T00:04:11.312981+00:00",
+    "model": "deepseek-v4-flash",
+    "stream": true,
+    "tool_message_count": 0,
+    "elapsed_seconds": 2.7536442080163397
+  },
+  {
+    "index": 2,
+    "started_at_utc": "2026-11-10T00:04:45.435647+00:00",
+    "model": "deepseek-v4-flash",
+    "stream": true,
+    "tool_message_count": 2,
+    "elapsed_seconds": 10.847734667011537
+  }
+]

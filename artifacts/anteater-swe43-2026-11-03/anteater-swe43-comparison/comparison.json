@@ -1,0 +1,337 @@
+[
+  {
+    "file": "2026-fall-swe43-websoc.json",
+    "school_count": 1,
+    "course_count": 1,
+    "courses": [
+      {
+        "fields": {
+          "deptCode": "SWE",
+          "courseTitle": "INTRO SOFTWARE ENGR",
+          "courseNumber": "43",
+          "courseId": "SWE43",
+          "courseComment": "\n\t\t\t<p>Previously offered as INF 43, &quot;Intro Software Engr&quot;. Students with prior credit for INF 43, &quot;Intro Software Engr&quot; may not take SWE 43, &quot;Intro Software Engr&quot;.</p>\n\t\t\t\n\t\t    ",
+          "prerequisiteLink": "https://www.reg.uci.edu/cob/prrqcgi?term=202692&dept=SWE&action=view_by_term#43",
+          "updatedAt": "2026-11-03T22:56:25.815Z"
+        },
+        "courseComment_plain": "Previously offered as INF 43, \"Intro Software Engr\". Students with prior credit for INF 43, \"Intro Software Engr\" may not take SWE 43, \"Intro Software Engr\".",
+        "section_counts": {
+          "Dis": 11,
+          "Lec": 2
+        },
+        "cancelled_sections": 3,
+        "lectures": [
+          {
+            "sectionCode": "37500",
+            "sectionNum": "A",
+            "sectionType": "Lec",
+            "units": "4",
+            "instructors": [
+              "GILLESPIE, J."
+            ],
+            "meetings": [
+              {
+                "timeIsTBA": false,
+                "bldg": [
+                  "ALP 1300"
+                ],
+                "days": "TuTh",
+                "startTime": {
+                  "hour": 18,
+                  "minute": 30
+                },
+                "endTime": {
+                  "hour": 19,
+                  "minute": 50
+                }
+              }
+            ],
+            "status": "OPEN",
+            "isCancelled": false
+          },
+          {
+            "sectionCode": "37510",
+            "sectionNum": "B",
+            "sectionType": "Lec",
+            "units": "4",
+            "instructors": [
+              "MANNAN, U."
+            ],
+            "meetings": [
+              {
+                "timeIsTBA": false,
+                "bldg": [
+                  "HSLH 100A"
+                ],
+                "days": "TuTh",
+                "startTime": {
+                  "hour": 11,
+                  "minute": 0
+                },
+                "endTime": {
+                  "hour": 12,
+                  "minute": 20
+                }
+              }
+            ],
+            "status": "OPEN",
+            "isCancelled": false
+          }
+        ],
+        "school_keys": [
+          "departments",
+          "schoolName",
+          "schoolComment",
+          "updatedAt"
+        ],
+        "department_keys": [
+          "courses",
+          "deptCode",
+          "deptName",
+          "deptComment",
+          "sectionCodeRangeComments",
+          "courseNumberRangeComments",
+          "updatedAt"
+        ],
+        "course_keys": [
+          "sections",
+          "deptCode",
+          "courseTitle",
+          "courseNumber",
+          "courseId",
+          "courseComment",
+          "prerequisiteLink",
+          "updatedAt"
+        ],
+        "section_keys": [
+          "finalExam",
+          "instructors",
+          "isCancelled",
+          "maxCapacity",
+          "meetings",
+          "numCurrentlyEnrolled",
+          "numNewOnlyReserved",
+          "numOnWaitlist",
+          "numRequested",
+          "numWaitlistCap",
+          "restrictions",
+          "sectionCode",
+          "sectionComment",
+          "sectionNum",
+          "sectionType",
+          "status",
+          "units",
+          "updatedAt",
+          "webURL"
+        ]
+      }
+    ]
+  },
+  {
+    "file": "2026-winter-in4matx43-websoc.json",
+    "school_count": 1,
+    "course_count": 1,
+    "courses": [
+      {
+        "fields": {
+          "deptCode": "IN4MATX",
+          "courseTitle": "INTRO SOFTWARE ENGR",
+          "courseNumber": "43",
+          "courseId": "IN4MATX43",
+          "courseComment": "",
+          "prerequisiteLink": "https://www.reg.uci.edu/cob/prrqcgi?term=202603&dept=IN4MATX&action=view_by_term#43",
+          "updatedAt": "2026-04-29T21:36:28.968Z"
+        },
+        "courseComment_plain": "",
+        "section_counts": {
+          "Dis": 6,
+          "Lec": 1
+        },
+        "cancelled_sections": 0,
+        "lectures": [
+          {
+            "sectionCode": "36010",
+            "sectionNum": "A",
+            "sectionType": "Lec",
+            "units": "4",
+            "instructors": [
+              "ZIV, H."
+            ],
+            "meetings": [
+              {
+                "timeIsTBA": false,
+                "bldg": [
+                  "ELH 100"
+                ],
+                "days": "TuTh",
+                "startTime": {
+                  "hour": 14,
+                  "minute": 0
+                },
+                "endTime": {
+                  "hour": 15,
+                  "minute": 20
+                }
+              }
+            ],
+            "status": "OPEN",
+            "isCancelled": false
+          }
+        ],
+        "school_keys": [
+          "departments",
+          "schoolName",
+          "schoolComment",
+          "updatedAt"
+        ],
+        "department_keys": [
+          "courses",
+          "deptCode",
+          "deptName",
+          "deptComment",
+          "sectionCodeRangeComments",
+          "courseNumberRangeComments",
+          "updatedAt"
+        ],
+        "course_keys": [
+          "sections",
+          "deptCode",
+          "courseTitle",
+          "courseNumber",
+          "courseId",
+          "courseComment",
+          "prerequisiteLink",
+          "updatedAt"
+        ],
+        "section_keys": [
+          "finalExam",
+          "instructors",
+          "isCancelled",
+          "maxCapacity",
+          "meetings",
+          "numCurrentlyEnrolled",
+          "numNewOnlyReserved",
+          "numOnWaitlist",
+          "numRequested",
+          "numWaitlistCap",
+          "restrictions",
+          "sectionCode",
+          "sectionComment",
+          "sectionNum",
+          "sectionType",
+          "status",
+          "units",
+          "updatedAt",
+          "webURL"
+        ]
+      }
+    ]
+  },
+  {
+    "file": "2026-winter-swe43-websoc.json",
+    "school_count": 0,
+    "course_count": 0,
+    "courses": []
+  },
+  {
+    "file": "2026-fall-in4matx43-websoc.json",
+    "school_count": 0,
+    "course_count": 0,
+    "courses": []
+  },
+  {
+    "file": "current-swe43-course.json",
+    "field_count": 28,
+    "keys": [
+      "id",
+      "department",
+      "courseNumber",
+      "courseNumeric",
+      "school",
+      "title",
+      "courseLevel",
+      "minUnits",
+      "maxUnits",
+      "description",
+      "departmentName",
+      "instructors",
+      "prerequisiteTree",
+      "prerequisiteText",
+      "prerequisites",
+      "dependencies",
+      "repeatability",
+      "repeatabilityTimes",
+      "repeatabilityType",
+      "gradingOption",
+      "concurrent",
+      "sameAs",
+      "restriction",
+      "overlap",
+      "corequisites",
+      "geList",
+      "geText",
+      "terms"
+    ],
+    "instructor_count": 1,
+    "instructor_example": [
+      {
+        "ucinetid": "umannan",
+        "name": "Umme Ayda Mannan",
+        "title": "",
+        "email": "umannan@uci.edu",
+        "department": "Informatics",
+        "shortenedNames": [
+          "MANNAN, U."
+        ]
+      }
+    ]
+  },
+  {
+    "file": "current-in4matx43-course.json",
+    "field_count": 28,
+    "keys": [
+      "id",
+      "department",
+      "courseNumber",
+      "courseNumeric",
+      "school",
+      "title",
+      "courseLevel",
+      "minUnits",
+      "maxUnits",
+      "description",
+      "departmentName",
+      "instructors",
+      "prerequisiteTree",
+      "prerequisiteText",
+      "prerequisites",
+      "dependencies",
+      "repeatability",
+      "repeatabilityTimes",
+      "repeatabilityType",
+      "gradingOption",
+      "concurrent",
+      "sameAs",
+      "restriction",
+      "overlap",
+      "corequisites",
+      "geList",
+      "geText",
+      "terms"
+    ],
+    "instructor_count": 8,
+    "instructor_example": [
+      {
+        "ucinetid": "thornton",
+        "name": "Alexander W Thornton",
+        "title": "Continuing Lecturer",
+        "email": "thornton@uci.edu",
+        "department": "Computer Science",
+        "shortenedNames": [
+          "THORNTON, A.",
+          "THORNTON, A.W."
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,21 @@
+{
+  "model": "deepseek-v4-flash",
+  "started_at_utc": "2026-11-09T23:42:11.030922+00:00",
+  "provider_requests": 2,
+  "application_prompt_sha256": "633c2a5034ad11067305202a321701a7b49fe8e76a433ecff97df4d2b0bc2bd5",
+  "test_type": "synthetic_reading_only_not_live_api_or_application_routing",
+  "cases": [
+    {
+      "case": "former-code-only",
+      "completed": true,
+      "source_is_synthetic": true,
+      "answer_file": "former-code-only-answer.txt"
+    },
+    {
+      "case": "missing-comment",
+      "completed": true,
+      "source_is_synthetic": true,
+      "answer_file": "missing-comment-answer.txt"
+    }
+  ]
+}

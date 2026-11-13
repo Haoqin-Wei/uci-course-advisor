@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2160" height="1480" viewBox="0 0 2160 1480" role="img" aria-labelledby="title desc">
+<title id="title">Solon System Architecture</title>
+<desc id="desc">Solon logical architecture with a browser frontend, one FastAPI backend containing API, agent and domain modules, local persistence, external model and evidence sources, and cross-cutting security and observability. Sessions and schedules use JSON and JSONL. Accounts, academic records and evidence memory use separate SQLite stores.</desc>
+<defs>
+  <marker id="main" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9 z" fill="#555555"/></marker>
+  <marker id="model" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9 z" fill="#555555"/></marker>
+  <marker id="cross" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9 z" fill="#777777"/></marker>
+</defs>
+<style>
+text { font-family: Arial, Helvetica, sans-serif; }
+</style>
+<rect x="0" y="0" width="2160" height="1480" rx="0" fill="#f4f4f4" stroke="none" stroke-width="1.6" />
+<rect x="64" y="44" width="2032" height="194" rx="24" fill="#202020" stroke="none" stroke-width="1.6" />
+<text x="106" y="88" font-size="18" font-weight="500" fill="#cccccc" text-anchor="start" letter-spacing="2.6">UCI COURSE ADVISOR</text>
+<text x="104" y="153" font-size="62" font-weight="600" fill="#ffffff" text-anchor="start" >Solon</text>
+<text x="340" y="151" font-size="43" font-weight="600" fill="#ffffff" text-anchor="start" >System Architecture</text>
+<text x="106" y="198" font-size="24" font-weight="400" fill="#dddddd" text-anchor="start" >Course planning assistant · Client interaction, agent execution, domain rules and evidence</text>
+<text x="2046" y="104" font-size="18" font-weight="500" fill="#cccccc" text-anchor="end" letter-spacing="1.9">SYSTEM ARCHITECTURE</text>
+<text x="2046" y="196" font-size="20" font-weight="400" fill="#dddddd" text-anchor="end" >NOV 2026 · LOGICAL MODULE VIEW</text>
+<rect x="48" y="278" width="2064" height="1044" rx="24" fill="#ffffff" stroke="#dddddd" stroke-width="1.6" />
+<rect x="584" y="320" width="1512" height="432" rx="20" fill="#fafafa" stroke="#d0d0d0" stroke-width="1.6" />
+<text x="608" y="356" font-size="20" font-weight="600" fill="#444444" text-anchor="start" letter-spacing="1.6">APPLICATION SERVER</text>
+<text x="914" y="356" font-size="22" font-weight="400" fill="#666666" text-anchor="start" >Uvicorn and FastAPI · One application backend</text>
+<text x="88" y="356" font-size="20" font-weight="600" fill="#555555" text-anchor="start" letter-spacing="1.6">BROWSER CLIENT</text>
+<path d="M 820 416 V 390 H 1860 V 416" fill="none" stroke="#555555" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#main)"/>
+<rect x="1114" y="367" width="455" height="30" rx="5" fill="#fafafa" stroke="none" stroke-width="1.6" />
+<text x="1341" y="389" font-size="19" font-weight="400" fill="#666666" text-anchor="middle" >Profile and schedule REST requests</text>
+<g data-box="frontend" data-bounds="88,416,424,300">
+<rect x="88" y="416" width="424" height="300" rx="18" fill="#eeeeee" stroke="#777777" stroke-width="1.6" />
+<text x="300.0" y="460" font-size="30" font-weight="600" fill="#202020" text-anchor="middle" >Browser Frontend</text>
+<text x="300.0" y="490" font-size="17" font-weight="500" fill="#666666" text-anchor="middle" letter-spacing="1.5">PRESENTATION LAYER</text>
+<text x="114" y="534" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">HTML, CSS and JavaScript</text>
+<text x="114" y="572" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">Chat, student profile and schedule</text>
+<text x="114" y="610" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">Fetch and SSE streaming events</text>
+<text x="114" y="648" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">Local PDF transcript parsing</text>
+<path d="M 114 668 H 486" stroke="#999999" stroke-opacity="0.24"/>
+<text x="114" y="697" font-size="18" font-weight="400" fill="#666666" text-anchor="start" data-box-text="true">Static page and browser scripts</text>
+</g>
+<g data-box="api" data-bounds="608,416,424,300">
+<rect x="608" y="416" width="424" height="300" rx="18" fill="#eeeeee" stroke="#777777" stroke-width="1.6" />
+<text x="820.0" y="460" font-size="30" font-weight="600" fill="#202020" text-anchor="middle" >API and Context</text>
+<text x="820.0" y="490" font-size="17" font-weight="500" fill="#666666" text-anchor="middle" letter-spacing="1.5">APPLICATION LAYER</text>
+<text x="634" y="534" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">FastAPI routes and typed validation</text>
+<text x="634" y="572" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">Chat, auth, profile and schedule</text>
+<text x="634" y="610" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">Student, session and term context</text>
+<text x="634" y="648" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">SSE events and session recovery</text>
+<path d="M 634 668 H 1006" stroke="#999999" stroke-opacity="0.24"/>
+<text x="634" y="697" font-size="18" font-weight="400" fill="#666666" text-anchor="start" data-box-text="true">Application entrypoint and routes</text>
+</g>
+<g data-box="agent" data-bounds="1128,416,424,300">
+<rect x="1128" y="416" width="424" height="300" rx="18" fill="#eeeeee" stroke="#777777" stroke-width="1.6" />
+<text x="1340.0" y="460" font-size="30" font-weight="600" fill="#202020" text-anchor="middle" >Agent Orchestration</text>
+<text x="1340.0" y="490" font-size="17" font-weight="500" fill="#666666" text-anchor="middle" letter-spacing="1.5">AGENT EXECUTION LAYER</text>
+<text x="1154" y="534" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">Workflow routing and tool loops</text>
+<text x="1154" y="572" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">LLM adapter and execution budgets</text>
+<text x="1154" y="610" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">Tool schemas and query scope</text>
+<text x="1154" y="648" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">Continuation and run snapshots</text>
+<path d="M 1154 668 H 1526" stroke="#999999" stroke-opacity="0.24"/>
+<text x="1154" y="697" font-size="18" font-weight="400" fill="#666666" text-anchor="start" data-box-text="true">Agent modules and LLM adapters</text>
+</g>
+<g data-box="domain" data-bounds="1648,416,424,300">
+<rect x="1648" y="416" width="424" height="300" rx="18" fill="#eeeeee" stroke="#777777" stroke-width="1.6" />
+<text x="1860.0" y="460" font-size="30" font-weight="600" fill="#202020" text-anchor="middle" >Domain Services</text>
+<text x="1860.0" y="490" font-size="17" font-weight="500" fill="#666666" text-anchor="middle" letter-spacing="1.5">RULES AND RECOMMENDATIONS</text>
+<text x="1674" y="534" font-size="21" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">Prerequisites, GE and term rules</text>
+<text x="1674" y="572" font-size="21" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">Time conflicts and section pairing</text>
+<text x="1674" y="610" font-size="21" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">Optional prefiltering and ranking*</text>
+<text x="1674" y="648" font-size="21" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">Evidence binding and rendering*</text>
+<path d="M 1674 668 H 2046" stroke="#999999" stroke-opacity="0.24"/>
+<text x="1674" y="697" font-size="18" font-weight="400" fill="#666666" text-anchor="start" data-box-text="true">Catalog, terms, schedules and data</text>
+</g>
+<path d="M 515 568 H 605" fill="none" stroke="#555555" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#main)" marker-start="url(#main)"/>
+<text x="560.0" y="547" font-size="19" font-weight="500" fill="#555555" text-anchor="middle" >HTTP</text>
+<text x="560.0" y="600" font-size="19" font-weight="400" fill="#777777" text-anchor="middle" >SSE</text>
+<path d="M 1035 568 H 1125" fill="none" stroke="#555555" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#main)" marker-start="url(#main)"/>
+<text x="1080.0" y="547" font-size="19" font-weight="500" fill="#555555" text-anchor="middle" >Calls</text>
+<text x="1080.0" y="600" font-size="19" font-weight="400" fill="#777777" text-anchor="middle" >Events</text>
+<path d="M 1555 568 H 1645" fill="none" stroke="#555555" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#main)" marker-start="url(#main)"/>
+<text x="1600.0" y="547" font-size="19" font-weight="500" fill="#555555" text-anchor="middle" >Tools</text>
+<text x="1600.0" y="600" font-size="19" font-weight="400" fill="#777777" text-anchor="middle" >Results</text>
+<path d="M 700 752 V 856 H 400 V 1000" fill="none" stroke="#555555" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#main)" marker-start="url(#main)"/>
+<text x="500" y="836" font-size="21" font-weight="500" fill="#555555" text-anchor="middle" >Shared backend data access</text>
+<text x="444" y="913" font-size="20" font-weight="400" fill="#666666" text-anchor="start" >State, memory, catalog and caches</text>
+<path d="M 1290 716 V 812 H 900 V 1000" fill="none" stroke="#555555" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#main)" marker-start="url(#main)"/>
+<text x="1086" y="790" font-size="21" font-weight="500" fill="#555555" text-anchor="middle" >Model requests and tool calls</text>
+<path d="M 1810 716 V 896 H 1220 V 1000" fill="none" stroke="#555555" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#main)" marker-start="url(#main)"/>
+<text x="1515" y="873" font-size="21" font-weight="500" fill="#555555" text-anchor="middle" >Course, policy and grade evidence</text>
+<path d="M 1810 1000 V 940 H 2112 V 728 H 2096" fill="none" stroke="#777777" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#main)" stroke-dasharray="7 7"/>
+<text x="1947" y="920" font-size="20" font-weight="500" fill="#777777" text-anchor="middle" >Cross-cutting runtime support</text>
+<g data-box="persistence" data-bounds="88,1000,600,294">
+<rect x="88" y="1000" width="600" height="294" rx="18" fill="#eeeeee" stroke="#777777" stroke-width="1.6" />
+<text x="388.0" y="1044" font-size="30" font-weight="600" fill="#202020" text-anchor="middle" >Local Data and Persistence</text>
+<text x="388.0" y="1074" font-size="17" font-weight="500" fill="#666666" text-anchor="middle" letter-spacing="1.5">LOCAL STORAGE</text>
+<text x="114" y="1118" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">SQLite for accounts and academic records</text>
+<text x="114" y="1156" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">SQLite with FTS5 for evidence memory</text>
+<text x="114" y="1194" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">JSON and JSONL for sessions and schedules</text>
+<text x="114" y="1232" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">Course CSV, RMP snapshots and query caches</text>
+<path d="M 114 1246 H 662" stroke="#999999" stroke-opacity="0.24"/>
+<text x="114" y="1275" font-size="18" font-weight="400" fill="#666666" text-anchor="start" data-box-text="true">Independent stores with shared data access</text>
+</g>
+<g data-box="external" data-bounds="808,1000,600,294">
+<rect x="808" y="1000" width="600" height="294" rx="18" fill="#eeeeee" stroke="#777777" stroke-width="1.6" />
+<text x="1108.0" y="1044" font-size="30" font-weight="600" fill="#202020" text-anchor="middle" >External Models and Sources</text>
+<text x="1108.0" y="1074" font-size="17" font-weight="500" fill="#666666" text-anchor="middle" letter-spacing="1.5">REMOTE DEPENDENCIES</text>
+<text x="834" y="1118" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">DeepSeek API for model inference</text>
+<text x="834" y="1156" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">UCI WebSoc, Catalog and policy pages</text>
+<text x="834" y="1194" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">Anteater API and Zotistics grade history</text>
+<text x="834" y="1232" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">Controlled web search and page retrieval</text>
+<path d="M 834 1246 H 1382" stroke="#999999" stroke-opacity="0.24"/>
+<text x="834" y="1275" font-size="18" font-weight="400" fill="#666666" text-anchor="start" data-box-text="true">Separate model and source adapters</text>
+</g>
+<g data-box="runtime" data-bounds="1528,1000,544,294">
+<rect x="1528" y="1000" width="544" height="294" rx="18" fill="#eeeeee" stroke="#777777" stroke-width="1.6" />
+<text x="1800.0" y="1044" font-size="30" font-weight="600" fill="#202020" text-anchor="middle" >Safety and Observability</text>
+<text x="1800.0" y="1074" font-size="17" font-weight="500" fill="#666666" text-anchor="middle" letter-spacing="1.5">CROSS-CUTTING CONCERNS</text>
+<text x="1554" y="1118" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">Authentication, ownership and rate limits</text>
+<text x="1554" y="1156" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">CSRF checks and untrusted input boundaries</text>
+<text x="1554" y="1194" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">Tool validation and source audit trails</text>
+<text x="1554" y="1232" font-size="22" font-weight="400" fill="#202020" text-anchor="start" data-box-text="true">Trace IDs, metrics and health checks</text>
+<path d="M 1554 1246 H 2046" stroke="#999999" stroke-opacity="0.24"/>
+<text x="1554" y="1275" font-size="18" font-weight="400" fill="#666666" text-anchor="start" data-box-text="true">Runtime security and observability</text>
+</g>
+<rect x="64" y="1346" width="2032" height="68" rx="14" fill="#e8e8e8" stroke="none" stroke-width="1.6" />
+<text x="1080" y="1389" font-size="25" font-weight="500" fill="#333333" text-anchor="middle" >Request flow: Browser → FastAPI → Agent and tools → Domain services → SSE events and persistence</text>
+<text x="1080" y="1450" font-size="21" font-weight="400" fill="#666666" text-anchor="middle" >* Prefiltering, ranking and controlled rendering are configurable. Schedule is a planning view. Transcript PDFs stay in the browser.</text>
+</svg>

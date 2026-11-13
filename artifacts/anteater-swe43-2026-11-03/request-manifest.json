@@ -1,0 +1,54 @@
+{
+  "recorded_at_utc": "2026-11-03T23:03:15.194673+00:00",
+  "note": "Read-only public API requests. Current /courses responses are not historical term snapshots. Files preserve original response bytes.",
+  "requests": [
+    {
+      "url": "https://anteaterapi.com/v2/rest/websoc?year=2026&quarter=Fall&department=SWE&courseNumber=43",
+      "file": "2026-fall-swe43-websoc.json",
+      "http_status": 200,
+      "ok": true,
+      "bytes": 14836,
+      "sha256": "bdecd67cfcf3ca1bcc7917bc14e1dcde1cabcda38aeeb5896b4b375ad84e455a"
+    },
+    {
+      "url": "https://anteaterapi.com/v2/rest/websoc?year=2026&quarter=Winter&department=IN4MATX&courseNumber=43",
+      "file": "2026-winter-in4matx43-websoc.json",
+      "http_status": 200,
+      "ok": true,
+      "bytes": 10872,
+      "sha256": "0dcefcf63fca251b45dcc74b2425e4201f21f17c08d15f6da6b1e7bead4b0a77"
+    },
+    {
+      "url": "https://anteaterapi.com/v2/rest/websoc?year=2026&quarter=Winter&department=SWE&courseNumber=43",
+      "file": "2026-winter-swe43-websoc.json",
+      "http_status": 200,
+      "ok": true,
+      "bytes": 33,
+      "sha256": "113e4c374bbc91f2dfc2e93fcffc668995b4d78283120e603bce3733117c56e6"
+    },
+    {
+      "url": "https://anteaterapi.com/v2/rest/websoc?year=2026&quarter=Fall&department=IN4MATX&courseNumber=43",
+      "file": "2026-fall-in4matx43-websoc.json",
+      "http_status": 200,
+      "ok": true,
+      "bytes": 33,
+      "sha256": "113e4c374bbc91f2dfc2e93fcffc668995b4d78283120e603bce3733117c56e6"
+    },
+    {
+      "url": "https://anteaterapi.com/v2/rest/courses/SWE43",
+      "file": "current-swe43-course.json",
+      "http_status": 200,
+      "ok": true,
+      "bytes": 2177,
+      "sha256": "3fc1e205d9a59acd1c160d4d7ee5aebf03a6db567a7685da7ec5f7c4544c243a"
+    },
+    {
+      "url": "https://anteaterapi.com/v2/rest/courses/IN4MATX43",
+      "file": "current-in4matx43-course.json",
+      "http_status": 200,
+      "ok": true,
+      "bytes": 4892,
+      "sha256": "2b9cc4e59df7b962c7d0d91db50b355522aadddb8c88c4231caf966818462477"
+    }
+  ]
+}

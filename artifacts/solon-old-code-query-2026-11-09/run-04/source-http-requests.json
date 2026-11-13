@@ -1,0 +1,120 @@
+[
+  {
+    "method": "GET",
+    "url": "https://www.reg.uci.edu/perl/WebSoc",
+    "params": null,
+    "form": null,
+    "started_at_utc": "2026-11-10T00:02:06.628163+00:00",
+    "status": 200,
+    "bytes": 40889,
+    "response_file": "source-http-01.html",
+    "response_sha256": "ab8aab69cdb3c4e5716d8246ab8473fbd1596b0d77335977f05e7601649fa8bd"
+  },
+  {
+    "method": "POST",
+    "url": "https://www.reg.uci.edu/perl/WebSoc",
+    "params": null,
+    "form": {
+      "Submit": "Display Web Results",
+      "YearTerm": "2026-92",
+      "ShowComments": "on",
+      "ShowFinals": "on",
+      "Breadth": "ANY",
+      "Dept": "IN4MATX",
+      "CourseNum": "43",
+      "CourseCodes": "",
+      "InstrName": "",
+      "CourseTitle": "",
+      "ClassType": "ALL",
+      "Units": "",
+      "Days": "",
+      "StartTime": "",
+      "EndTime": "",
+      "MaxCap": "",
+      "FullCourses": "ANY",
+      "FontSize": "100",
+      "CancelledCourses": "Include",
+      "Bldg": "",
+      "Room": ""
+    },
+    "started_at_utc": "2026-11-10T00:02:07.019921+00:00",
+    "status": 200,
+    "bytes": 7620,
+    "response_file": "source-http-02.html",
+    "response_sha256": "94ff764289a6c64c5ba74b54b134d95cffa9932debfb02acdd28cf7593d20345"
+  },
+  {
+    "method": "GET",
+    "url": "https://anteaterapi.com/v2/rest/websoc",
+    "params": {
+      "year": "2026",
+      "quarter": "Fall"
+    },
+    "form": null,
+    "started_at_utc": "2026-11-10T00:02:07.256746+00:00",
+    "status": 200,
+    "bytes": 8182751,
+    "response_file": "source-http-03.json",
+    "response_sha256": "1cf9ef1ddf101408cb8af2f96ffc150cbfca1deb4e9262d539dfccf0557a991a"
+  },
+  {
+    "method": "GET",
+    "url": "https://anteaterapi.com/v2/rest/websoc",
+    "params": {
+      "year": "2026",
+      "quarter": "Fall",
+      "department": "SWE",
+      "courseNumber": "43"
+    },
+    "form": null,
+    "started_at_utc": "2026-11-10T00:02:17.394763+00:00",
+    "status": 200,
+    "bytes": 14823,
+    "response_file": "source-http-04.json",
+    "response_sha256": "6cb0a3a74cab596380dc7ae53ab72eadea62854ecc227a27a8d6d1023abe67f4"
+  },
+  {
+    "method": "GET",
+    "url": "https://www.reg.uci.edu/perl/WebSoc",
+    "params": null,
+    "form": null,
+    "started_at_utc": "2026-11-10T00:02:18.019664+00:00",
+    "status": 200,
+    "bytes": 40889,
+    "response_file": "source-http-05.html",
+    "response_sha256": "ab8aab69cdb3c4e5716d8246ab8473fbd1596b0d77335977f05e7601649fa8bd"
+  },
+  {
+    "method": "POST",
+    "url": "https://www.reg.uci.edu/perl/WebSoc",
+    "params": null,
+    "form": {
+      "Submit": "Display Web Results",
+      "YearTerm": "2026-92",
+      "ShowComments": "on",
+      "ShowFinals": "on",
+      "Breadth": "ANY",
+      "Dept": "SWE",
+      "CourseNum": "43",
+      "CourseCodes": "",
+      "InstrName": "",
+      "CourseTitle": "",
+      "ClassType": "ALL",
+      "Units": "",
+      "Days": "",
+      "StartTime": "",
+      "EndTime": "",
+      "MaxCap": "",
+      "FullCourses": "ANY",
+      "FontSize": "100",
+      "CancelledCourses": "Include",
+      "Bldg": "",
+      "Room": ""
+    },
+    "started_at_utc": "2026-11-10T00:02:18.261927+00:00",
+    "status": 200,
+    "bytes": 29261,
+    "response_file": "source-http-06.html",
+    "response_sha256": "58a957cb11ca2411ff21225f09b0e2ba7ce416bf6202c77b8764de2ed01f6deb"
+  }
+]

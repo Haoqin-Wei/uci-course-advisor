@@ -1,0 +1,2924 @@
+[
+  {
+    "type": "tool_call_start",
+    "name": "get_course_info",
+    "args": {
+      "course_id": "SWE43"
+    },
+    "label": "查询 SWE43 课程信息",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "get_course_info",
+    "ok": true,
+    "label": "查询 SWE43 课程信息",
+    "args": {
+      "course_id": "SWE43"
+    },
+    "term_data_available": false,
+    "reused": false
+  },
+  {
+    "type": "tool_call_start",
+    "name": "get_course_info",
+    "args": {
+      "course_id": "IN4MATX43"
+    },
+    "label": "查询 IN4MATX43 课程信息",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "get_course_info",
+    "ok": true,
+    "label": "查询 IN4MATX43 课程信息",
+    "args": {
+      "course_id": "IN4MATX43"
+    },
+    "term_data_available": false,
+    "reused": false
+  },
+  {
+    "type": "tool_call_start",
+    "name": "get_live_sections",
+    "args": {
+      "course_id": "IN4MATX43",
+      "term": "2026 Winter"
+    },
+    "label": "实时查询 WebSoc · IN4MATX43 · 2026年冬季",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "get_live_sections",
+    "ok": true,
+    "label": "实时查询 WebSoc · IN4MATX43 · 2026年冬季",
+    "args": {
+      "course_id": "IN4MATX43",
+      "term": "2026 Winter"
+    },
+    "term_data_available": true,
+    "reused": false
+  },
+  {
+    "type": "tool_call_start",
+    "name": "get_live_sections",
+    "args": {
+      "course_id": "SWE43",
+      "term": "2026 Fall"
+    },
+    "label": "实时查询 WebSoc · SWE43 · 2026年秋季",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "get_live_sections",
+    "ok": true,
+    "label": "实时查询 WebSoc · SWE43 · 2026年秋季",
+    "args": {
+      "course_id": "SWE43",
+      "term": "2026 Fall"
+    },
+    "term_data_available": true,
+    "reused": false
+  },
+  {
+    "type": "tool_call_start",
+    "name": "get_course_offerings",
+    "args": {
+      "course_id": "IN4MATX43",
+      "terms": [
+        "2026 Winter",
+        "2026 Spring",
+        "2026 Fall"
+      ]
+    },
+    "label": "查询开课与教授 · IN4MATX43 · 2026年冬季, 2026年春季, 2026年秋季",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "get_course_offerings",
+    "ok": false,
+    "label": "查询开课与教授 · IN4MATX43 · 2026年冬季, 2026年春季, 2026年秋季",
+    "args": {
+      "course_id": "IN4MATX43",
+      "terms": [
+        "2026 Winter",
+        "2026 Spring",
+        "2026 Fall"
+      ]
+    },
+    "term_data_available": false,
+    "reused": false
+  },
+  {
+    "type": "tool_call_start",
+    "name": "get_course_offerings",
+    "args": {
+      "course_id": "SWE43",
+      "terms": [
+        "2026 Winter",
+        "2026 Spring",
+        "2026 Fall"
+      ]
+    },
+    "label": "查询开课与教授 · SWE43 · 2026年冬季, 2026年春季, 2026年秋季",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "get_course_offerings",
+    "ok": false,
+    "label": "查询开课与教授 · SWE43 · 2026年冬季, 2026年春季, 2026年秋季",
+    "args": {
+      "course_id": "SWE43",
+      "terms": [
+        "2026 Winter",
+        "2026 Spring",
+        "2026 Fall"
+      ]
+    },
+    "term_data_available": false,
+    "reused": false
+  },
+  {
+    "type": "tool_call_start",
+    "name": "get_course_offerings",
+    "args": {
+      "course_id": "IN4MATX43",
+      "terms": [
+        "2026 Winter",
+        "2026 Fall"
+      ]
+    },
+    "label": "查询开课与教授 · IN4MATX43 · 2026年冬季, 2026年秋季",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "get_course_offerings",
+    "ok": true,
+    "label": "查询开课与教授 · IN4MATX43 · 2026年冬季, 2026年秋季",
+    "args": {
+      "course_id": "IN4MATX43",
+      "terms": [
+        "2026 Winter",
+        "2026 Fall"
+      ]
+    },
+    "term_data_available": true,
+    "reused": false
+  },
+  {
+    "type": "tool_call_start",
+    "name": "get_course_offerings",
+    "args": {
+      "course_id": "SWE43",
+      "terms": [
+        "2026 Winter",
+        "2026 Fall"
+      ]
+    },
+    "label": "查询开课与教授 · SWE43 · 2026年冬季, 2026年秋季",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "get_course_offerings",
+    "ok": true,
+    "label": "查询开课与教授 · SWE43 · 2026年冬季, 2026年秋季",
+    "args": {
+      "course_id": "SWE43",
+      "terms": [
+        "2026 Winter",
+        "2026 Fall"
+      ]
+    },
+    "term_data_available": true,
+    "reused": false
+  },
+  {
+    "type": "token",
+    "text": "**"
+  },
+  {
+    "type": "token",
+    "text": "SW"
+  },
+  {
+    "type": "token",
+    "text": "E"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": " ·"
+  },
+  {
+    "type": "token",
+    "text": " Introduction"
+  },
+  {
+    "type": "token",
+    "text": " to"
+  },
+  {
+    "type": "token",
+    "text": " Software"
+  },
+  {
+    "type": "token",
+    "text": " Engineering"
+  },
+  {
+    "type": "token",
+    "text": "**\n\n"
+  },
+  {
+    "type": "token",
+    "text": ">"
+  },
+  {
+    "type": "token",
+    "text": " **"
+  },
+  {
+    "type": "token",
+    "text": "结论"
+  },
+  {
+    "type": "token",
+    "text": "："
+  },
+  {
+    "type": "token",
+    "text": "不能"
+  },
+  {
+    "type": "token",
+    "text": "。"
+  },
+  {
+    "type": "token",
+    "text": "**"
+  },
+  {
+    "type": "token",
+    "text": " SW"
+  },
+  {
+    "type": "token",
+    "text": "E"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "的"
+  },
+  {
+    "type": "token",
+    "text": "官方"
+  },
+  {
+    "type": "token",
+    "text": "课程"
+  },
+  {
+    "type": "token",
+    "text": "说明"
+  },
+  {
+    "type": "token",
+    "text": "明确"
+  },
+  {
+    "type": "token",
+    "text": "禁止"
+  },
+  {
+    "type": "token",
+    "text": "："
+  },
+  {
+    "type": "token",
+    "text": "已"
+  },
+  {
+    "type": "token",
+    "text": "取得"
+  },
+  {
+    "type": "token",
+    "text": " INF"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": "（"
+  },
+  {
+    "type": "token",
+    "text": "即"
+  },
+  {
+    "type": "token",
+    "text": "现"
+  },
+  {
+    "type": "token",
+    "text": " IN"
+  },
+  {
+    "type": "token",
+    "text": "4"
+  },
+  {
+    "type": "token",
+    "text": "MAT"
+  },
+  {
+    "type": "token",
+    "text": "X"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": "）"
+  },
+  {
+    "type": "token",
+    "text": "学分"
+  },
+  {
+    "type": "token",
+    "text": "的学生"
+  },
+  {
+    "type": "token",
+    "text": "，"
+  },
+  {
+    "type": "token",
+    "text": "不得"
+  },
+  {
+    "type": "token",
+    "text": "再"
+  },
+  {
+    "type": "token",
+    "text": "修"
+  },
+  {
+    "type": "token",
+    "text": " SW"
+  },
+  {
+    "type": "token",
+    "text": "E"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": "。\n\n"
+  },
+  {
+    "type": "token",
+    "text": "────────────────"
+  },
+  {
+    "type": "token",
+    "text": "────────────────"
+  },
+  {
+    "type": "token",
+    "text": "──"
+  },
+  {
+    "type": "token",
+    "text": "\n\n"
+  },
+  {
+    "type": "token",
+    "text": "**"
+  },
+  {
+    "type": "token",
+    "text": "两"
+  },
+  {
+    "type": "token",
+    "text": "门"
+  },
+  {
+    "type": "token",
+    "text": "课"
+  },
+  {
+    "type": "token",
+    "text": "的关系"
+  },
+  {
+    "type": "token",
+    "text": "**"
+  },
+  {
+    "type": "token",
+    "text": " （"
+  },
+  {
+    "type": "token",
+    "text": "U"
+  },
+  {
+    "type": "token",
+    "text": "CI"
+  },
+  {
+    "type": "token",
+    "text": " Registrar"
+  },
+  {
+    "type": "token",
+    "text": " Web"
+  },
+  {
+    "type": "token",
+    "text": "S"
+  },
+  {
+    "type": "token",
+    "text": "oc"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "课程"
+  },
+  {
+    "type": "token",
+    "text": "注释"
+  },
+  {
+    "type": "token",
+    "text": "，"
+  },
+  {
+    "type": "token",
+    "text": "202"
+  },
+  {
+    "type": "token",
+    "text": "6"
+  },
+  {
+    "type": "token",
+    "text": " Fall"
+  },
+  {
+    "type": "token",
+    "text": "）\n\n"
+  },
+  {
+    "type": "token",
+    "text": "|"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "项目"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "内容"
+  },
+  {
+    "type": "token",
+    "text": " |\n"
+  },
+  {
+    "type": "token",
+    "text": "|---|---"
+  },
+  {
+    "type": "token",
+    "text": "|\n"
+  },
+  {
+    "type": "token",
+    "text": "|"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "说明"
+  },
+  {
+    "type": "token",
+    "text": "原文"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " “"
+  },
+  {
+    "type": "token",
+    "text": "Previously"
+  },
+  {
+    "type": "token",
+    "text": " offered"
+  },
+  {
+    "type": "token",
+    "text": " as"
+  },
+  {
+    "type": "token",
+    "text": " INF"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": ","
+  },
+  {
+    "type": "token",
+    "text": " \""
+  },
+  {
+    "type": "token",
+    "text": "Intro"
+  },
+  {
+    "type": "token",
+    "text": " Software"
+  },
+  {
+    "type": "token",
+    "text": " Eng"
+  },
+  {
+    "type": "token",
+    "text": "r"
+  },
+  {
+    "type": "token",
+    "text": "\"."
+  },
+  {
+    "type": "token",
+    "text": " Students"
+  },
+  {
+    "type": "token",
+    "text": " with"
+  },
+  {
+    "type": "token",
+    "text": " prior"
+  },
+  {
+    "type": "token",
+    "text": " credit"
+  },
+  {
+    "type": "token",
+    "text": " for"
+  },
+  {
+    "type": "token",
+    "text": " INF"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": " …"
+  },
+  {
+    "type": "token",
+    "text": " may"
+  },
+  {
+    "type": "token",
+    "text": " not"
+  },
+  {
+    "type": "token",
+    "text": " take"
+  },
+  {
+    "type": "token",
+    "text": " SW"
+  },
+  {
+    "type": "token",
+    "text": "E"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": "”"
+  },
+  {
+    "type": "token",
+    "text": " |\n"
+  },
+  {
+    "type": "token",
+    "text": "|"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "代码"
+  },
+  {
+    "type": "token",
+    "text": "对应"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "注释"
+  },
+  {
+    "type": "token",
+    "text": "中的"
+  },
+  {
+    "type": "token",
+    "text": " **"
+  },
+  {
+    "type": "token",
+    "text": "INF"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": "**"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "经"
+  },
+  {
+    "type": "token",
+    "text": "系"
+  },
+  {
+    "type": "token",
+    "text": "别"
+  },
+  {
+    "type": "token",
+    "text": "别名"
+  },
+  {
+    "type": "token",
+    "text": "表"
+  },
+  {
+    "type": "token",
+    "text": "正规"
+  },
+  {
+    "type": "token",
+    "text": "化为"
+  },
+  {
+    "type": "token",
+    "text": " **"
+  },
+  {
+    "type": "token",
+    "text": "IN"
+  },
+  {
+    "type": "token",
+    "text": "4"
+  },
+  {
+    "type": "token",
+    "text": "MAT"
+  },
+  {
+    "type": "token",
+    "text": "X"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": "**"
+  },
+  {
+    "type": "token",
+    "text": " |\n"
+  },
+  {
+    "type": "token",
+    "text": "|"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "判定"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " SW"
+  },
+  {
+    "type": "token",
+    "text": "E"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "是"
+  },
+  {
+    "type": "token",
+    "text": "原"
+  },
+  {
+    "type": "token",
+    "text": " INF"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": " →"
+  },
+  {
+    "type": "token",
+    "text": " IN"
+  },
+  {
+    "type": "token",
+    "text": "4"
+  },
+  {
+    "type": "token",
+    "text": "MAT"
+  },
+  {
+    "type": "token",
+    "text": "X"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "的"
+  },
+  {
+    "type": "token",
+    "text": "**"
+  },
+  {
+    "type": "token",
+    "text": "改"
+  },
+  {
+    "type": "token",
+    "text": "编号"
+  },
+  {
+    "type": "token",
+    "text": "后续"
+  },
+  {
+    "type": "token",
+    "text": "课程"
+  },
+  {
+    "type": "token",
+    "text": "**"
+  },
+  {
+    "type": "token",
+    "text": "，"
+  },
+  {
+    "type": "token",
+    "text": "属于"
+  },
+  {
+    "type": "token",
+    "text": "同一"
+  },
+  {
+    "type": "token",
+    "text": "门"
+  },
+  {
+    "type": "token",
+    "text": "课"
+  },
+  {
+    "type": "token",
+    "text": "，"
+  },
+  {
+    "type": "token",
+    "text": "并非"
+  },
+  {
+    "type": "token",
+    "text": "两"
+  },
+  {
+    "type": "token",
+    "text": "门"
+  },
+  {
+    "type": "token",
+    "text": "并列"
+  },
+  {
+    "type": "token",
+    "text": "课程"
+  },
+  {
+    "type": "token",
+    "text": " |\n\n"
+  },
+  {
+    "type": "token",
+    "text": "**"
+  },
+  {
+    "type": "token",
+    "text": "辅助"
+  },
+  {
+    "type": "token",
+    "text": "证据"
+  },
+  {
+    "type": "token",
+    "text": "**"
+  },
+  {
+    "type": "token",
+    "text": " （"
+  },
+  {
+    "type": "token",
+    "text": "课程"
+  },
+  {
+    "type": "token",
+    "text": "目录"
+  },
+  {
+    "type": "token",
+    "text": " +"
+  },
+  {
+    "type": "token",
+    "text": " Web"
+  },
+  {
+    "type": "token",
+    "text": "S"
+  },
+  {
+    "type": "token",
+    "text": "oc"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "开"
+  },
+  {
+    "type": "token",
+    "text": "课"
+  },
+  {
+    "type": "token",
+    "text": "记录"
+  },
+  {
+    "type": "token",
+    "text": "）\n\n"
+  },
+  {
+    "type": "token",
+    "text": "|"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "项目"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " SW"
+  },
+  {
+    "type": "token",
+    "text": "E"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " IN"
+  },
+  {
+    "type": "token",
+    "text": "4"
+  },
+  {
+    "type": "token",
+    "text": "MAT"
+  },
+  {
+    "type": "token",
+    "text": "X"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": " |\n"
+  },
+  {
+    "type": "token",
+    "text": "|---|---"
+  },
+  {
+    "type": "token",
+    "text": "|---"
+  },
+  {
+    "type": "token",
+    "text": "|\n"
+  },
+  {
+    "type": "token",
+    "text": "|"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "课"
+  },
+  {
+    "type": "token",
+    "text": "名"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " Introduction"
+  },
+  {
+    "type": "token",
+    "text": " to"
+  },
+  {
+    "type": "token",
+    "text": " Software"
+  },
+  {
+    "type": "token",
+    "text": " Engineering"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " Introduction"
+  },
+  {
+    "type": "token",
+    "text": " to"
+  },
+  {
+    "type": "token",
+    "text": " Software"
+  },
+  {
+    "type": "token",
+    "text": " Engineering"
+  },
+  {
+    "type": "token",
+    "text": " |\n"
+  },
+  {
+    "type": "token",
+    "text": "|"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "学分"
+  },
+  {
+    "type": "token",
+    "text": " /"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "层级"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "4"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "分"
+  },
+  {
+    "type": "token",
+    "text": "·"
+  },
+  {
+    "type": "token",
+    "text": "低"
+  },
+  {
+    "type": "token",
+    "text": "阶"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "4"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "分"
+  },
+  {
+    "type": "token",
+    "text": "·"
+  },
+  {
+    "type": "token",
+    "text": "低"
+  },
+  {
+    "type": "token",
+    "text": "阶"
+  },
+  {
+    "type": "token",
+    "text": " |\n"
+  },
+  {
+    "type": "token",
+    "text": "|"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "课程"
+  },
+  {
+    "type": "token",
+    "text": "描述"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "与"
+  },
+  {
+    "type": "token",
+    "text": "右侧"
+  },
+  {
+    "type": "token",
+    "text": "几乎"
+  },
+  {
+    "type": "token",
+    "text": "逐"
+  },
+  {
+    "type": "token",
+    "text": "字"
+  },
+  {
+    "type": "token",
+    "text": "相同"
+  },
+  {
+    "type": "token",
+    "text": "（"
+  },
+  {
+    "type": "token",
+    "text": "软件"
+  },
+  {
+    "type": "token",
+    "text": "工程"
+  },
+  {
+    "type": "token",
+    "text": "概念"
+  },
+  {
+    "type": "token",
+    "text": "、"
+  },
+  {
+    "type": "token",
+    "text": "大型"
+  },
+  {
+    "type": "token",
+    "text": "软件开发"
+  },
+  {
+    "type": "token",
+    "text": "、"
+  },
+  {
+    "type": "token",
+    "text": "生命周期"
+  },
+  {
+    "type": "token",
+    "text": "模型"
+  },
+  {
+    "type": "token",
+    "text": "）"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "同上"
+  },
+  {
+    "type": "token",
+    "text": " |\n"
+  },
+  {
+    "type": "token",
+    "text": "|"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "202"
+  },
+  {
+    "type": "token",
+    "text": "6"
+  },
+  {
+    "type": "token",
+    "text": " Winter"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "官方"
+  },
+  {
+    "type": "token",
+    "text": "课"
+  },
+  {
+    "type": "token",
+    "text": "表"
+  },
+  {
+    "type": "token",
+    "text": "无"
+  },
+  {
+    "type": "token",
+    "text": "匹配"
+  },
+  {
+    "type": "token",
+    "text": "（"
+  },
+  {
+    "type": "token",
+    "text": "not"
+  },
+  {
+    "type": "token",
+    "text": "_"
+  },
+  {
+    "type": "token",
+    "text": "off"
+  },
+  {
+    "type": "token",
+    "text": "ered"
+  },
+  {
+    "type": "token",
+    "text": "）"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "开设"
+  },
+  {
+    "type": "token",
+    "text": "，"
+  },
+  {
+    "type": "token",
+    "text": "教师"
+  },
+  {
+    "type": "token",
+    "text": " **"
+  },
+  {
+    "type": "token",
+    "text": "Z"
+  },
+  {
+    "type": "token",
+    "text": "iv"
+  },
+  {
+    "type": "token",
+    "text": ","
+  },
+  {
+    "type": "token",
+    "text": " H"
+  },
+  {
+    "type": "token",
+    "text": ".**"
+  },
+  {
+    "type": "token",
+    "text": " |\n"
+  },
+  {
+    "type": "token",
+    "text": "|"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "202"
+  },
+  {
+    "type": "token",
+    "text": "6"
+  },
+  {
+    "type": "token",
+    "text": " Fall"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "开设"
+  },
+  {
+    "type": "token",
+    "text": "，"
+  },
+  {
+    "type": "token",
+    "text": "教师"
+  },
+  {
+    "type": "token",
+    "text": " **"
+  },
+  {
+    "type": "token",
+    "text": "G"
+  },
+  {
+    "type": "token",
+    "text": "illes"
+  },
+  {
+    "type": "token",
+    "text": "pie"
+  },
+  {
+    "type": "token",
+    "text": ","
+  },
+  {
+    "type": "token",
+    "text": " J"
+  },
+  {
+    "type": "token",
+    "text": ".**"
+  },
+  {
+    "type": "token",
+    "text": " /"
+  },
+  {
+    "type": "token",
+    "text": " **"
+  },
+  {
+    "type": "token",
+    "text": "M"
+  },
+  {
+    "type": "token",
+    "text": "annan"
+  },
+  {
+    "type": "token",
+    "text": ","
+  },
+  {
+    "type": "token",
+    "text": " U"
+  },
+  {
+    "type": "token",
+    "text": ".**"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "官方"
+  },
+  {
+    "type": "token",
+    "text": "课"
+  },
+  {
+    "type": "token",
+    "text": "表"
+  },
+  {
+    "type": "token",
+    "text": "无"
+  },
+  {
+    "type": "token",
+    "text": "匹配"
+  },
+  {
+    "type": "token",
+    "text": "（"
+  },
+  {
+    "type": "token",
+    "text": "not"
+  },
+  {
+    "type": "token",
+    "text": "_"
+  },
+  {
+    "type": "token",
+    "text": "off"
+  },
+  {
+    "type": "token",
+    "text": "ered"
+  },
+  {
+    "type": "token",
+    "text": "）"
+  },
+  {
+    "type": "token",
+    "text": " |\n\n"
+  },
+  {
+    "type": "token",
+    "text": "两"
+  },
+  {
+    "type": "token",
+    "text": "学期"
+  },
+  {
+    "type": "token",
+    "text": "恰好"
+  },
+  {
+    "type": "token",
+    "text": "互换"
+  },
+  {
+    "type": "token",
+    "text": "，"
+  },
+  {
+    "type": "token",
+    "text": "与"
+  },
+  {
+    "type": "token",
+    "text": "“"
+  },
+  {
+    "type": "token",
+    "text": "改"
+  },
+  {
+    "type": "token",
+    "text": "编号"
+  },
+  {
+    "type": "token",
+    "text": "”"
+  },
+  {
+    "type": "token",
+    "text": "的解释"
+  },
+  {
+    "type": "token",
+    "text": "一致"
+  },
+  {
+    "type": "token",
+    "text": "（"
+  },
+  {
+    "type": "token",
+    "text": "来源"
+  },
+  {
+    "type": "token",
+    "text": "："
+  },
+  {
+    "type": "token",
+    "text": "Reg"
+  },
+  {
+    "type": "token",
+    "text": "ist"
+  },
+  {
+    "type": "token",
+    "text": "rar"
+  },
+  {
+    "type": "token",
+    "text": " Web"
+  },
+  {
+    "type": "token",
+    "text": "S"
+  },
+  {
+    "type": "token",
+    "text": "oc"
+  },
+  {
+    "type": "token",
+    "text": "）。\n\n"
+  },
+  {
+    "type": "token",
+    "text": "────────────────"
+  },
+  {
+    "type": "token",
+    "text": "────────────────"
+  },
+  {
+    "type": "token",
+    "text": "──"
+  },
+  {
+    "type": "token",
+    "text": "\n\n"
+  },
+  {
+    "type": "token",
+    "text": "**"
+  },
+  {
+    "type": "token",
+    "text": "对你"
+  },
+  {
+    "type": "token",
+    "text": "这种情况"
+  },
+  {
+    "type": "token",
+    "text": "的判断"
+  },
+  {
+    "type": "token",
+    "text": "**\n\n"
+  },
+  {
+    "type": "token",
+    "text": "|"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "项目"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "结论"
+  },
+  {
+    "type": "token",
+    "text": " |\n"
+  },
+  {
+    "type": "token",
+    "text": "|---|---"
+  },
+  {
+    "type": "token",
+    "text": "|\n"
+  },
+  {
+    "type": "token",
+    "text": "|"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "202"
+  },
+  {
+    "type": "token",
+    "text": "6"
+  },
+  {
+    "type": "token",
+    "text": " Winter"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "修"
+  },
+  {
+    "type": "token",
+    "text": "完"
+  },
+  {
+    "type": "token",
+    "text": " IN"
+  },
+  {
+    "type": "token",
+    "text": "4"
+  },
+  {
+    "type": "token",
+    "text": "MAT"
+  },
+  {
+    "type": "token",
+    "text": "X"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "并"
+  },
+  {
+    "type": "token",
+    "text": "取得"
+  },
+  {
+    "type": "token",
+    "text": "学分"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "按"
+  },
+  {
+    "type": "token",
+    "text": "上面"
+  },
+  {
+    "type": "token",
+    "text": "注释"
+  },
+  {
+    "type": "token",
+    "text": "，"
+  },
+  {
+    "type": "token",
+    "text": "等同于"
+  },
+  {
+    "type": "token",
+    "text": "“"
+  },
+  {
+    "type": "token",
+    "text": "已"
+  },
+  {
+    "type": "token",
+    "text": "持"
+  },
+  {
+    "type": "token",
+    "text": " INF"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "学分"
+  },
+  {
+    "type": "token",
+    "text": "”"
+  },
+  {
+    "type": "token",
+    "text": " |\n"
+  },
+  {
+    "type": "token",
+    "text": "|"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "202"
+  },
+  {
+    "type": "token",
+    "text": "6"
+  },
+  {
+    "type": "token",
+    "text": " Fall"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "注册"
+  },
+  {
+    "type": "token",
+    "text": " SW"
+  },
+  {
+    "type": "token",
+    "text": "E"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " **"
+  },
+  {
+    "type": "token",
+    "text": "不允许"
+  },
+  {
+    "type": "token",
+    "text": "**"
+  },
+  {
+    "type": "token",
+    "text": "；"
+  },
+  {
+    "type": "token",
+    "text": "课程"
+  },
+  {
+    "type": "token",
+    "text": "说明"
+  },
+  {
+    "type": "token",
+    "text": "本身"
+  },
+  {
+    "type": "token",
+    "text": "构成"
+  },
+  {
+    "type": "token",
+    "text": "禁止"
+  },
+  {
+    "type": "token",
+    "text": "，"
+  },
+  {
+    "type": "token",
+    "text": "且"
+  },
+  {
+    "type": "token",
+    "text": "两"
+  },
+  {
+    "type": "token",
+    "text": "课"
+  },
+  {
+    "type": "token",
+    "text": "为"
+  },
+  {
+    "type": "token",
+    "text": "同一"
+  },
+  {
+    "type": "token",
+    "text": "门"
+  },
+  {
+    "type": "token",
+    "text": "课"
+  },
+  {
+    "type": "token",
+    "text": "，"
+  },
+  {
+    "type": "token",
+    "text": "重复"
+  },
+  {
+    "type": "token",
+    "text": "修"
+  },
+  {
+    "type": "token",
+    "text": "读"
+  },
+  {
+    "type": "token",
+    "text": "不"
+  },
+  {
+    "type": "token",
+    "text": "产生"
+  },
+  {
+    "type": "token",
+    "text": "第二个"
+  },
+  {
+    "type": "token",
+    "text": "学分"
+  },
+  {
+    "type": "token",
+    "text": " |\n"
+  },
+  {
+    "type": "token",
+    "text": "|"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "注册"
+  },
+  {
+    "type": "token",
+    "text": "可行性"
+  },
+  {
+    "type": "token",
+    "text": " |"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "已"
+  },
+  {
+    "type": "token",
+    "text": "无关"
+  },
+  {
+    "type": "token",
+    "text": "紧要"
+  },
+  {
+    "type": "token",
+    "text": "："
+  },
+  {
+    "type": "token",
+    "text": "202"
+  },
+  {
+    "type": "token",
+    "text": "6"
+  },
+  {
+    "type": "token",
+    "text": " Fall"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "的"
+  },
+  {
+    "type": "token",
+    "text": " ICS"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "课程"
+  },
+  {
+    "type": "token",
+    "text": " Web"
+  },
+  {
+    "type": "token",
+    "text": "Reg"
+  },
+  {
+    "type": "token",
+    "text": " add"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "截止"
+  },
+  {
+    "type": "token",
+    "text": "为"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "10"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "月"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "9"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "日"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "202"
+  },
+  {
+    "type": "token",
+    "text": "6"
+  },
+  {
+    "type": "token",
+    "text": "，"
+  },
+  {
+    "type": "token",
+    "text": "现已"
+  },
+  {
+    "type": "token",
+    "text": "过期"
+  },
+  {
+    "type": "token",
+    "text": " |\n\n"
+  },
+  {
+    "type": "token",
+    "text": "一处"
+  },
+  {
+    "type": "token",
+    "text": "需要"
+  },
+  {
+    "type": "token",
+    "text": "标注"
+  },
+  {
+    "type": "token",
+    "text": "的不"
+  },
+  {
+    "type": "token",
+    "text": "确定性"
+  },
+  {
+    "type": "token",
+    "text": "："
+  },
+  {
+    "type": "token",
+    "text": "注释"
+  },
+  {
+    "type": "token",
+    "text": "文字"
+  },
+  {
+    "type": "token",
+    "text": "针对"
+  },
+  {
+    "type": "token",
+    "text": "的是"
+  },
+  {
+    "type": "token",
+    "text": " “"
+  },
+  {
+    "type": "token",
+    "text": "INF"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "43"
+  },
+  {
+    "type": "token",
+    "text": "”"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "这个"
+  },
+  {
+    "type": "token",
+    "text": "旧"
+  },
+  {
+    "type": "token",
+    "text": "代码"
+  },
+  {
+    "type": "token",
+    "text": "，"
+  },
+  {
+    "type": "token",
+    "text": "别名"
+  },
+  {
+    "type": "token",
+    "text": "表"
+  },
+  {
+    "type": "token",
+    "text": "提供"
+  },
+  {
+    "type": "token",
+    "text": "的是"
+  },
+  {
+    "type": "token",
+    "text": "代码"
+  },
+  {
+    "type": "token",
+    "text": "拼"
+  },
+  {
+    "type": "token",
+    "text": "写"
+  },
+  {
+    "type": "token",
+    "text": "/"
+  },
+  {
+    "type": "token",
+    "text": "系"
+  },
+  {
+    "type": "token",
+    "text": "别"
+  },
+  {
+    "type": "token",
+    "text": "层面的"
+  },
+  {
+    "type": "token",
+    "text": "对应"
+  },
+  {
+    "type": "token",
+    "text": "（"
+  },
+  {
+    "type": "token",
+    "text": "INF"
+  },
+  {
+    "type": "token",
+    "text": " →"
+  },
+  {
+    "type": "token",
+    "text": " IN"
+  },
+  {
+    "type": "token",
+    "text": "4"
+  },
+  {
+    "type": "token",
+    "text": "MAT"
+  },
+  {
+    "type": "token",
+    "text": "X"
+  },
+  {
+    "type": "token",
+    "text": "）；"
+  },
+  {
+    "type": "token",
+    "text": "“"
+  },
+  {
+    "type": "token",
+    "text": "改"
+  },
+  {
+    "type": "token",
+    "text": "编号"
+  },
+  {
+    "type": "token",
+    "text": "”"
+  },
+  {
+    "type": "token",
+    "text": "这一"
+  },
+  {
+    "type": "token",
+    "text": "关系"
+  },
+  {
+    "type": "token",
+    "text": "由"
+  },
+  {
+    "type": "token",
+    "text": "注释"
+  },
+  {
+    "type": "token",
+    "text": "原文"
+  },
+  {
+    "type": "token",
+    "text": "确立"
+  },
+  {
+    "type": "token",
+    "text": "，"
+  },
+  {
+    "type": "token",
+    "text": "而非"
+  },
+  {
+    "type": "token",
+    "text": "由"
+  },
+  {
+    "type": "token",
+    "text": "别名"
+  },
+  {
+    "type": "token",
+    "text": "表"
+  },
+  {
+    "type": "token",
+    "text": "推断"
+  },
+  {
+    "type": "token",
+    "text": "。"
+  },
+  {
+    "type": "token",
+    "text": "若"
+  },
+  {
+    "type": "token",
+    "text": "你要"
+  },
+  {
+    "type": "token",
+    "text": "在"
+  },
+  {
+    "type": "token",
+    "text": "成绩"
+  },
+  {
+    "type": "token",
+    "text": "单"
+  },
+  {
+    "type": "token",
+    "text": "上"
+  },
+  {
+    "type": "token",
+    "text": "做"
+  },
+  {
+    "type": "token",
+    "text": "学分"
+  },
+  {
+    "type": "token",
+    "text": "核算"
+  },
+  {
+    "type": "token",
+    "text": "或"
+  },
+  {
+    "type": "token",
+    "text": "申诉"
+  },
+  {
+    "type": "token",
+    "text": "，"
+  },
+  {
+    "type": "token",
+    "text": "需"
+  },
+  {
+    "type": "token",
+    "text": "由"
+  },
+  {
+    "type": "token",
+    "text": " ICS"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "本科"
+  },
+  {
+    "type": "token",
+    "text": "学生"
+  },
+  {
+    "type": "token",
+    "text": "事务"
+  },
+  {
+    "type": "token",
+    "text": "确认"
+  },
+  {
+    "type": "token",
+    "text": "。\n\n"
+  },
+  {
+    "type": "token",
+    "text": "**"
+  },
+  {
+    "type": "token",
+    "text": "下一步"
+  },
+  {
+    "type": "token",
+    "text": "："
+  },
+  {
+    "type": "token",
+    "text": "**"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "要不要"
+  },
+  {
+    "type": "token",
+    "text": "我"
+  },
+  {
+    "type": "token",
+    "text": "查"
+  },
+  {
+    "type": "token",
+    "text": "一下"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "202"
+  },
+  {
+    "type": "token",
+    "text": "6"
+  },
+  {
+    "type": "token",
+    "text": " Fall"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "有哪些"
+  },
+  {
+    "type": "token",
+    "text": "课程"
+  },
+  {
+    "type": "token",
+    "text": "可以作为"
+  },
+  {
+    "type": "token",
+    "text": "这门"
+  },
+  {
+    "type": "token",
+    "text": "课的"
+  },
+  {
+    "type": "token",
+    "text": "替代"
+  },
+  {
+    "type": "token",
+    "text": "（"
+  },
+  {
+    "type": "token",
+    "text": "不"
+  },
+  {
+    "type": "token",
+    "text": "重复"
+  },
+  {
+    "type": "token",
+    "text": "学分"
+  },
+  {
+    "type": "token",
+    "text": "）"
+  },
+  {
+    "type": "token",
+    "text": "？\n\n"
+  },
+  {
+    "type": "token",
+    "text": "Sources"
+  },
+  {
+    "type": "token",
+    "text": ":\n"
+  },
+  {
+    "type": "token",
+    "text": "-"
+  },
+  {
+    "type": "token",
+    "text": " Database"
+  },
+  {
+    "type": "token",
+    "text": " verified"
+  },
+  {
+    "type": "token",
+    "text": ":"
+  },
+  {
+    "type": "token",
+    "text": " live"
+  },
+  {
+    "type": "token",
+    "text": " Web"
+  },
+  {
+    "type": "token",
+    "text": "S"
+  },
+  {
+    "type": "token",
+    "text": "oc"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "课程"
+  },
+  {
+    "type": "token",
+    "text": "注释"
+  },
+  {
+    "type": "token",
+    "text": "与"
+  },
+  {
+    "type": "token",
+    "text": "开"
+  },
+  {
+    "type": "token",
+    "text": "课"
+  },
+  {
+    "type": "token",
+    "text": "记录"
+  },
+  {
+    "type": "token",
+    "text": " ·"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "202"
+  },
+  {
+    "type": "token",
+    "text": "6"
+  },
+  {
+    "type": "token",
+    "text": " Winter"
+  },
+  {
+    "type": "token",
+    "text": " /"
+  },
+  {
+    "type": "token",
+    "text": " "
+  },
+  {
+    "type": "token",
+    "text": "202"
+  },
+  {
+    "type": "token",
+    "text": "6"
+  },
+  {
+    "type": "token",
+    "text": " Fall"
+  },
+  {
+    "type": "token",
+    "text": " ·"
+  },
+  {
+    "type": "token",
+    "text": " registrar"
+  },
+  {
+    "type": "token",
+    "text": "_"
+  },
+  {
+    "type": "token",
+    "text": "webs"
+  },
+  {
+    "type": "token",
+    "text": "oc"
+  },
+  {
+    "type": "token",
+    "text": "（"
+  },
+  {
+    "type": "token",
+    "text": "["
+  },
+  {
+    "type": "token",
+    "text": "U"
+  },
+  {
+    "type": "token",
+    "text": "CI"
+  },
+  {
+    "type": "token",
+    "text": " Registrar"
+  },
+  {
+    "type": "token",
+    "text": " Web"
+  },
+  {
+    "type": "token",
+    "text": "S"
+  },
+  {
+    "type": "token",
+    "text": "oc"
+  },
+  {
+    "type": "token",
+    "text": "]("
+  },
+  {
+    "type": "token",
+    "text": "https"
+  },
+  {
+    "type": "token",
+    "text": "://"
+  },
+  {
+    "type": "token",
+    "text": "www"
+  },
+  {
+    "type": "token",
+    "text": "."
+  },
+  {
+    "type": "token",
+    "text": "reg"
+  },
+  {
+    "type": "token",
+    "text": "."
+  },
+  {
+    "type": "token",
+    "text": "uci"
+  },
+  {
+    "type": "token",
+    "text": ".edu"
+  },
+  {
+    "type": "token",
+    "text": "/per"
+  },
+  {
+    "type": "token",
+    "text": "l"
+  },
+  {
+    "type": "token",
+    "text": "/"
+  },
+  {
+    "type": "token",
+    "text": "Web"
+  },
+  {
+    "type": "token",
+    "text": "S"
+  },
+  {
+    "type": "token",
+    "text": "oc"
+  },
+  {
+    "type": "token",
+    "text": ")"
+  },
+  {
+    "type": "token",
+    "text": "）"
+  },
+  {
+    "type": "final",
+    "text": "**SWE 43 · Introduction to Software Engineering**\n\n> **结论：不能。** SWE 43 的官方课程说明明确禁止：已取得 INF 43（即现 IN4MATX 43）学分的学生，不得再修 SWE 43。\n\n──────────────────────────────────\n\n**两门课的关系** （UCI Registrar WebSoc 课程注释，2026 Fall）\n\n| 项目 | 内容 |\n|---|---|\n| 说明原文 | “Previously offered as INF 43, \"Intro Software Engr\". Students with prior credit for INF 43 … may not take SWE 43” |\n| 代码对应 | 注释中的 **INF 43** 经系别别名表正规化为 **IN4MATX 43** |\n| 判定 | SWE 43 是原 INF 43 → IN4MATX 43 的**改编号后续课程**，属于同一门课，并非两门并列课程 |\n\n**辅助证据** （课程目录 + WebSoc 开课记录）\n\n| 项目 | SWE 43 | IN4MATX 43 |\n|---|---|---|\n| 课名 | Introduction to Software Engineering | Introduction to Software Engineering |\n| 学分 / 层级 | 4 分·低阶 | 4 分·低阶 |\n| 课程描述 | 与右侧几乎逐字相同（软件工程概念、大型软件开发、生命周期模型） | 同上 |\n| 2026 Winter | 官方课表无匹配（not_offered） | 开设，教师 **Ziv, H.** |\n| 2026 Fall | 开设，教师 **Gillespie, J.** / **Mannan, U.** | 官方课表无匹配（not_offered） |\n\n两学期恰好互换，与“改编号”的解释一致（来源：Registrar WebSoc）。\n\n──────────────────────────────────\n\n**对你这种情况的判断**\n\n| 项目 | 结论 |\n|---|---|\n| 2026 Winter 修完 IN4MATX 43 并取得学分 | 按上面注释，等同于“已持 INF 43 学分” |\n| 2026 Fall 注册 SWE 43 | **不允许**；课程说明本身构成禁止，且两课为同一门课，重复修读不产生第二个学分 |\n| 注册可行性 | 已无关紧要：2026 Fall 的 ICS 课程 WebReg add 截止为 10 月 9 日 2026，现已过期 |\n\n一处需要标注的不确定性：注释文字针对的是 “INF 43” 这个旧代码，别名表提供的是代码拼写/系别层面的对应（INF → IN4MATX）；“改编号”这一关系由注释原文确立，而非由别名表推断。若你要在成绩单上做学分核算或申诉，需由 ICS 本科学生事务确认。\n\n**下一步：** 要不要我查一下 2026 Fall 有哪些课程可以作为这门课的替代（不重复学分）？\n\nSources:\n- Database verified: live WebSoc 课程注释与开课记录 · 2026 Winter / 2026 Fall · registrar_websoc（[UCI Registrar WebSoc](https://www.reg.uci.edu/perl/WebSoc)）",
+    "iterations": 4,
+    "tool_calls": 8
+  }
+]

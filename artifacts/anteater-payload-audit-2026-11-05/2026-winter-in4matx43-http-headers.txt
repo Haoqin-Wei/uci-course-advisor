@@ -1,0 +1,17 @@
+HTTP/2 200 
+date: Fri, 06 Nov 2026 01:10:40 GMT
+content-type: application/json
+content-length: 10872
+access-control-allow-origin: *
+cache-control: max-age=300
+ratelimit-limit: 1000
+ratelimit-policy: 1000;w=3600
+ratelimit-remaining: 998
+ratelimit-reset: 3600
+x-powered-by: Anteater-API/2.0 (https://github.com/icssc/anteater-api)
+report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=QfSwqUvg%2BvGBJ87w9Z94Zlafg5NIUk4JBfuDsLWIprpdkSrQpDHZNyCT9%2BDzdU3U1wErsZQ2no%2FFK7nMzkRRKeyDz8VlFByEeoOKyb4vD2j51k3YeyxQ%2B6CsBGonDERv3ts%3D"}]}
+nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+server: cloudflare
+cf-ray: a560383dfdfa2af1-LAX
+alt-svc: h3=":443"; ma=86400
+

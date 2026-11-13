@@ -1,0 +1,25 @@
+{
+  "type": "final",
+  "text": "本次核实尚未完成，暂未生成有完整证据的正式推荐。",
+  "cards": [],
+  "controlled_recommendation": true,
+  "recommendation_gate": {
+    "enabled": true,
+    "ready": true,
+    "reasons": []
+  },
+  "incomplete": true,
+  "presentation_plan": {
+    "course_scope": "any",
+    "hard_filters": {
+      "only_unmet_ge": false
+    }
+  },
+  "requested_plan": {
+    "course_scope": "any",
+    "hard_filters": {
+      "only_unmet_ge": false
+    }
+  },
+  "failure_reason": "model_unavailable"
+}

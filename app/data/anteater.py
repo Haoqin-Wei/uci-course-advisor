@@ -32,6 +32,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Generic, Literal, Optional, TypeVar
@@ -39,6 +40,7 @@ from typing import Any, Generic, Literal, Optional, TypeVar
 import requests
 
 from app import observability
+from app.data.websoc_payload import course_comment_context, websoc_comment_metadata
 from app.terms import TermKey
 
 logger = logging.getLogger(__name__)
@@ -52,7 +54,6 @@ WEBSOC_URL = f"{ANTEATER_BASE_URL}/websoc"
 # A regular UCI term should publish at least one of these high-volume
 # departments.  Availability checks stop after the first non-empty response,
 # avoiding the multi-megabyte all-department WebSoc payload.
-AVAILABILITY_PROBE_DEPARTMENTS = ("COMPSCI", "MATH", "BIO SCI")
 
 T = TypeVar("T")
 AnteaterResultStatus = Literal[
@@ -83,19 +84,6 @@ class AnteaterResult(Generic[T]):
         return self.status == "ok"
 
 
-@dataclass(frozen=True)
-class TermAvailabilityResult:
-    term: TermKey
-    available: bool
-    course_count: int
-    section_count: int
-    status: AnteaterResultStatus
-    source_url: str
-    checked_at: str
-    error: Optional[str] = None
-    http_status: Optional[int] = None
-    content_length: Optional[int] = None
-
 # ── In-process cache ────────────────────────────────────
 # Keyed by request shape; values are the parsed `data` field from the
 # Anteater response. Bounded loosely — agent loops typically do
@@ -104,6 +92,29 @@ _course_cache:   dict[str, Optional[dict]] = {}
 _sections_cache: dict[tuple[str, str, str, str], Optional[list]] = {}
 _live_sections_cache: dict[tuple, tuple[float, Optional[dict]]] = {}
 _instructor_cache: dict[str, Optional[dict]] = {}
+
+
+class WebSocSections(list):
+    """List-compatible sections with notices from the same cached response.
+
+    Empty sections must not discard parent notices, or require a second HTTP
+    request just to recover them. Existing list callers keep their contract.
+    """
+
+    def __init__(self, sections, *, comment_contexts: Optional[dict] = None, course_notices: Optional[list] = None):
+        super().__init__(sections)
+        self.comment_contexts = deepcopy(comment_contexts or {})
+        self.course_notices = deepcopy(course_notices or [])
+
+
+def _websoc_comment_metadata(data: dict, *, year: str, quarter: str, retrieved_at: str) -> dict:
+    metadata = websoc_comment_metadata(data)
+    if not metadata["comment_contexts"]:
+        return {}
+    for notice in metadata["course_notices"]:
+        notice.update(source="anteater_websoc", source_url=WEBSOC_URL,
+                      term=f"{year} {quarter}", retrieved_at=retrieved_at)
+    return metadata
 
 
 def _headers() -> dict:
@@ -339,12 +350,29 @@ def _utc_now() -> str:
 
 
 def _flatten_websoc_sections(data: dict) -> list[dict]:
+    """Retain each section and its scoped parent comments without inference.
+
+    Range comments remain at department scope, with their original headings.
+    Their presence does not establish that a range applies to this course.
+    """
     flat: list[dict] = []
     for school in data.get("schools", []):
+        if not isinstance(school, dict):
+            continue
         for dept in school.get("departments", []):
+            if not isinstance(dept, dict):
+                continue
             for course in dept.get("courses", []):
+                if not isinstance(course, dict):
+                    continue
+                comments = course_comment_context(school, dept, course)
                 for sec in course.get("sections", []):
-                    flat.append(sec)
+                    if not isinstance(sec, dict):
+                        continue
+                    retained = deepcopy(sec)
+                    retained["comments"] = deepcopy(comments)
+                    retained["section_comment"] = deepcopy(sec.get("sectionComment"))
+                    flat.append(retained)
     return flat
 
 
@@ -427,62 +455,6 @@ def fetch_full_websoc(term: TermKey) -> AnteaterResult[dict]:
     return result
 
 
-def check_term_data_availability(term: TermKey) -> TermAvailabilityResult:
-    """Probe small department slices; a term shell is not considered available."""
-    total_content_length = 0
-    last_result: Optional[AnteaterResult[dict]] = None
-    for department in AVAILABILITY_PROBE_DEPARTMENTS:
-        result = _get_json_result(
-            WEBSOC_URL,
-            params={
-                "year": str(term.year),
-                "quarter": term.quarter,
-                "department": department,
-            },
-        )
-        last_result = result
-        total_content_length += int(result.content_length or 0)
-        if not result.ok or not isinstance(result.data, dict):
-            return TermAvailabilityResult(
-                term=term,
-                available=False,
-                course_count=0,
-                section_count=0,
-                status=result.status,
-                source_url=result.url,
-                checked_at=result.checked_at,
-                error=result.error,
-                http_status=result.http_status,
-                content_length=total_content_length or result.content_length,
-            )
-        course_count, section_count = _websoc_counts(result.data)
-        if course_count > 0 and section_count > 0:
-            return TermAvailabilityResult(
-                term=term,
-                available=True,
-                course_count=course_count,
-                section_count=section_count,
-                status=result.status,
-                source_url=result.url,
-                checked_at=result.checked_at,
-                http_status=result.http_status,
-                content_length=total_content_length,
-            )
-
-    assert last_result is not None
-    return TermAvailabilityResult(
-        term=term,
-        available=False,
-        course_count=0,
-        section_count=0,
-        status=last_result.status,
-        source_url=last_result.url,
-        checked_at=last_result.checked_at,
-        http_status=last_result.http_status,
-        content_length=total_content_length,
-    )
-
-
 # ── Courses ──────────────────────────────────────────────
 
 def fetch_course(
@@ -539,7 +511,10 @@ def fetch_sections(
         return None
 
     data = body.get("data") or {}
-    flat = _flatten_websoc_sections(data)
+    flat = WebSocSections(
+        _flatten_websoc_sections(data),
+        **_websoc_comment_metadata(data, year=str(year), quarter=quarter, retrieved_at=_utc_now()),
+    )
     _sections_cache[key] = flat
     return flat
 
@@ -635,6 +610,7 @@ def fetch_live_sections(
         "cache_hit": False,
         "stale": False,
         "sections": _flatten_websoc_sections(data),
+        **_websoc_comment_metadata(data, year=str(year), quarter=quarter, retrieved_at=retrieved_at),
     }
     _live_sections_cache[key] = (now, result)
     _live_sections_cache[("last_success", *key)] = (now, result)

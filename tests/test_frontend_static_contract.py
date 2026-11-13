@@ -140,7 +140,9 @@ def test_key_browser_regression_flows_are_wired() -> None:
     assert "function startToolChip(" in chat
     assert "function renderWebFetchSummary(" in chat
     assert "event.fetch_summary || []" in chat
-    assert "实际抓取 ${fetches.length} 个请求" in chat
+    assert "实际抓取 ${live} 个请求" in chat
+    # Snapshot reads and 24-hour cache hits are listed as sources, not counted as requests.
+    assert "const live = fetches.length - reused" in chat and "catalog_store_snapshot" in chat
     assert "用于最终事实" in chat
     assert "tool-chip-web-search" in chat
     assert "is-official-no-match" in chat

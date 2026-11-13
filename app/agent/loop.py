@@ -55,8 +55,8 @@ Safety / fallback:
     MAX_ITERATIONS caps how many tool-call rounds the model gets.
     MAX_TOTAL_TOOLS caps cumulative tool dispatches across rounds.
     On limit, we stash the conversation, emit limit_reached, then
-    do ONE more LLM call with tools disabled so the user still gets
-    a best-effort answer instead of a blank screen.
+    do ONE more evidence-bounded LLM call. A ready recommendation
+    may stage cards; unresolved hard conditions require clarification.
 
 Cancellation:
     asyncio.CancelledError propagates out unchanged — the user hit
@@ -67,6 +67,7 @@ Cancellation:
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import json
 import logging
 import re
@@ -74,8 +75,9 @@ import secrets
 import time
 from typing import AsyncIterator, Optional
 
-from app import observability
+from app import config, observability
 from app.agent import tools as agent_tools
+from app.agent import prefilter
 from app.agent import restriction_payload
 from app.agent.deep_search_history import (
     build_history_instruction_message,
@@ -93,6 +95,115 @@ from app.agent.workflow_router import (
 from app.llm.safety import untrusted_context_message
 
 logger = logging.getLogger(__name__)
+
+_GRADE_CONTEXT_KEYS = ("_zotistics_results", "_grade_charts", "_recommendation_sections",
+                       "_ranking_profile", "_recommendation_proposed", "_recommendation_card_facts",
+                       "query_course_ids", "_prefilter_state", "_controlled_recommendation",
+                       "_controlled_recommendation_cards")
+
+
+def _grade_snapshot(context):
+    return {key: deepcopy(context[key]) for key in _GRADE_CONTEXT_KEYS if key in (context or {})}
+
+
+def uses_controlled_recommendation_output(query, query_term_source="default", *, snapshot=None):
+    """Protect opted-in recommendation turns, including their continuations."""
+    if (snapshot or {}).get("_controlled_recommendation") is True:
+        return True
+    return ((config.dynamic_prefilter_enabled() or config.recommendation_ranking_enabled())
+            and prefilter.is_recommendation_request(query, query_term_source))
+
+
+def recommendation_cards_for_display(cards, language="zh"):
+    """Normalize only the new presentation path; never publish model diagnostics."""
+    from app.recommendations.presentation import normalize_recommendation_card
+    return [normalize_recommendation_card(card, language) for card in cards or []
+            if isinstance(card, dict)]
+
+
+def merge_recommendation_cards(existing, incoming):
+    """Keep earlier positions while applying explicit newer same-course choices."""
+    from app.terms import parse_term_key
+
+    def key(card):
+        parsed = parse_term_key(str(card.get("term") or ""))
+        term = parsed.terms[0].canonical_name if parsed.kind == "single" else str(card.get("term") or "")
+        return prefilter.course_key(card.get("course_id")) or card.get("course_id"), term
+
+    combined = list(existing or [])
+    positions = {key(card): index for index, card in enumerate(combined)}
+    for card in incoming or []:
+        identity = key(card)
+        if identity in positions:
+            combined[positions[identity]] = card
+        else:
+            positions[identity] = len(combined)
+            combined.append(card)
+    return combined
+
+
+def controlled_tool_arguments(args):
+    """Status events expose identities, never an unvalidated model-authored reason."""
+    result = {}
+    if args.get("term"):
+        from app.terms import parse_term_key
+        parsed = parse_term_key(str(args["term"]))
+        if parsed.kind == "single":
+            result["term"] = parsed.terms[0].canonical_name
+    if args.get("course_id"):
+        cid = prefilter.course_key(args["course_id"])
+        if cid:
+            result["course_id"] = cid
+    if isinstance(args.get("items"), list):
+        result["items"] = [{"course_id": cid} for item in args["items"] if isinstance(item, dict)
+                           and (cid := prefilter.course_key(item.get("course_id")))]
+    return result
+
+
+def _controlled_card_event(context, staged, term, *, fallback=False):
+    cards = recommendation_cards_for_display(staged, context.get("response_language") or "zh")
+    if fallback:
+        cards = merge_recommendation_cards(context.get("_controlled_recommendation_cards"), cards)
+    context["_controlled_recommendation_cards"] = cards
+    _record_recommendation_card_facts(context, cards, term)
+    return {"type": "cards_proposed", "cards": deepcopy(cards), "replace": True,
+            "controlled_recommendation": True, **({"from_fallback": True} if fallback else {})}
+
+
+def controlled_recommendation_result(context, *, incomplete=False, failure_reason=None):
+    """Render only validated backend facts, never a provider's prose."""
+    from app.recommendations.presentation import render_recommendation_answer
+    cards = recommendation_cards_for_display(context.get("_controlled_recommendation_cards"),
+                                             context.get("response_language") or "zh")
+    context["_controlled_recommendation_cards"] = cards
+    gate = prefilter.recommendation_gate(context)
+    state = context.get("_prefilter_state") or {}
+    plan = state.get("plan") or {}
+    requested_plan = state.get("requested_plan") or plan
+    ge_intent = any(candidate.get("course_scope") == "ge"
+                    or (candidate.get("hard_filters") or {}).get("only_unmet_ge") is True
+                    for candidate in (plan, requested_plan))
+    incomplete = bool(incomplete or not cards or (gate.get("enabled") and not gate.get("ready"))
+                      or (ge_intent
+                          and any((card.get("ge_evidence") or {}).get("is_ge") is not True for card in cards)))
+    text = render_recommendation_answer(cards, context.get("response_language") or "zh",
+                                        gate=gate, incomplete=incomplete, failure_reason=failure_reason,
+                                        plan=plan, requested_count=state.get("requested_count"),
+                                        requested_plan=state.get("requested_plan"))
+    def intent(candidate):
+        return {"course_scope": candidate.get("course_scope", "any"),
+                "hard_filters": {"only_unmet_ge": (candidate.get("hard_filters") or {}).get("only_unmet_ge") is True}}
+    return {"text": text, "cards": deepcopy(cards), "controlled_recommendation": True,
+            "recommendation_gate": gate, "incomplete": bool(incomplete),
+            "presentation_plan": intent(plan), "requested_plan": intent(requested_plan),
+            **({"requested_count": state["requested_count"]} if state.get("requested_count") is not None else {}),
+            **({"failure_reason": failure_reason} if failure_reason else {})}
+
+
+def _controlled_failure_events(context, reason):
+    result = controlled_recommendation_result(context, incomplete=True, failure_reason=reason)
+    return [{"type": "token", "text": result["text"], "controlled_recommendation": True},
+            {"type": "final", **result}]
 
 MAX_ITERATIONS = 12
 # Allow course searches, eligibility checks, and professor lookups enough
@@ -169,6 +280,9 @@ def _summarize_tool_args(args: dict) -> dict:
 
 
 def _idempotent_tool_key(name: str, args: dict) -> Optional[str]:
+    if (name == "get_live_sections" and args.get("force_refresh") is True
+            and (config.dynamic_prefilter_enabled() or config.recommendation_ranking_enabled())):
+        return None
     if name not in IDEMPOTENT_TERM_READ_TOOLS:
         return None
     return f"{name}:{json.dumps(args or {}, sort_keys=True, default=str, separators=(',', ':'))}"
@@ -264,7 +378,8 @@ def _definitive_offering_stop_reason(
             record_course = re.sub(
                 r"[^a-z0-9]", "", str(record.get("course_id") or "").lower()
             )
-            if requested_course == record_course and requested_term == record.get("term"):
+            if (requested_course == record_course and requested_term == record.get("term")
+                    and record.get("offering_status") == "not_offered"):
                 return (
                     "official Registrar WebSoc already resolved this historical offering; "
                     "a secondary live-availability lookup is not applicable"
@@ -452,11 +567,16 @@ def _workflow_result_message(
     )
 
 
-def _workflow_instruction_message(results: list[dict]) -> Optional[dict[str, str]]:
+def _workflow_instruction_message(results: list[dict], user_query: str = "") -> Optional[dict[str, str]]:
     """Keep trusted execution rules independent from tool/source evidence."""
     if not results:
         return None
-    restriction_only = all(
+    other_task = prefilter.is_recommendation_request(user_query) or bool(re.search(
+        r"评价|好不好|难度|给分|课表|上课时间|先修|GPA|RMP|"
+        r"\b(?:ratings?|reviews?|professors?|prerequisites?|schedules?)\b",
+        user_query, re.I,
+    ))
+    restriction_only = bool(user_query) and not other_task and all(
         record.get("tool") == "get_department_restrictions"
         for record in results
     )
@@ -473,11 +593,176 @@ def _workflow_instruction_message(results: list[dict]) -> Optional[dict[str, str
         "role": "system",
         "content": (
             "The server already executed the developer-owned primary workflow before "
-            "this model call. Do not call these primary tools again. Use the results "
+            "this model call. Do not call these primary tools again for the same completed "
+            "course, term and arguments. An unresolved co-class reference may require a related "
+            "course's target-term timetable; that is a new lookup scope, not a repeated primary call. Use the results "
             "in the separate context data as the primary evidence, report structured failures honestly, and "
             "only use web_search/fetch_page for optional supplemental evidence."
             f"{restriction_instruction}"
         ),
+    }
+
+
+def _runtime_hint_messages(context, *, workflow_route=None, primary_results=None,
+                           history_hint_message=None):
+    """Rebuild current execution evidence for normal, fallback and resumed calls."""
+    records = primary_results or []
+    hints = [hint for hint in (
+        build_route_hint_message(workflow_route),
+        _workflow_instruction_message(records, context.get("user_query") or ""),
+        _workflow_result_message(workflow_route, records),
+        build_history_instruction_message() if history_hint_message else None,
+        history_hint_message,
+    ) if hint is not None]
+    from app.recommendations.pairing import contract_enabled
+    if contract_enabled():
+        hints.append({"role": "system", "content": (
+            "Current discussion policy: user_confirmed_product_policy; "
+            "policy_id=user_confirmed_discussion_presence, policy_version=1, user_confirmed=true. "
+            "On verified complete unfiltered official target-term course timetables, listed Dis means "
+            "discussion required under this product policy; no listed Dis means no discussion required "
+            "under this policy. This supersedes earlier blanket coexistence/absence prohibitions only "
+            "for those complete current facts; it is not a university-wide Registrar registration rule. "
+            "Course instructions and co-class references require the related target-term timetable lookup. "
+            "Respect needs_lookup and required_course_components; failed or partial lookups stay unresolved. "
+            "Do not invent cross-course matching relationships. Before asserting a hard weekday/time "
+            "condition is met, verify the lecture plus every required Dis/other component as a complete "
+            "combination. TBA is unknown; ON LINE alone does not establish asynchronous teaching or "
+            "a free weekday. Explicit asynchronous evidence and scheduled online meetings are different. "
+            "This policy also applies during budget finalization and Continue and never relaxes hard conditions."
+        )})
+    hints.extend(prefilter.instruction_messages(context))
+    gate = prefilter.recommendation_gate(context)
+    if gate["enabled"]:
+        hints.extend([{
+            "role": "system",
+            "content": (
+                "The server's recommendation readiness applies to this answer, budget finalization, "
+                "and Continue. A failed or unresolved plan is not an unconstrained request. "
+                "Continue or a budget limit never relaxes or cancels the user's hard conditions. "
+                "If readiness is false, do not call propose_recommendation or present a formal "
+                "recommendation as meeting those conditions. State what is unresolved and ask for "
+                "the missing information or clarification; retained candidates are not confirmed eligible. "
+                "Public web searches and course GE tags cannot verify a student's private GE audit "
+                "or establish which requirements remain. Do not route missing personal audit evidence "
+                "to web_search/fetch_page. Never infer asynchronous meetings from ON LINE/TBA. "
+                "Use the existing Python ranking when enabled; do not invent weights, treat adjusted "
+                "scores as raw grade rates, or generate chart HTML."
+            ),
+        }, untrusted_context_message("recommendation readiness", gate)])
+    card_facts = context.get("_recommendation_card_facts")
+    if card_facts and card_facts.get("cards"):
+        hints.extend([{
+            "role": "system", "content": (
+                "The current recommendation card facts describe the actual UI selection. When your "
+                "answer says a lecture is selected or recommended, its code, instructor, days and "
+                "time must match selected_lecture and primary_code. A different section must be "
+                "explicitly described as an alternative; discussing it does not change the card. "
+                "If required_secondary is unknown or the selected pairing has needs_lookup=true, "
+                "never claim pure lecture, no Discussion/Lab, or that entering only the lecture code "
+                "is sufficient. An empty secondary list after filtering does not prove no secondary "
+                "is required, and does not certify a complete combination satisfies a hard time condition. "
+                "A verified complete official target-term timetable may establish listed/no-listed Dis "
+                "under user_confirmed_product_policy; cite the official listing separately from the "
+                "product's rule and do not present it as a university-wide mandate. "
+                "If unresolved includes ge_labels_unknown, describe any source-recorded GE labels as "
+                "unverified; never say those labels are confirmed, database-confirmed or verified. "
+                "Course labels do not prove the student's remaining personal GE requirements. "
+                "Preserve each ranking feature's evidence scope. Instructor-wide grades cannot be "
+                "compared to course-instructor grades as a difference between two sections of this course. "
+                "Read explicit scope fields; never infer a shared scope from numeric differences or similarities. "
+                "Scores are not raw A rates. These card facts do not waive the recommendation readiness "
+                "gate or confirm unresolved enrollment conditions."
+            ),
+        }, untrusted_context_message("current recommendation card facts", card_facts)])
+    return hints
+
+
+def _record_recommendation_card_facts(context, cards, term):
+    """Keep only the latest same-term card selections, without the full grade payload."""
+    from app.terms import parse_term_key
+
+    def canonical(value):
+        parsed = parse_term_key(value)
+        return parsed.terms[0].canonical_name if parsed.kind == "single" else None
+
+    def section_fact(section):
+        if not section:
+            return None
+        fact = {
+            "code": section.get("code") or section.get("section_code"),
+            "num": section.get("num") or section.get("section_num"),
+            "type": section.get("type") or section.get("section_type"),
+            "days": section.get("days"),
+            "time": section.get("time") or section.get("time_display") or (
+                f"{section['start_time']}–{section['end_time']}"
+                if section.get("start_time") and section.get("end_time") else None),
+        }
+        if section.get("instructors"):
+            fact["instructors"] = deepcopy(section["instructors"])
+        return fact
+
+    target = canonical(term)
+    rows = []
+    for card in cards or []:
+        if not isinstance(card, dict) or not target or canonical(card.get("term")) != target:
+            continue
+        primary_code = card.get("primary_code")
+        groups = card.get("section_groups") or []
+        selected_group = next((group for group in groups
+                               if primary_code is not None
+                               and str((group.get("primary") or {}).get("code")) == str(primary_code)), {})
+        selected = selected_group.get("primary") or next((section for section in card.get("sections") or []
+                    if primary_code is not None and str(section.get("section_code")) == str(primary_code)), {})
+        warnings = [*(card.get("prefilter") or {}).get("warnings", []),
+                    *(selected.get("prefilter") or {}).get("warnings", [])]
+        unresolved = list(dict.fromkeys(warning["code"] for warning in warnings
+                                       if isinstance(warning, dict) and isinstance(warning.get("code"), str)))
+        from app.recommendations.pairing import normalize_pairing_evidence, pairing_for_primary
+        contract = normalize_pairing_evidence(card, term=target)
+        pairing = pairing_for_primary(contract, primary_code)
+        evidence = pairing.get("evidence") or {}
+        requirement = pairing.get("requirement", "unknown") if evidence.get("status") == "verified" else "unknown"
+        source_proof = card.get("pairing_source_proof") or {}
+        required_courses = pairing.get("required_course_components") or evidence.get("required_course_components") or []
+        references = evidence.get("co_class_references") or []
+        pairing_fact = {
+            "requirement": requirement, "facts_source": evidence.get("source"),
+            "policy_source": evidence.get("policy_source"), "policy_id": evidence.get("policy_id"),
+            "policy_version": evidence.get("policy_version"), "user_confirmed": evidence.get("user_confirmed") is True,
+            "needs_lookup": evidence.get("needs_lookup") is True or pairing.get("needs_lookup") is True,
+            "relationship": pairing.get("relationship", "unknown"),
+            "required_components": deepcopy(pairing.get("required_components") or []),
+            "required_course_components": [{key: deepcopy(value[key]) for key in
+                ("course_id", "term", "requirement", "required_components", "needs_lookup", "status") if key in value}
+                for value in required_courses if isinstance(value, dict)],
+            "co_class_references": [{key: value[key] for key in ("course_id", "term", "relation") if key in value}
+                                    for value in references if isinstance(value, dict)],
+            "official_table_complete": all(source_proof.get(key) is True for key in (
+                "full_unfiltered_request", "response_identity_validated", "response_document_complete", "source_rows_fully_parsed")),
+        }
+        ranking = card.get("ranking") or selected.get("ranking") or {}
+        rows.append({
+            "course_id": card.get("course_id"), "primary_code": primary_code,
+            "selected_lecture": section_fact(selected),
+            "alternative_lectures": [section_fact(group["primary"]) for group in groups
+                                     if group.get("primary") and group is not selected_group],
+            "required_secondary": requirement,
+            "pairing": pairing_fact,
+            "selection_verification": {key: deepcopy((card.get("selection_verification") or {}).get(key))
+                                       for key in ("status", "primary_code", "selected_secondary_codes")},
+            "secondary_type": card.get("secondary_type"),
+            "secondary_options": [section_fact(section) for section in selected_group.get("secondaries") or []],
+            "prefilter_status": (card.get("prefilter") or {}).get("status"), "unresolved": unresolved,
+            "ge_category": card.get("ge_category"),
+            "ranking": {"final_score": ranking.get("final_score"), "feature_scopes": {
+                name: {key: feature[key] for key in ("scope", "instructor_name", "valid") if key in feature}
+                for name, feature in (ranking.get("features") or {}).items() if isinstance(feature, dict)
+            }},
+        })
+    context["_recommendation_card_facts"] = {
+        "term": target, "request_unresolved": deepcopy((context.get("_prefilter_state") or {}).get("unresolved_constraints") or []),
+        "cards": rows,
     }
 
 
@@ -559,6 +844,7 @@ def _stash_continuation(
     tool_calls_used: int,
     deep_search_state: DeepSearchRunState,
     history_hint_message: Optional[dict[str, str]],
+    grade_context: Optional[dict] = None,
 ) -> str:
     _gc_continuations()
     cid = secrets.token_urlsafe(16)
@@ -575,6 +861,7 @@ def _stash_continuation(
         "tool_calls_used":  tool_calls_used,
         "deep_search_state": deep_search_state,
         "history_hint_message": history_hint_message,
+        "grade_context": _grade_snapshot(grade_context),
         "created_at": time.time(),
     }
     logger.info("[agent] stashed continuation %s (%d msgs, %d iters, %d tools)",
@@ -667,7 +954,9 @@ async def resume_agent(
             "information you've already gathered (visible in the "
             "tool results above) to finalize your answer. Only call "
             "more tools if there's a specific gap you still need to "
-            "fill. "
+            "fill. Continue does not relax or cancel hard conditions. If a required "
+            "condition is unresolved, resolve the evidence gap or ask for clarification "
+            "instead of presenting it as satisfied. "
             f"Respond in {'Chinese' if snap.get('response_language') == 'zh' else 'English'}."
         ),
     }]
@@ -686,6 +975,7 @@ async def resume_agent(
         user_query=snap["deep_search_state"].query,
         deep_search_state=snap["deep_search_state"],
         history_hint_message=snap.get("history_hint_message"),
+        grade_context=snap.get("grade_context"),
     ):
         yield event
 
@@ -708,6 +998,7 @@ async def _run_loop(
     deep_search_state: DeepSearchRunState,
     history_hint_message: Optional[dict[str, str]],
     offering_course_ids: Optional[list[str]] = None,
+    grade_context: Optional[dict] = None,
 ) -> AsyncIterator[dict]:
     """The actual iteration body, shared by run_agent and resume_agent."""
     tool_context = {
@@ -721,6 +1012,19 @@ async def _run_loop(
         "user_query": user_query,
         "deep_search_state": deep_search_state,
     }
+    from app.catalog.normalization import iter_course_mentions
+    tool_context["query_course_ids"] = list(offering_course_ids or []) or list(dict.fromkeys(
+        ref.display() for ref, _, _ in iter_course_mentions(user_query)
+    ))
+    tool_context.update(_grade_snapshot(grade_context))
+    controlled_output = uses_controlled_recommendation_output(
+        user_query, query_term_source, snapshot=tool_context)
+    if controlled_output:
+        tool_context["_controlled_recommendation"] = True
+        tool_context.setdefault("_controlled_recommendation_cards", [])
+        yield {"type": "response_mode", "controlled_recommendation": True,
+               "response_language": response_language}
+    await prefilter.initialize(tool_context, messages)
     workflow_route = route_solution(user_query, term=term)
     primary_plan = build_primary_workflow_plan(workflow_route)
     if (offering_course_ids and allowed_query_terms and not primary_plan.get("calls")
@@ -898,30 +1202,19 @@ async def _run_loop(
         restriction_prefix = verified_facts.get("summary_markdown") or ""
         if restriction_prefix:
             restriction_prefix += "\n\n"
-            yield {"type": "token", "text": restriction_prefix}
+            if not controlled_output:
+                yield {"type": "token", "text": restriction_prefix}
 
     tool_context["_forced_workflow_results"] = forced_results
-    route_hint_message = build_route_hint_message(workflow_route)
-    workflow_result_message = _workflow_result_message(
-        workflow_route,
-        primary_result_records,
-    )
-    hint_messages = [
-        hint
-        for hint in (
-            route_hint_message,
-            _workflow_instruction_message(primary_result_records),
-            workflow_result_message,
-            build_history_instruction_message() if history_hint_message else None,
-            history_hint_message,
-        )
-        if hint is not None
-    ]
     observability.increment("solution_router.routes", route=workflow_route["route_type"])
     if workflow_route["route_type"] == "workflow":
         for intent in workflow_route.get("intents", []):
             observability.increment("workflow_router.matches", intent=intent)
     for iteration in range(start_iteration, MAX_ITERATIONS):
+        hint_messages = _runtime_hint_messages(
+            tool_context, workflow_route=workflow_route, primary_results=primary_result_records,
+            history_hint_message=history_hint_message,
+        )
         request_messages = _messages_with_run_hints(messages, hint_messages)
         prompt_layers = observability.estimate_prompt_layers(
             request_messages,
@@ -954,6 +1247,10 @@ async def _run_loop(
         except Exception as e:
             logger.error("[agent] LLM call failed (iter %d): %s: %s",
                          iteration, type(e).__name__, e)
+            if controlled_output:
+                for event in _controlled_failure_events(tool_context, "model_unavailable"):
+                    yield event
+                return
             yield {"type": "error", "message": f"LLM call failed: {e}"}
             return
 
@@ -977,7 +1274,8 @@ async def _run_loop(
 
                 if delta.content:
                     accumulated_content += delta.content
-                    yield {"type": "token", "text": delta.content}
+                    if not controlled_output:
+                        yield {"type": "token", "text": delta.content}
 
                 reasoning = getattr(delta, "reasoning_content", None)
                 if reasoning:
@@ -1000,6 +1298,12 @@ async def _run_loop(
         except asyncio.CancelledError:
             logger.info("[agent] cancelled at iter %d", iteration)
             raise
+        except Exception:
+            if controlled_output:
+                for event in _controlled_failure_events(tool_context, "model_stream_interrupted"):
+                    yield event
+                return
+            raise
 
         # ── If no tool calls came back, this iteration's content IS
         #    the final answer. We've already streamed the tokens; emit
@@ -1009,6 +1313,13 @@ async def _run_loop(
             verification_missing = history_refresh_missing(deep_search_state)
             if verification_missing:
                 final_text = verification_required_text(user_query)
+            controlled_result = None
+            if controlled_output:
+                controlled_result = controlled_recommendation_result(
+                    tool_context, incomplete=bool(verification_missing),
+                    failure_reason="evidence_unverified" if verification_missing else None)
+                final_text = controlled_result["text"]
+                yield {"type": "token", "text": final_text, "controlled_recommendation": True}
             trace_result = record_run_trace(deep_search_state, final_text)
             final_event = {
                 "type": "final",
@@ -1016,6 +1327,12 @@ async def _run_loop(
                 "iterations": iteration + 1,
                 "tool_calls": total_tool_calls,
             }
+            if controlled_result is not None:
+                final_event.update(controlled_result)
+            if tool_context.get("_grade_charts") and not tool_context.get("_recommendation_proposed"):
+                final_event["grade_charts"] = tool_context["_grade_charts"]
+            if prefilter.active(tool_context):
+                final_event["prefilter"] = prefilter.summary(tool_context)
             if verification_missing:
                 final_event["verification_required"] = True
             if restriction_bundle:
@@ -1093,6 +1410,9 @@ async def _run_loop(
                     deep_search_state=deep_search_state,
                     history_hint_message=history_hint_message,
                     client=client, model=model,
+                    grade_context=tool_context,
+                    workflow_route=workflow_route,
+                    primary_results=primary_result_records,
                 ):
                     yield ev
                 return
@@ -1114,7 +1434,8 @@ async def _run_loop(
                 context=tool_context,
             )
 
-            label = agent_tools.humanize_tool_call(tc["name"], args, response_language)
+            visible_args = controlled_tool_arguments(args) if controlled_output else args
+            label = agent_tools.humanize_tool_call(tc["name"], visible_args, response_language)
             logger.info("[agent] iter=%d tool[%d/%d] %s args=%s",
                         iteration, total_tool_calls + 1, MAX_TOTAL_TOOLS,
                         tc["name"], {k: args.get(k) for k in list(args)[:4]})
@@ -1130,9 +1451,10 @@ async def _run_loop(
                 args=_summarize_tool_args(args),
             )
             yield {"type": "tool_call_start",
-                   "name": tc["name"], "args": args, "label": label,
+                   "name": tc["name"], "args": visible_args, "label": label,
                    "response_language": response_language}
 
+            professor_grades = []
             forced_cache = tool_context.get("_forced_workflow_results") or {}
             cache_key = _idempotent_tool_key(tc["name"], args) if not term_error else None
             reused_result = False
@@ -1161,7 +1483,8 @@ async def _run_loop(
                     args=_summarize_tool_args(args),
                     reason=stop_reason,
                 )
-            elif tc["name"] in forced_cache:
+            elif tc["name"] in forced_cache and not (tc["name"] == "get_live_sections" and args.get("force_refresh") is True
+                    and (config.dynamic_prefilter_enabled() or config.recommendation_ranking_enabled())):
                 result = forced_cache[tc["name"]]
                 reused_result = True
                 observability.log_event(
@@ -1184,7 +1507,20 @@ async def _run_loop(
                     args=_summarize_tool_args(args),
                 )
             else:
-                result = agent_tools.dispatch(tc["name"], args, context=tool_context)
+                if tc["name"] == "propose_recommendation":
+                    await asyncio.to_thread(
+                        agent_tools.prepare_recommendation_grades,
+                        args.get("items") or [], args.get("term") or term, tool_context,
+                    )
+                if tc["name"] in {"get_professor_rating", "summarize_professor_reviews"}:
+                    professor_grades = await asyncio.to_thread(
+                        agent_tools.prepare_professor_grades, args, tool_context,
+                    )
+                if (tc["name"] in {"get_sections", "get_live_sections", "get_zotistics_grades", "propose_recommendation", "search_courses", "get_professor_rating"}
+                        or prefilter.active(tool_context)):
+                    result = await asyncio.to_thread(agent_tools.dispatch, tc["name"], args, context=tool_context)
+                else:
+                    result = agent_tools.dispatch(tc["name"], args, context=tool_context)
             # Some tool dispatchers (e.g. summarize_professor_reviews,
             # which calls the LLM internally) return a coroutine instead
             # of a dict. Await it here so the tool response is always a
@@ -1198,6 +1534,15 @@ async def _run_loop(
                     logger.warning("[agent] async tool %s failed: %s: %s",
                                    tc["name"], type(e).__name__, e)
                     result = {"error": f"{type(e).__name__}: {e}"}
+            if professor_grades and isinstance(result, dict):
+                result = {**result, "historical_grades": professor_grades}
+            if (tc["name"] == "get_live_sections" and args.get("force_refresh") is True
+                    and (config.dynamic_prefilter_enabled() or config.recommendation_ranking_enabled())):
+                # A new rule/timetable snapshot invalidates earlier read tools,
+                # including on Continue. Never replay a pre-refresh proof.
+                idempotent_results.clear()
+                for name in ("get_sections", "get_live_sections", "search_courses"):
+                    (tool_context.get("_forced_workflow_results") or {}).pop(name, None)
             _record_definitive_course_offering(
                 tool_context,
                 tc["name"],
@@ -1208,13 +1553,17 @@ async def _run_loop(
                 idempotent_results[cache_key] = result
             model_result = result
             if tc["name"] == restriction_payload.TOOL_NAME:
-                # A second department that links to the same official page
-                # points back to the copy the model already has this turn.
-                model_result, omitted = restriction_dedupe.model_view(result)
-                if omitted:
+                # The model gets the asked department's part of the official
+                # page, and a later department that links to the same page
+                # points back to what the model already has this turn.
+                model_result, trimmed = restriction_dedupe.model_view(result)
+                if trimmed:
                     observability.log_event(
-                        logger, logging.INFO, "restriction_payload_deduplicated",
-                        tool=tc["name"], department=result.get("department"), **omitted,
+                        logger, logging.INFO, "restriction_payload_trimmed",
+                        tool=tc["name"], department=result.get("department"),
+                        result_chars=len(json.dumps(result, default=str)),
+                        model_chars=len(json.dumps(model_result, default=str)),
+                        **trimmed,
                     )
             messages.append({
                 "role": "tool",
@@ -1248,7 +1597,7 @@ async def _run_loop(
                 "name": tc["name"],
                 "ok": tool_ok,
                 "label": label,
-                "args": args,
+                "args": visible_args,
                 "term_data_available": _result_has_term_data(result),
                 "reused": reused_result,
             }
@@ -1268,7 +1617,13 @@ async def _run_loop(
             # event without round-tripping kilobytes through the
             # model's context window.
             staged = tool_context.pop("_proposed_cards", None)
-            if staged:
+            if staged is not None:
+                if controlled_output:
+                    yield _controlled_card_event(tool_context, staged,
+                                                 result.get("term") or args.get("term") or term)
+                else:
+                    _record_recommendation_card_facts(tool_context, staged, result.get("term") or args.get("term") or term)
+            if staged and not controlled_output:
                 yield {"type": "cards_proposed", "cards": staged}
 
     # Iteration cap exhausted without a final answer.
@@ -1288,6 +1643,9 @@ async def _run_loop(
         deep_search_state=deep_search_state,
         history_hint_message=history_hint_message,
         client=client, model=model,
+        grade_context=tool_context,
+        workflow_route=workflow_route,
+        primary_results=primary_result_records,
     ):
         yield ev
 
@@ -1309,17 +1667,25 @@ async def _emit_limit_reached_and_fallback(
     history_hint_message: Optional[dict[str, str]],
     client,
     model: str,
+    grade_context: Optional[dict] = None,
+    workflow_route: Optional[dict] = None,
+    primary_results: Optional[list[dict]] = None,
 ) -> AsyncIterator[dict]:
     """
     Common tail behavior when a budget limit trips:
       1. Stash `messages` and emit limit_reached with the continuation_id
-      2. Run one more LLM call WITHOUT tools so the user gets a
-         best-effort answer using whatever was gathered (the fallback)
+      2. Run one evidence-bounded LLM call, allowing cards only when ready
       3. Emit a final event marked truncated=True
 
     Cancellation (user hits Stop while the fallback is streaming)
     propagates unchanged.
     """
+    grade_context = _grade_snapshot(grade_context)
+    controlled_output = uses_controlled_recommendation_output(
+        deep_search_state.query, query_term_source, snapshot=grade_context)
+    if controlled_output:
+        grade_context["_controlled_recommendation"] = True
+        grade_context.setdefault("_controlled_recommendation_cards", [])
     cid = _stash_continuation(
         messages,
         user_id=user_id, term=term,
@@ -1332,6 +1698,7 @@ async def _emit_limit_reached_and_fallback(
         tool_calls_used=tool_calls_used,
         deep_search_state=deep_search_state,
         history_hint_message=history_hint_message,
+        grade_context=grade_context,
     )
     yield {
         "type": "limit_reached",
@@ -1342,14 +1709,30 @@ async def _emit_limit_reached_and_fallback(
         "response_language": response_language,
     }
 
+    tool_context: dict = {
+        "user_id": user_id,
+        "term": term,
+        "default_term": default_term,
+        "allowed_query_terms": list(allowed_query_terms),
+        "query_term_source": query_term_source,
+        "response_language": response_language,
+        "pending_schedule": list(pending_schedule or []),
+        "user_query": deep_search_state.query,
+    }
+    tool_context.update(_grade_snapshot(grade_context))
+    if controlled_output:
+        yield {"type": "response_mode", "controlled_recommendation": True,
+               "response_language": response_language}
+    gate = prefilter.recommendation_gate(tool_context)
+    proposal_allowed = not gate["enabled"] or gate["ready"]
     # Build a fallback prompt that nudges the model to wrap up with
     # what it has. We DON'T mutate `messages` (it's been stashed) —
     # we build a throwaway list for this one call.
     fallback_messages = list(messages) + [{
         "role": "user",
         "content": (
-            "[System notice: the tool-call budget for this turn has "
-            "been reached. Write your best final answer NOW using only "
+            "The tool-call budget for this turn has "
+            "been reached. Write an evidence-bounded final answer using only "
             "the information already gathered above. "
             f"Respond in {'Chinese' if response_language == 'zh' else 'English'}. "
             "Do not mention tool-call budgets, iteration limits, tokens, or "
@@ -1359,15 +1742,22 @@ async def _emit_limit_reached_and_fallback(
             "If evidence is insufficient, say so plainly. The interface will "
             "offer a button to continue; do not claim checks are still running "
             "or will resume automatically. "
-            "ONE exception: if this is a course-recommendation turn and "
+            "ONE exception: only if this is a course-recommendation turn, the server's "
+            "readiness gate permits it, the candidates are grounded, and "
             "you have not yet called `propose_recommendation`, you may "
-            "(and SHOULD) call it once now to stage the card list — "
-            "all other tools are disabled. Otherwise, write a clean "
+            "call it once now to stage the card list; all other tools are disabled. "
+            "If readiness is false or hard conditions remain unresolved, do not stage cards "
+            "or claim those conditions are met; explain the gap and ask for clarification. "
+            "Budget exhaustion never relaxes a hard condition. Otherwise, write a clean "
             "prose answer. Do NOT emit XML, DSML, `<invoke>`, or any "
             "raw tool-call markup — you have at most ONE legitimate "
             "tool available, use it via the normal tool_calls channel."
         ),
     }]
+    fallback_messages = _messages_with_run_hints(fallback_messages, _runtime_hint_messages(
+        tool_context, workflow_route=workflow_route, primary_results=primary_results,
+        history_hint_message=history_hint_message,
+    ))
 
     # Allow ONE last propose_recommendation call so the LLM has a way
     # to stage cards even on the fallback path. Everything else stays
@@ -1375,16 +1765,7 @@ async def _emit_limit_reached_and_fallback(
     fallback_tools = [
         s for s in agent_tools.TOOL_SCHEMAS
         if s["function"]["name"] == "propose_recommendation"
-    ]
-    tool_context: dict = {
-        "user_id": user_id,
-        "term": term,
-        "default_term": default_term,
-        "allowed_query_terms": list(allowed_query_terms),
-        "query_term_source": query_term_source,
-        "response_language": response_language,
-        "pending_schedule": list(pending_schedule or []),
-    }
+    ] if proposal_allowed else []
 
     fallback_prompt_layers = observability.estimate_prompt_layers(
         fallback_messages,
@@ -1402,8 +1783,7 @@ async def _emit_limit_reached_and_fallback(
         response = await client.chat.completions.create(
             model=model,
             messages=fallback_messages,
-            tools=fallback_tools,
-            tool_choice="auto",
+            **({"tools": fallback_tools, "tool_choice": "auto"} if fallback_tools else {}),
             stream=True,
         )
     except asyncio.CancelledError:
@@ -1411,6 +1791,10 @@ async def _emit_limit_reached_and_fallback(
     except Exception as e:
         logger.error("[agent] fallback LLM call failed: %s: %s",
                      type(e).__name__, e)
+        if controlled_output:
+            for event in _controlled_failure_events(tool_context, "model_unavailable"):
+                yield {**event, "truncated": True}
+            return
         yield {"type": "error",
                "message": f"fallback LLM call failed: {e}"}
         return
@@ -1424,7 +1808,8 @@ async def _emit_limit_reached_and_fallback(
             delta = chunk.choices[0].delta
             if delta.content:
                 accumulated += delta.content
-                yield {"type": "token", "text": delta.content}
+                if not controlled_output:
+                    yield {"type": "token", "text": delta.content}
             if delta.tool_calls:
                 for tc_delta in delta.tool_calls:
                     idx = tc_delta.index
@@ -1442,6 +1827,12 @@ async def _emit_limit_reached_and_fallback(
     except asyncio.CancelledError:
         logger.info("[agent] cancelled during fallback finalize")
         raise
+    except Exception:
+        if controlled_output:
+            for event in _controlled_failure_events(tool_context, "model_stream_interrupted"):
+                yield {**event, "truncated": True}
+            return
+        raise
 
     # Dispatch any propose_recommendation the LLM staged in the
     # fallback. We don't loop again — this is the last call. No
@@ -1449,7 +1840,7 @@ async def _emit_limit_reached_and_fallback(
     # already streamed, and a trailing "staging cards…" chip would
     # render out of order. Cards arrive silently via cards_proposed.
     for tc in fallback_tool_calls.values():
-        if tc["name"] != "propose_recommendation":
+        if tc["name"] != "propose_recommendation" or not proposal_allowed:
             continue
         try:
             args = json.loads(tc["arguments"] or "{}")
@@ -1458,13 +1849,19 @@ async def _emit_limit_reached_and_fallback(
             continue
         logger.info("[agent fallback] late propose_recommendation: items=%d term=%r",
                     len(args.get("items") or []), args.get("term"))
-        result = agent_tools.dispatch(tc["name"], args, context=tool_context)
+        result = await asyncio.to_thread(agent_tools.dispatch, tc["name"], args, context=tool_context)
         if "error" in result:
             logger.warning("[agent fallback] propose_recommendation dispatch failed: %s",
                            result.get("error"))
             continue
         staged = tool_context.pop("_proposed_cards", None)
-        if staged:
+        if staged is not None:
+            if controlled_output:
+                yield _controlled_card_event(tool_context, staged,
+                                             result.get("term") or args.get("term") or term, fallback=True)
+            else:
+                _record_recommendation_card_facts(tool_context, staged, result.get("term") or args.get("term") or term)
+        if staged and not controlled_output:
             logger.info("[agent fallback] staged %d cards", len(staged))
             # from_fallback=True signals to the caller that this batch
             # was synthesized late under truncation pressure; the LLM
@@ -1473,6 +1870,9 @@ async def _emit_limit_reached_and_fallback(
             # batch rather than overwrite — otherwise we silently
             # shrink the user's recommendation.
             yield {"type": "cards_proposed", "cards": staged, "from_fallback": True}
+
+    if cid in _continuation_store:
+        _continuation_store[cid]["grade_context"] = _grade_snapshot(tool_context)
 
     # Safety net: if the LLM bypassed the tool channel and dumped raw
     # XML / DSML markup as text (a known DeepSeek failure mode when it
@@ -1488,6 +1888,13 @@ async def _emit_limit_reached_and_fallback(
     verification_missing = history_refresh_missing(deep_search_state)
     if verification_missing:
         cleaned = verification_required_text(deep_search_state.query)
+    controlled_result = None
+    if controlled_output:
+        controlled_result = controlled_recommendation_result(
+            tool_context, incomplete=True,
+            failure_reason="evidence_unverified" if verification_missing else None)
+        cleaned = controlled_result["text"]
+        yield {"type": "token", "text": cleaned, "controlled_recommendation": True}
     trace_result = record_run_trace(deep_search_state, cleaned)
     final_event = {
         "type": "final",
@@ -1496,6 +1903,12 @@ async def _emit_limit_reached_and_fallback(
         "tool_calls": tool_calls_used,
         "truncated": True,
     }
+    if controlled_result is not None:
+        final_event.update(controlled_result)
+    if tool_context.get("_grade_charts") and not tool_context.get("_recommendation_proposed"):
+        final_event["grade_charts"] = tool_context["_grade_charts"]
+    if prefilter.active(tool_context):
+        final_event["prefilter"] = prefilter.summary(tool_context)
     if verification_missing:
         final_event["verification_required"] = True
     if trace_result.get("stored"):

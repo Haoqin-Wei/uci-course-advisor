@@ -1,0 +1,24 @@
+**结论：无法确认。** 以下三个关键条件都没有核实通过：先修成绩未核实、专业限制未核实、2026 Fall 加选窗口已关闭。
+
+**先修条件**
+SWE 43 的先修是 I&C SCI 32、H32 或 32A（最低 D-）。你已完成 ICS32，但档案中没有记录成绩，因此 `check_prerequisites_met` 返回 unknown；具体缺的是“是否达到 D- 门槛”这一项，而不是“先修条件不满足”。ICS 注释原文：“COURSE PREREQUISITES ARE STRICTLY ENFORCED. The School of ICS WILL DROP students who do not meet the required course prerequisite(s). These drops may take place at any time after grades are posted until Friday of Week 2.”
+
+**重复学分限制**
+课程注释原文：“Previously offered as INF 43, 'Intro Software Engr'. Students with prior credit for INF 43, 'Intro Software Engr' may not take SWE 43, 'Intro Software Engr'.” INF 43 就是 IN4MATX 43（同一门课更改了课程代码）。你只修过 ICS32，没有这门课的学分，所以这条限制对你不适用；不过，这要以你的记录完整为前提。
+
+**专业限制**
+SWE 系注释：“Most SWE courses will be initially restricted to majors in the Donald Bren School of Information and Computer Sciences ONLY... For restriction details and timeline” 见 ICS 官网的 course-enrollment-restrictions 页面。你的 profile 只记录了 ICS32，没有专业信息，因此我既不能说这条限制会挡住你，也不能说它不会挡住你。所有 section 的 Rstr 均为 **A**，指的是先修要求，不是专业限制。
+
+**2026 Fall 开课与空位** (Live WebSoc，截至 2026-11-10 00:02)
+
+| 讲座 | 代码 | 时间 | 教师 | 空位 |
+|---|---|---|---|---|
+| Lec A | 37500 | TuTh 18:30–19:50 | Gillespie | 216/249，33 空 |
+| Lec B | 37510 | TuTh 11:00–12:20 | Mannan | 49/120，71 空 |
+
+Timetable 中两个讲座都列出了 Dis，按当前产品政策视为需要搭配讨论课；但“哪个 Dis 与哪个 Lec 配对”这一关系仍未解决（有配对例外未澄清），暂时不能给出可注册的完整组合。目前开放选的 Dis 有 A1（22 空）、A2（6 空）、A3（1 空）、A6（4 空）、B1（36 空）、B4（37 空）；A4、A5 已满；B2、B3、B5 已取消。
+
+**时间窗口**
+2026 Fall 的 ICS 注释写明：WebReg 中加课、退课、改评分方式的截止时间是 **2026-10-09（Week 2 周五）17:00**。今天是 2026-11-09，这个窗口已经关闭；现在加课只能走 StudentAccess 的 Enrollment Exception，且“only be approved for extenuating and documented circumstances outside of the student's control”。
+
+**下一步：** 你是想赶 2026 Fall 现在加（需要特殊理由申请 exception），还是为之后的学期做规划？如果是后者，我按目标学期重新核对开课与先修状态。

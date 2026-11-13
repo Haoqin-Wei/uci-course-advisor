@@ -12,8 +12,26 @@ class TermCalendarError(ValueError):
     pass
 
 
+DEFAULT_SWITCH_WEEK = 7
+
+
+def calculate_default_switch_cutoff(instruction_start: date | datetime | str) -> datetime:
+    """Start of instructional Week 7, in Pacific time (including DST).
+
+    The planning default moves to the next regular term at this instant at the
+    latest; it moves earlier as soon as that term's timetable is published.
+    Week 1 is counted exactly as in ``calculate_week8_cutoff``.
+    """
+    start = _coerce_date(instruction_start, field="instruction start")
+    week1 = start + timedelta(days=(7 - start.weekday()) % 7)
+    return datetime.combine(week1 + timedelta(weeks=DEFAULT_SWITCH_WEEK - 1), time.min, tzinfo=LOS_ANGELES)
+
+
 def calculate_week8_cutoff(instruction_start: date | datetime | str) -> datetime:
-    """Start of instructional Week 8, in Pacific time (including DST).
+    """Start of instructional Week 8, when enrollment for the next term opens.
+
+    In Pacific time (including DST). No longer the default-term switch; see
+    ``calculate_default_switch_cutoff``.
 
     Fall's short opening week is Week 0; Week 1 starts on the first
     Monday on or after instruction begins, as in the Registrar calendar.

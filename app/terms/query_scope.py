@@ -214,6 +214,19 @@ def resolve_query_scope(
     if any(not t.is_regular for t in explicit_terms):
         return _error_scope(TermParseError("invalid", "Summer is not supported yet.", text), courses)
 
+    # A requested historical year range precedes both individual named terms
+    # and the default six-term history window. Never silently drop the years.
+    year_range = re.search(r"(?<!\d)(20\d{2})\s*年?\s*(?:至|到|[-–—~～]|\bto\b|\bthrough\b)\s*(20\d{2})(?!\d)", text, re.I)
+    range_offerings = re.search(r"开课|开设|开过|授课|教授|\b(?:offerings?|offered|teaches|taught|instructors?)\b", text, re.I)
+    if year_range and (_HISTORY.search(text) or range_offerings):
+        first, last = map(int, year_range.groups())
+        if not 0 <= last - first <= 3:
+            return _error_scope(TermParseError("ambiguous", "Please specify an ascending historical range of at most four years.", text), courses)
+        terms = tuple(TermKey(year, quarter) for year in range(first, last + 1)
+                      for quarter in ("Winter", "Spring", "Fall"))
+        return QueryScope(terms, "explicit", True, False, None, courses,
+                          intent="offering_pattern")
+
     # Collect every explicit/relative mention, including mixed comparisons.
     mentions: list[tuple[int, TermKey]] = []
     for key in explicit_terms:

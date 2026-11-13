@@ -970,7 +970,6 @@ body.schedule-open .msg-ai { max-width: 680px; }
 .course-card {
   cursor: pointer;
 }
-.course-card .cc-add-btn,
 .course-card .cc-sg-toggle,
 .course-card .cc-sg-wrap {
   cursor: auto;                          /* nested interactive surfaces keep their own cursor */
@@ -1317,6 +1316,136 @@ body.schedule-open .msg-ai { max-width: 680px; }
 .cc-source-external_web { background: var(--overlay-light);      color: var(--text-secondary); }
 .cc-source-anecdotal    { background: var(--warning-soft);       color: var(--warning); }
 .cc-source-unverified   { background: var(--danger-soft);        color: var(--danger); }
+.cc-source-unknown      { background: var(--bg-elevated); color: var(--text-secondary); }
+.cc-source-freshness    { font-size: 11px; color: var(--text-tertiary); overflow-wrap: anywhere; }
+.cc-primary-pairing { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+.cc-pairing-selection { font-size: 12px; color: var(--text-secondary); }
+.cc-pairing-summary { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
+.cc-codes { flex-wrap: wrap; }
+
+.cc-prefilter-metadata { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; min-width: 0; }
+.cc-prefilter-score { white-space: normal; }
+.cc-prefilter-warnings {
+  margin: 0;
+  padding: 8px 10px 8px 25px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.cc-prefilter-warnings li + li { margin-top: 4px; }
+
+/* Historical grades: local CSS bars keep raw percentages on a fixed
+   0–100% scale. Comparison turns and saved turns share this surface. */
+.grade-history-details {
+  min-width: 0;
+  margin-top: 4px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  cursor: auto;
+}
+.grade-history-details > summary {
+  cursor: pointer;
+  padding: 9px 10px;
+  font-size: 12px;
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+}
+.grade-history-details > summary::marker { color: var(--text-tertiary); }
+.grade-history-source-label {
+  margin-left: 8px;
+  font-size: 10px;
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+}
+.grade-history-content { padding: 0 10px 12px; }
+.grade-history-context {
+  margin: 0 0 10px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.grade-chart { margin: 0; min-width: 0; }
+.grade-chart-bars { position: relative; min-width: 0; }
+.grade-chart-grid {
+  position: absolute;
+  top: 22px;
+  height: 126px;
+  left: 0;
+  right: 0;
+  border-bottom: 1px solid var(--border-default);
+  background: repeating-linear-gradient(to top, transparent 0, transparent calc(25% - 1px), var(--border-default) calc(25% - 1px), var(--border-default) 25%);
+  pointer-events: none;
+}
+.grade-chart-columns {
+  display: grid;
+  grid-template-columns: repeat(var(--grade-columns, 7), minmax(0, 1fr));
+  gap: 3px;
+  position: relative;
+}
+.grade-chart-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.grade-chart-percent {
+  height: 22px;
+  font-size: 10px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.grade-chart-track {
+  height: 126px;
+  width: 66%;
+  display: flex;
+  align-items: flex-end;
+}
+.grade-chart-bar {
+  display: block;
+  width: 100%;
+  background: var(--accent);
+  border-radius: 3px 3px 0 0;
+}
+.grade-chart-letter { margin-top: 6px; font-size: 11px; font-weight: var(--weight-semibold); }
+.grade-chart-count { margin-top: 2px; font-size: 10px; color: var(--text-secondary); overflow-wrap: anywhere; text-align: center; }
+.grade-chart-denominator,
+.grade-chart-note,
+.grade-chart-range,
+.grade-chart-scope-note {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.grade-chart-scope-note { margin: 0 0 10px; padding: 7px; background: var(--bg-elevated); border-radius: var(--radius-sm); }
+.grade-chart-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+}
+.grade-chart-metrics dt { font-size: 11px; line-height: 1.4; color: var(--text-secondary); }
+.grade-chart-metrics dd { margin: 3px 0 0; font-size: 13px; font-weight: var(--weight-semibold); color: var(--text-primary); }
+.grade-chart-source { display: inline-block; margin-top: 9px; font-size: 11px; color: var(--accent); text-decoration: underline; }
+.grade-history-unavailable { font-size: 12px; color: var(--text-secondary); }
+.grade-history-unavailable p { margin: 0; }
+.grade-comparison { margin: 16px 0; min-width: 0; }
+.grade-comparison > h3 { margin: 0 0 10px; font-size: 13px; font-weight: var(--weight-semibold); color: var(--text-primary); }
+.grade-comparison-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.grade-comparison-item { padding: 14px; min-width: 0; background: var(--bg-panel); border: 1px solid var(--border-default); border-radius: var(--radius-md); }
+.grade-comparison-item > h4 { min-height: 3em; margin: 0 0 12px; font-size: 12px; line-height: 1.5; color: var(--text-primary); overflow-wrap: anywhere; }
+@media (max-width: 680px) {
+  .grade-comparison-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
 .cc-reason {
   font-size: var(--text-body);
   color: var(--text-secondary);
@@ -1474,7 +1603,6 @@ tr.cc-sg-row .cc-sg-add-hover.added {
   .cc-prereqs,
   .cc-units-block { grid-column: span 1; }
   .cc-units-block { justify-content: flex-start; }
-  .cc-add-btn { display: none; }     /* tap whole card instead */
 }
 
 /* ── Follow-up chips ───────────────────────────────── */

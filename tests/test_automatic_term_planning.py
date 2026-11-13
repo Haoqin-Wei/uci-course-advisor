@@ -9,7 +9,7 @@ import pytest
 
 from app.agent import loop, tools
 from app.data import offerings, sessions
-from app.terms import FixedClock, LOS_ANGELES, TermKey, calculate_week8_cutoff
+from app.terms import FixedClock, LOS_ANGELES, TermKey, calculate_default_switch_cutoff, calculate_week8_cutoff
 from app.terms.intent import apply_semantic_plan, refine_query_scope
 from app.terms.query_scope import resolve_query_scope
 from app.terms.service import TermResolutionService
@@ -48,8 +48,19 @@ def test_week8_uses_teaching_weeks_and_pacific_dst(start, expected):
     assert calculate_week8_cutoff(start).isoformat() == expected
 
 
+@pytest.mark.parametrize("start,expected", [
+    ("2026-09-24", "2026-11-09T00:00:00-08:00"),     # Fall's short opening week is Week 0
+    ("2027-01-04", "2027-02-15T00:00:00-08:00"),
+    ("2026-03-30", "2026-05-11T00:00:00-07:00"),
+])
+def test_default_switch_is_week7_monday_in_pacific_time(start, expected):
+    cutoff = calculate_default_switch_cutoff(start)
+    assert cutoff.isoformat() == expected
+    assert calculate_week8_cutoff(start) - cutoff == timedelta(days=7)   # a week before enrollment opens
+
+
 def test_utc_boundary_changes_default_without_publication_and_keeps_current():
-    cutoff = datetime(2026, 11, 16, 8, tzinfo=timezone.utc)
+    cutoff = datetime(2026, 11, 9, 8, tzinfo=timezone.utc)
     before = calendar_service(cutoff - timedelta(seconds=1))
     after = calendar_service(cutoff)
     assert before.automatic_term().canonical_name == "2026 Fall"
@@ -59,7 +70,7 @@ def test_utc_boundary_changes_default_without_publication_and_keeps_current():
 
 
 @pytest.mark.parametrize("date,default,current", [
-    ((2026, 5, 18), "2026 Fall", "2026 Spring"),
+    ((2026, 5, 11), "2026 Fall", "2026 Spring"),
     ((2026, 7, 10), "2026 Fall", None),
     ((2026, 12, 20), "2027 Winter", None),
     ((2027, 1, 5), "2027 Winter", "2027 Winter"),

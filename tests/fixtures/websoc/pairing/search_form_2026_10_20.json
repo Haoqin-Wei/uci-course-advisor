@@ -1,0 +1,19 @@
+{
+  "fixture_kind": "public_registrar_websoc_raw_form",
+  "captured_at": "2026-10-20T20:49:04.255120+00:00",
+  "request": {
+    "method": "GET",
+    "url": "https://www.reg.uci.edu/perl/WebSoc"
+  },
+  "response": {
+    "status_code": 200,
+    "content_type": "text/html; charset=ISO-8859-1",
+    "encoding": "ISO-8859-1",
+    "byte_count": 41073,
+    "sha256": "c5a867c37a356d8aef04d7038a57ae183bb8253a54681f3955874d23d816fae9"
+  },
+  "notes": [
+    "Public WebSoc form only; no account, cookies, credentials or registration operations.",
+    "Capture timestamp records completion of the public response capture; the HTML is preserved byte-for-byte."
+  ]
+}

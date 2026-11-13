@@ -68,19 +68,6 @@ async function removeCourse(courseId, btnEl, section, term) {
   renderScheduleGrid();
 }
 
-function updateCardState(courseId, added, section) {
-  const card = document.getElementById('card-' + courseId);
-  if (!card) return;
-  card.classList.toggle('added', !!added);
-  const btn = card.querySelector('.cc-add-btn');
-  if (btn) {
-    const icon = btn.querySelector('.material-symbols-outlined');
-    if (icon) icon.innerHTML = solonIcon(added ? 'check' : 'add');
-    btn.setAttribute('aria-label', added ? 'Remove from schedule' : 'Add to schedule');
-    if (section) btn.setAttribute('data-section', section);
-  }
-}
-
 function updateScheduleCount() {
   const n = new Set(pendingScheduleEntries.map(
     entry => scheduleCourseKey(entry.term, entry.course_id)
@@ -276,25 +263,24 @@ function scheduleEntrySection(entry) {
   return null;
 }
 
-function scheduleEntryStatus(entry) {
-  if (scheduleEntryHasEvent(entry)) return 'resolved';
+function scheduleEntryStatus(entry, events = scheduleEvents) {
   const section = scheduleEntrySection(entry);
-  const start = parseTimeToMinutes(section?.start_time);
-  const end = parseTimeToMinutes(section?.end_time);
-  if (entry.materialization_status === 'tba' || section &&
-      (!section.days || section.days === 'TBA' || /^(true|1|yes)$/i.test(String(section.time_is_tba)) || start < 0 || end <= start)) return 'tba';
+  // A known first meeting cannot establish that the whole section is timed.
+  if (section && sectionMeetingsForDisplay(section).some(meeting => meeting.time_is_tba)) return 'tba';
+  if (scheduleEntryHasEvent(entry, events)) return 'resolved';
+  if (entry.materialization_status === 'tba') return 'tba';
   return 'unresolved';
 }
 
 function renderUntimedSchedule(entries, events) {
-  const untimed = entries.filter(entry => !scheduleEntryHasEvent(entry, events));
+  const untimed = entries.filter(entry => scheduleEntryStatus(entry, events) !== 'resolved');
   if (!untimed.length) return '';
   return `<section class="schedule-untimed" aria-label="Sections without a scheduled time">
     <h3>Time not scheduled <span>${untimed.length} ${untimed.length === 1 ? 'section' : 'sections'}</span></h3>
-    <p>Added to your plan. These sections have no confirmed time on the weekly grid.</p>
+    <p>Some meeting times remain unconfirmed. Confirmed meetings still appear on the weekly grid.</p>
     <div class="schedule-untimed-items">${untimed.map(entry => {
       const section = scheduleEntrySection(entry) || {};
-      const label = scheduleEntryStatus(entry) === 'tba' ? 'Time TBA' : 'Time unavailable';
+      const label = scheduleEntryStatus(entry, events) === 'tba' ? 'Time TBA' : 'Time unavailable';
       const details = [section.section_type || section.type, entry.section, section.location].filter(Boolean).join(' · ');
       return `<button type="button" class="schedule-untimed-item" data-cid="${escAttr(entry.course_id)}" data-sec="${escAttr(entry.section)}" data-term="${escAttr(entry.term)}" onclick="selectUntimedScheduleEntry(this)">
         <strong>${escHTML(_prettyCourseId(entry.course_id))}</strong><span>${escHTML(details)}</span><span class="schedule-untimed-status">${label}</span>
@@ -322,7 +308,7 @@ function scheduleMetrics(entries, events) {
   const units = values.every(u => u !== null) ? values.reduce((a,b) => a+b, 0) : null;
   const times = events.map(e => parseTimeToMinutes(e.start)).filter(t => t >= 0);
   const earliest = times.length ? displayTime(`${Math.floor(Math.min(...times) / 60)}:${String(Math.min(...times) % 60).padStart(2, '0')}`) : '—';
-  const incomplete = entries.some(entry => !scheduleEntryHasEvent(entry, events));
+  const incomplete = entries.some(entry => scheduleEntryStatus(entry, events) !== 'resolved');
   const fridayBusy = events.some(e => e.day === 'Fri' && parseTimeToMinutes(e.end) > 12 * 60);
   const friday = fridayBusy ? 'Busy' : incomplete ? 'Unknown' : times.length ? 'Free' : '—';
   return {count: courses.size, units, earliest, friday, incomplete};
@@ -341,7 +327,7 @@ function renderScheduleOverview(entries, events, term, terms) {
     <div class="schedule-metrics">
       ${metric('UNITS', m.units ?? '—', unitNote)}
       ${metric('COURSES', m.count, 'In your plan')}
-      ${metric('EARLIEST CLASS', m.earliest, m.incomplete ? 'Some times unknown' : events.length ? 'First meeting' : 'No meetings yet')}
+      ${metric('EARLIEST CLASS', m.earliest, m.incomplete ? 'Confirmed only; some times unknown' : events.length ? 'First meeting' : 'No meetings yet')}
       ${metric('FRIDAY AFTERNOON', m.friday === 'Free' ? `Free ${fridayFreeEmoji}` : m.friday, m.friday === 'Free' ? 'No classes after noon' : m.friday === 'Busy' ? 'Classes after noon' : 'Awaiting meeting times', m.friday === 'Free' ? 'ok' : '')}
     </div>
   </div>`;
@@ -532,6 +518,8 @@ function placeEvent(ev, col, cols, hasConflict = false) {
   evEl.dataset.cid = ev.course_id;
   evEl.dataset.sec = ev.section_num || '';
   evEl.dataset.term = ev.term || '';
+  evEl.dataset.eventKey = scheduleEventKey(ev);
+  evEl.dataset.meetingIndex = String(ev.meeting_index ?? '');
   evEl.style.position = 'absolute';
   evEl.style.top = topOffset + 'px';
   evEl.style.height = Math.max(height - 4, 24) + 'px';
@@ -558,6 +546,11 @@ function placeEvent(ev, col, cols, hasConflict = false) {
   });
 
   gridEl.appendChild(evEl);
+}
+
+function scheduleEventKey(event) {
+  return JSON.stringify([event.term, event.course_id, event.section_code || event.section_num || event.section,
+    event.meeting_index ?? null, event.day, event.start, event.end, event.location || '']);
 }
 
 function parseTimeToMinutes(t) {

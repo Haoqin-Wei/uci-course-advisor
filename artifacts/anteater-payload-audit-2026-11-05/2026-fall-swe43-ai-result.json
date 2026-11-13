@@ -1,0 +1,1048 @@
+{
+  "found": true,
+  "source": "live_anteater_websoc",
+  "is_live": true,
+  "stale": false,
+  "stale_age_seconds": null,
+  "term": "Fall 2026",
+  "course_id": "SWE 43",
+  "coverage_status": "partial",
+  "data_coverage": {
+    "term_id": "2026_Fall",
+    "name": "Fall 2026",
+    "coverage_status": "partial",
+    "section_count": 452,
+    "course_count": 51,
+    "department_count": 1,
+    "departments": [
+      "COMPSCI"
+    ],
+    "source": "data/uci",
+    "updated_at": "2026-05-13T20:51:25.924618+00:00",
+    "schema_version": "uci-relational-v1"
+  },
+  "retrieved_at": "2026-11-06T01:10:40Z",
+  "cache_hit": false,
+  "sections": [
+    {
+      "section_code": "37514",
+      "section_num": "B4",
+      "section_type": "Dis",
+      "days": "W",
+      "start_time": "13:00",
+      "end_time": "13:50",
+      "time_display": "W 13:00-13:50",
+      "time_is_tba": false,
+      "location": "ALP 2600",
+      "instructors": [
+        "DODOR, E.",
+        "MANNAN, U."
+      ],
+      "max_capacity": 60,
+      "enrolled": 23,
+      "seats_open": 37,
+      "waitlisted": null,
+      "status": "OPEN",
+      "is_cancelled": false,
+      "cancellation_status": "not_cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "NO_FINAL"
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "ALP 2600"
+          ],
+          "days": "W",
+          "startTime": {
+            "hour": 13,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 13,
+            "minute": 50
+          }
+        }
+      ],
+      "section_comment": "",
+      "waitlist_capacity": 0,
+      "new_only_reserved": null,
+      "updated_at": "2026-11-06T01:06:18.428Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_8d74511e5e170530"
+    },
+    {
+      "section_code": "37504",
+      "section_num": "A4",
+      "section_type": "Dis",
+      "days": "F",
+      "start_time": "12:00",
+      "end_time": "12:50",
+      "time_display": "F 12:00-12:50",
+      "time_is_tba": false,
+      "location": "PCB 1200",
+      "instructors": [
+        "HAIDER, A.",
+        "GILLESPIE, J."
+      ],
+      "max_capacity": 39,
+      "enrolled": 39,
+      "seats_open": 0,
+      "waitlisted": null,
+      "status": "FULL",
+      "is_cancelled": false,
+      "cancellation_status": "not_cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "NO_FINAL"
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "PCB 1200"
+          ],
+          "days": "F",
+          "startTime": {
+            "hour": 12,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 12,
+            "minute": 50
+          }
+        }
+      ],
+      "section_comment": "",
+      "waitlist_capacity": 0,
+      "new_only_reserved": null,
+      "updated_at": "2026-11-06T01:06:18.428Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_8d74511e5e170530"
+    },
+    {
+      "section_code": "37500",
+      "section_num": "A",
+      "section_type": "Lec",
+      "days": "TuTh",
+      "start_time": "18:30",
+      "end_time": "19:50",
+      "time_display": "TuTh 18:30-19:50",
+      "time_is_tba": false,
+      "location": "ALP 1300",
+      "instructors": [
+        "GILLESPIE, J."
+      ],
+      "max_capacity": 249,
+      "enrolled": 216,
+      "seats_open": 33,
+      "waitlisted": null,
+      "status": "OPEN",
+      "is_cancelled": false,
+      "cancellation_status": "not_cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "TBA_FINAL"
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "ALP 1300"
+          ],
+          "days": "TuTh",
+          "startTime": {
+            "hour": 18,
+            "minute": 30
+          },
+          "endTime": {
+            "hour": 19,
+            "minute": 50
+          }
+        }
+      ],
+      "section_comment": "",
+      "waitlist_capacity": 0,
+      "new_only_reserved": null,
+      "updated_at": "2026-11-06T01:06:18.428Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_8d74511e5e170530"
+    },
+    {
+      "section_code": "37501",
+      "section_num": "A1",
+      "section_type": "Dis",
+      "days": "F",
+      "start_time": "09:00",
+      "end_time": "09:50",
+      "time_display": "F 09:00-09:50",
+      "time_is_tba": false,
+      "location": "PCB 1200",
+      "instructors": [
+        "DU, H.",
+        "GILLESPIE, J."
+      ],
+      "max_capacity": 39,
+      "enrolled": 17,
+      "seats_open": 22,
+      "waitlisted": null,
+      "status": "OPEN",
+      "is_cancelled": false,
+      "cancellation_status": "not_cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "NO_FINAL"
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "PCB 1200"
+          ],
+          "days": "F",
+          "startTime": {
+            "hour": 9,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 9,
+            "minute": 50
+          }
+        }
+      ],
+      "section_comment": "",
+      "waitlist_capacity": 0,
+      "new_only_reserved": null,
+      "updated_at": "2026-11-06T01:06:18.428Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_8d74511e5e170530"
+    },
+    {
+      "section_code": "37502",
+      "section_num": "A2",
+      "section_type": "Dis",
+      "days": "F",
+      "start_time": "10:00",
+      "end_time": "10:50",
+      "time_display": "F 10:00-10:50",
+      "time_is_tba": false,
+      "location": "PCB 1200",
+      "instructors": [
+        "DU, H.",
+        "GILLESPIE, J."
+      ],
+      "max_capacity": 39,
+      "enrolled": 33,
+      "seats_open": 6,
+      "waitlisted": null,
+      "status": "OPEN",
+      "is_cancelled": false,
+      "cancellation_status": "not_cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "NO_FINAL"
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "PCB 1200"
+          ],
+          "days": "F",
+          "startTime": {
+            "hour": 10,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 10,
+            "minute": 50
+          }
+        }
+      ],
+      "section_comment": "",
+      "waitlist_capacity": 0,
+      "new_only_reserved": null,
+      "updated_at": "2026-11-06T01:06:18.428Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_8d74511e5e170530"
+    },
+    {
+      "section_code": "37503",
+      "section_num": "A3",
+      "section_type": "Dis",
+      "days": "F",
+      "start_time": "11:00",
+      "end_time": "11:50",
+      "time_display": "F 11:00-11:50",
+      "time_is_tba": false,
+      "location": "PCB 1200",
+      "instructors": [
+        "DU, H.",
+        "GILLESPIE, J."
+      ],
+      "max_capacity": 43,
+      "enrolled": 42,
+      "seats_open": 1,
+      "waitlisted": null,
+      "status": "OPEN",
+      "is_cancelled": false,
+      "cancellation_status": "not_cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "NO_FINAL"
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "PCB 1200"
+          ],
+          "days": "F",
+          "startTime": {
+            "hour": 11,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 11,
+            "minute": 50
+          }
+        }
+      ],
+      "section_comment": "",
+      "waitlist_capacity": 0,
+      "new_only_reserved": null,
+      "updated_at": "2026-11-06T01:06:18.428Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_8d74511e5e170530"
+    },
+    {
+      "section_code": "37505",
+      "section_num": "A5",
+      "section_type": "Dis",
+      "days": "F",
+      "start_time": "13:00",
+      "end_time": "13:50",
+      "time_display": "F 13:00-13:50",
+      "time_is_tba": false,
+      "location": "PCB 1200",
+      "instructors": [
+        "HAIDER, A.",
+        "GILLESPIE, J."
+      ],
+      "max_capacity": 50,
+      "enrolled": 50,
+      "seats_open": 0,
+      "waitlisted": null,
+      "status": "FULL",
+      "is_cancelled": false,
+      "cancellation_status": "not_cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "NO_FINAL"
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "PCB 1200"
+          ],
+          "days": "F",
+          "startTime": {
+            "hour": 13,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 13,
+            "minute": 50
+          }
+        }
+      ],
+      "section_comment": "",
+      "waitlist_capacity": 0,
+      "new_only_reserved": null,
+      "updated_at": "2026-11-06T01:06:18.428Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_8d74511e5e170530"
+    },
+    {
+      "section_code": "37513",
+      "section_num": "B3",
+      "section_type": "Dis",
+      "days": "W",
+      "start_time": "12:00",
+      "end_time": "12:50",
+      "time_display": "W 12:00-12:50",
+      "time_is_tba": false,
+      "location": "TBA ",
+      "instructors": [
+        "STAFF",
+        "MANNAN, U."
+      ],
+      "max_capacity": 0,
+      "enrolled": 0,
+      "seats_open": 0,
+      "waitlisted": null,
+      "status": "FULL",
+      "is_cancelled": true,
+      "cancellation_status": "cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "NO_FINAL"
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "TBA "
+          ],
+          "days": "W",
+          "startTime": {
+            "hour": 12,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 12,
+            "minute": 50
+          }
+        }
+      ],
+      "section_comment": "\n\t\t\t    <p>***  CANCELLED  *** Course Code 37513</p>\n\t\t\t    \n\t\t\t",
+      "waitlist_capacity": 0,
+      "new_only_reserved": null,
+      "updated_at": "2026-11-06T01:06:18.428Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_8d74511e5e170530"
+    },
+    {
+      "section_code": "37515",
+      "section_num": "B5",
+      "section_type": "Dis",
+      "days": "W",
+      "start_time": "14:00",
+      "end_time": "14:50",
+      "time_display": "W 14:00-14:50",
+      "time_is_tba": false,
+      "location": "TBA ",
+      "instructors": [
+        "STAFF",
+        "MANNAN, U."
+      ],
+      "max_capacity": 0,
+      "enrolled": 0,
+      "seats_open": 0,
+      "waitlisted": null,
+      "status": "FULL",
+      "is_cancelled": true,
+      "cancellation_status": "cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "NO_FINAL"
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "TBA "
+          ],
+          "days": "W",
+          "startTime": {
+            "hour": 14,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 14,
+            "minute": 50
+          }
+        }
+      ],
+      "section_comment": "\n\t\t\t    <p>***  CANCELLED  *** Course Code 37515</p>\n\t\t\t    \n\t\t\t",
+      "waitlist_capacity": 0,
+      "new_only_reserved": null,
+      "updated_at": "2026-11-06T01:06:18.428Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_8d74511e5e170530"
+    },
+    {
+      "section_code": "37506",
+      "section_num": "A6",
+      "section_type": "Dis",
+      "days": "F",
+      "start_time": "14:00",
+      "end_time": "14:50",
+      "time_display": "F 14:00-14:50",
+      "time_is_tba": false,
+      "location": "PCB 1200",
+      "instructors": [
+        "HAIDER, A.",
+        "GILLESPIE, J."
+      ],
+      "max_capacity": 39,
+      "enrolled": 35,
+      "seats_open": 4,
+      "waitlisted": null,
+      "status": "OPEN",
+      "is_cancelled": false,
+      "cancellation_status": "not_cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "NO_FINAL"
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "PCB 1200"
+          ],
+          "days": "F",
+          "startTime": {
+            "hour": 14,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 14,
+            "minute": 50
+          }
+        }
+      ],
+      "section_comment": "",
+      "waitlist_capacity": 0,
+      "new_only_reserved": null,
+      "updated_at": "2026-11-06T01:06:18.428Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_8d74511e5e170530"
+    },
+    {
+      "section_code": "37510",
+      "section_num": "B",
+      "section_type": "Lec",
+      "days": "TuTh",
+      "start_time": "11:00",
+      "end_time": "12:20",
+      "time_display": "TuTh 11:00-12:20",
+      "time_is_tba": false,
+      "location": "HSLH 100A",
+      "instructors": [
+        "MANNAN, U."
+      ],
+      "max_capacity": 120,
+      "enrolled": 49,
+      "seats_open": 71,
+      "waitlisted": null,
+      "status": "OPEN",
+      "is_cancelled": false,
+      "cancellation_status": "not_cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "SCHEDULED_FINAL",
+        "dayOfWeek": "Tue",
+        "month": 11,
+        "day": 8,
+        "startTime": {
+          "hour": 10,
+          "minute": 30
+        },
+        "endTime": {
+          "hour": 12,
+          "minute": 30
+        },
+        "bldg": [
+          "HSLH 100A"
+        ]
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "HSLH 100A"
+          ],
+          "days": "TuTh",
+          "startTime": {
+            "hour": 11,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 12,
+            "minute": 20
+          }
+        }
+      ],
+      "section_comment": "",
+      "waitlist_capacity": 0,
+      "new_only_reserved": null,
+      "updated_at": "2026-11-06T01:06:18.428Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_8d74511e5e170530"
+    },
+    {
+      "section_code": "37511",
+      "section_num": "B1",
+      "section_type": "Dis",
+      "days": "W",
+      "start_time": "10:00",
+      "end_time": "10:50",
+      "time_display": "W 10:00-10:50",
+      "time_is_tba": false,
+      "location": "ALP 2500",
+      "instructors": [
+        "DODOR, E.",
+        "MANNAN, U."
+      ],
+      "max_capacity": 60,
+      "enrolled": 24,
+      "seats_open": 36,
+      "waitlisted": null,
+      "status": "OPEN",
+      "is_cancelled": false,
+      "cancellation_status": "not_cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "NO_FINAL"
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "ALP 2500"
+          ],
+          "days": "W",
+          "startTime": {
+            "hour": 10,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 10,
+            "minute": 50
+          }
+        }
+      ],
+      "section_comment": "",
+      "waitlist_capacity": 0,
+      "new_only_reserved": null,
+      "updated_at": "2026-11-06T01:06:18.428Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_8d74511e5e170530"
+    },
+    {
+      "section_code": "37512",
+      "section_num": "B2",
+      "section_type": "Dis",
+      "days": "W",
+      "start_time": "15:00",
+      "end_time": "15:50",
+      "time_display": "W 15:00-15:50",
+      "time_is_tba": false,
+      "location": "TBA ",
+      "instructors": [
+        "STAFF",
+        "MANNAN, U."
+      ],
+      "max_capacity": 0,
+      "enrolled": 0,
+      "seats_open": 0,
+      "waitlisted": null,
+      "status": "FULL",
+      "is_cancelled": true,
+      "cancellation_status": "cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "NO_FINAL"
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "TBA "
+          ],
+          "days": "W",
+          "startTime": {
+            "hour": 15,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 15,
+            "minute": 50
+          }
+        }
+      ],
+      "section_comment": "\n\t\t\t    <p>***  CANCELLED  *** Course Code 37512</p>\n\t\t\t    \n\t\t\t",
+      "waitlist_capacity": 0,
+      "new_only_reserved": null,
+      "updated_at": "2026-11-06T01:06:18.428Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_8d74511e5e170530"
+    }
+  ],
+  "comment_contexts": {
+    "comments_8d74511e5e170530": {
+      "school": {
+        "name": "Donald Bren School of Information and Computer Sciences",
+        "comment": "\n\t\t<p>For ICS course updates, visit the ICS Enrollment Restrictions webpage:</p>\n\t\t<p><b>Undergraduate courses:</b> <a href=\"http://ics.uci.edu/course-enrollment-restrictions/\">http://ics.uci.edu/course-enrollment-restrictions/</a></p>\n\t\t<p><b>Graduate courses:</b> <a href=\"http://ics.uci.edu/academics/graduate-academic-advising/course-updates/\">http://ics.uci.edu/academics/graduate-academic-advising/course-updates/</a></p>\n\t\t<p>It is incumbent <i>on the student</i> to check the restriction status and seating availability of a course <i>before</i> adding or attempting to add or change their discussion/lab section enrollment.</p>\n\t\t<p><b>COURSE PREREQUISITES ARE STRICTLY ENFORCED. </b> The School of ICS <b>WILL DROP</b> students who do not meet the required course prerequisite(s). <i>These drops may take place at any time after grades are posted until Friday of Week 2.</i> Note that meeting the prerequisites for a course does not guarantee a seat in that course.</p>\n\t\t<p><b>WAITLIST: </b> Students on the waitlist for an ICS course should be in communication with that course's instructor to arrange for access to course materials and submission of any assignments while on the waitlist. Being on the waitlist or completing coursework DOES NOT guarantee a seat in the course.</p>\n\t\t<p><b>DEADLINES TO ADD, DROP, OR CHANGE  GRADE OPTION FOR ALL SCHOOL OF ICS COURSES</b></p>\n\t\t<p><b>5:00pm on Friday of Week 1: </b> Courses with an early deadline to add/drop/change grade option are noted with a comment in the Schedule of Classes. Permission from the instructor and an authorization code will be required after Week 1 to add or drop these courses.</p>\n\t\t<p><b>5:00pm on Friday of Week 2:</b> The deadline to add/drop/change grade option in WebReg is 5:00pm on Friday, October 9, 2026.  The Bren School of ICS <i>strictly</i> adheres to and enforces this deadline for undergraduate and graduate courses.</p>\n\t\t<p><b>ADDING, DROPPING, OR CHANGING GRADE OPTION AFTER WEEK 2:</b> Students must submit an Enrollment Exception request online through StudentAccess. <i> Exception requests will only be approved for extenuating and documented circumstances outside of the student's control.</i><b> For more information on ICS policies: </b> <a href=\"http://ics.uci.edu/academics/undergraduate-programs/majors-minors/undergraduate-student-policies/\">http://ics.uci.edu/academics/undergraduate-programs/majors-minors/undergraduate-student-policies/</a></p>\n\t\t<p><b>GRADUATE ENROLLMENT IN UNDERGRADUATE COURSES: </b>Graduate students seeking to enroll in an ICS undergraduate level course must submit a request to ICS Undergraduate Students Affairs. Priority for seating in undergraduate courses is given first to undergraduate students. Unauthorized students found enrolled in undergraduate courses WILL BE DROPPED by ICS Student Affairs.</p>\n\t\t<p><b>UNDERGRADUATE ENROLLMENT IN GRADUATE COURSES: </b>Undergraduate students seeking to enroll in an ICS graduate level course must obtain a written permission from the instructor before submitting a request for an authorization to ICS Graduate Student Affairs. Priority for seating in graduate courses is given first to graduate students. <i>Graduate level courses taken as an undergraduate will not count toward a graduate degree program.</i></p>\n\t\t<p><b>DCE CONCURRENT ENROLLMENT:</b> Only courses that show as &quot;OPEN&quot; in the Schedule of Classes may be requested. Approval of requests is contingent on seating availability and prerequisite eligibility. For more information: <a href=\"http://ics.uci.edu/academics/undergraduate-academic-advising/concurrent-enrollment/\">http://ics.uci.edu/academics/undergraduate-academic-advising/concurrent-enrollment/</a></p>\n\t\t\n\t    "
+      },
+      "department": {
+        "code": "SWE",
+        "name": "Software Engineering",
+        "comment": "\n\t\t    <p><b>RESTRICTIONS:</b> Most SWE courses will be initially restricted to majors in the Donald Bren School of Information and Computer Sciences ONLY. Some courses will be additionally restricted to specific majors or level(s) of standing. <b>For restriction details and timeline: </b> <a href=\"http://ics.uci.edu/course-enrollment-restrictions/\">http://ics.uci.edu/course-enrollment-restrictions/</a></p>\n\t\t    <p><b>WAITLIST:</b> Students on the waitlist for an ICS course should be in communication with that course's instructor to arrange for access to course materials and submission of any assignments while on the waitlist. Being on the waitlist or completing coursework DOES NOT guarantee a seat in that course.</p>\n\t\t    <p><b>DISCUSSIONS &amp; LABS:</b> Discussion and lab sections begin meeting AFTER the first lecture unless otherwise specified by the course instructor. Always check for messages from your instructors before the start of instruction.</p>\n\t\t    <p>Some lab sections are scheduled in laptop instructional labs ICS 364A, ICS2 162, or ICS2 170. Students enrolled in these labs are required to bring a personal laptop to class meetings.</p>\n\t\t    <p><b>B or X Restricted Courses: </b>Courses with a B or X restriction require an authorization code from the instructor to enroll.</p>\n\t\t    \n\t\t",
+        "course_number_range_comments": [
+          "\n\t\t    <p class=\"comment-heading\">SWE course numbers 200 - 299:</p>\n\t\t    <p>SWE graduate courses will initially be restricted to majors in the Donald Bren School of Information and Computer Sciences ONLY. <b>For restriction details and timeline:</b> <a href=\"http://ics.uci.edu/academics/graduate-academic-advising/course-updates/\">http://ics.uci.edu/academics/graduate-academic-advising/course-updates/</a></p>\n\t\t    <p>The Add/Drop Deadline for all SWE graduate courses is <b>5:00pm, Friday, October 9, 2026 .</b> <i> This deadline is strictly enforced.</i></p>\n\t\t    \n\t\t",
+          "\n\t\t    <p class=\"comment-heading\">SWE course numbers 240 - 277:</p>\n\t\t    <p>SWE 240P-277P are restricted to students in the MSWE Program ONLY.</p>\n\t\t    \n\t\t"
+        ],
+        "section_code_range_comments": []
+      },
+      "course": {
+        "course_id": "SWE43",
+        "title": "INTRO SOFTWARE ENGR",
+        "comment": "\n\t\t\t<p>Previously offered as INF 43, &quot;Intro Software Engr&quot;. Students with prior credit for INF 43, &quot;Intro Software Engr&quot; may not take SWE 43, &quot;Intro Software Engr&quot;.</p>\n\t\t\t\n\t\t    "
+      }
+    }
+  },
+  "course_notices": [
+    {
+      "scope": "course",
+      "department": "SWE",
+      "course_id": "SWE43",
+      "title": "INTRO SOFTWARE ENGR",
+      "comment_context_id": "comments_8d74511e5e170530",
+      "source": "anteater_websoc",
+      "source_url": "https://anteaterapi.com/v2/rest/websoc",
+      "term": "2026 Fall",
+      "retrieved_at": "2026-11-06T01:10:40Z"
+    }
+  ],
+  "reason": null,
+  "pairing": {
+    "version": 2,
+    "course_id": "SWE43",
+    "term": "2026 Fall",
+    "per_primary": {
+      "37500": {
+        "requirement": "required",
+        "required_components": [
+          {
+            "types": [
+              "Dis"
+            ],
+            "min": 1,
+            "max": 1
+          }
+        ],
+        "required_types": [
+          "Dis"
+        ],
+        "relationship": "unknown",
+        "relationship_complete": false,
+        "allowed_bundles": [],
+        "evidence": {
+          "source": "registrar_websoc",
+          "course_id": "SWE43",
+          "term": "2026 Fall",
+          "source_url": "https://www.reg.uci.edu/perl/WebSoc",
+          "retrieved_at": "2026-11-06T01:14:19.294466Z",
+          "html_sha256": "7c38dd120c97e6ca0a316f94fad1f087ec4c09ff09d20c5a8021f9d7ee8b4938",
+          "policy_id": "user_confirmed_discussion_presence",
+          "policy_version": 1,
+          "policy_source": "user_confirmed_product_policy",
+          "user_confirmed": true,
+          "co_class_references": [],
+          "needs_lookup": false,
+          "status": "verified",
+          "reason_codes": [
+            "scoped_pairing_exception_unresolved",
+            "pairing_relationship_unknown"
+          ],
+          "source_row_index": 10,
+          "boundary_row_index": 17,
+          "discussion_present": true,
+          "no_required_discussion": false,
+          "primary_code": "37500"
+        }
+      },
+      "37510": {
+        "requirement": "required",
+        "required_components": [
+          {
+            "types": [
+              "Dis"
+            ],
+            "min": 1,
+            "max": 1
+          }
+        ],
+        "required_types": [
+          "Dis"
+        ],
+        "relationship": "unknown",
+        "relationship_complete": false,
+        "allowed_bundles": [],
+        "evidence": {
+          "source": "registrar_websoc",
+          "course_id": "SWE43",
+          "term": "2026 Fall",
+          "source_url": "https://www.reg.uci.edu/perl/WebSoc",
+          "retrieved_at": "2026-11-06T01:14:19.294466Z",
+          "html_sha256": "7c38dd120c97e6ca0a316f94fad1f087ec4c09ff09d20c5a8021f9d7ee8b4938",
+          "policy_id": "user_confirmed_discussion_presence",
+          "policy_version": 1,
+          "policy_source": "user_confirmed_product_policy",
+          "user_confirmed": true,
+          "co_class_references": [],
+          "needs_lookup": false,
+          "status": "verified",
+          "reason_codes": [
+            "scoped_pairing_exception_unresolved",
+            "pairing_relationship_unknown"
+          ],
+          "source_row_index": 17,
+          "boundary_row_index": 26,
+          "discussion_present": true,
+          "no_required_discussion": false,
+          "primary_code": "37510"
+        }
+      }
+    },
+    "requirement": "unknown",
+    "required_components": [],
+    "required_types": [],
+    "relationship": "unknown",
+    "relationship_complete": false,
+    "allowed_bundles": [],
+    "evidence": {
+      "source": "registrar_websoc",
+      "course_id": "SWE43",
+      "term": "2026 Fall",
+      "source_url": "https://www.reg.uci.edu/perl/WebSoc",
+      "retrieved_at": "2026-11-06T01:14:19.294466Z",
+      "html_sha256": "7c38dd120c97e6ca0a316f94fad1f087ec4c09ff09d20c5a8021f9d7ee8b4938",
+      "policy_id": "user_confirmed_discussion_presence",
+      "policy_version": 1,
+      "policy_source": "user_confirmed_product_policy",
+      "user_confirmed": true,
+      "co_class_references": [],
+      "needs_lookup": false,
+      "status": "partial"
+    }
+  },
+  "pairing_source_proof": {
+    "version": 1,
+    "source": "registrar_websoc",
+    "course_id": "SWE 43",
+    "term": "2026 Fall",
+    "source_url": "https://www.reg.uci.edu/perl/WebSoc",
+    "retrieved_at": "2026-11-06T01:14:19.294466Z",
+    "html_sha256": "7c38dd120c97e6ca0a316f94fad1f087ec4c09ff09d20c5a8021f9d7ee8b4938",
+    "policy_id": "user_confirmed_discussion_presence",
+    "policy_version": 1,
+    "policy_source": "user_confirmed_product_policy",
+    "user_confirmed": true,
+    "request_method": "POST",
+    "request_form": {
+      "Submit": "Display Web Results",
+      "YearTerm": "2026-92",
+      "ShowComments": "on",
+      "ShowFinals": "on",
+      "Breadth": "ANY",
+      "Dept": "SWE",
+      "CourseNum": "43",
+      "CourseCodes": "",
+      "InstrName": "",
+      "CourseTitle": "",
+      "ClassType": "ALL",
+      "Units": "",
+      "Days": "",
+      "StartTime": "",
+      "EndTime": "",
+      "MaxCap": "",
+      "FullCourses": "ANY",
+      "FontSize": "100",
+      "CancelledCourses": "Include",
+      "Bldg": "",
+      "Room": ""
+    },
+    "response_identity_validated": true,
+    "response_document_complete": true,
+    "full_unfiltered_request": true,
+    "source_rows_fully_parsed": true,
+    "comments": [
+      {
+        "scope": "department",
+        "scope_confirmed": false,
+        "row_index": 5,
+        "text": "Software Engineering department comments: RESTRICTIONS: Most SWE courses will be initially restricted to majors in the Donald Bren School of Information and Computer Sciences ONLY. Some courses will be additionally restricted to specific majors or level(s) of standing. For restriction details and timeline: http://ics.uci.edu/course-enrollment-restrictions/ WAITLIST: Students on the waitlist for an ICS course should be in communication with that course's instructor to arrange for access to course materials and submission of any assignments while on the waitlist. Being on the waitlist or completing coursework DOES NOT guarantee a seat in that course. DISCUSSIONS & LABS: Discussion and lab sections begin meeting AFTER the first lecture unless otherwise specified by the course instructor. Always check for messages from your instructors before the start of instruction. Some lab sections are scheduled in laptop instructional labs ICS 364A, ICS2 162, or ICS2 170. Students enrolled in these labs are required to bring a personal laptop to class meetings. B or X Restricted Courses: Courses with a B or X restriction require an authorization code from the instructor to enroll."
+      },
+      {
+        "scope": "course",
+        "scope_confirmed": true,
+        "row_index": 8,
+        "text": "Previously offered as INF 43, \"Intro Software Engr\". Students with prior credit for INF 43, \"Intro Software Engr\" may not take SWE 43, \"Intro Software Engr\"."
+      },
+      {
+        "scope": "course",
+        "scope_confirmed": true,
+        "row_index": 20,
+        "text": "*** CANCELLED *** Course Code 37512"
+      },
+      {
+        "scope": "course",
+        "scope_confirmed": true,
+        "row_index": 22,
+        "text": "*** CANCELLED *** Course Code 37513"
+      },
+      {
+        "scope": "course",
+        "scope_confirmed": true,
+        "row_index": 25,
+        "text": "*** CANCELLED *** Course Code 37515"
+      }
+    ],
+    "section_order": [
+      {
+        "row_index": 10,
+        "course_id": "SWE 43",
+        "section_code": "37500",
+        "section_type": "lec",
+        "section_num": "A",
+        "units": "4"
+      },
+      {
+        "row_index": 11,
+        "course_id": "SWE 43",
+        "section_code": "37501",
+        "section_type": "dis",
+        "section_num": "A1",
+        "units": "0"
+      },
+      {
+        "row_index": 12,
+        "course_id": "SWE 43",
+        "section_code": "37502",
+        "section_type": "dis",
+        "section_num": "A2",
+        "units": "0"
+      },
+      {
+        "row_index": 13,
+        "course_id": "SWE 43",
+        "section_code": "37503",
+        "section_type": "dis",
+        "section_num": "A3",
+        "units": "0"
+      },
+      {
+        "row_index": 14,
+        "course_id": "SWE 43",
+        "section_code": "37504",
+        "section_type": "dis",
+        "section_num": "A4",
+        "units": "0"
+      },
+      {
+        "row_index": 15,
+        "course_id": "SWE 43",
+        "section_code": "37505",
+        "section_type": "dis",
+        "section_num": "A5",
+        "units": "0"
+      },
+      {
+        "row_index": 16,
+        "course_id": "SWE 43",
+        "section_code": "37506",
+        "section_type": "dis",
+        "section_num": "A6",
+        "units": "0"
+      },
+      {
+        "row_index": 17,
+        "course_id": "SWE 43",
+        "section_code": "37510",
+        "section_type": "lec",
+        "section_num": "B",
+        "units": "4"
+      },
+      {
+        "row_index": 18,
+        "course_id": "SWE 43",
+        "section_code": "37511",
+        "section_type": "dis",
+        "section_num": "B1",
+        "units": "0"
+      },
+      {
+        "row_index": 19,
+        "course_id": "SWE 43",
+        "section_code": "37512",
+        "section_type": "dis",
+        "section_num": "B2",
+        "units": "0"
+      },
+      {
+        "row_index": 21,
+        "course_id": "SWE 43",
+        "section_code": "37513",
+        "section_type": "dis",
+        "section_num": "B3",
+        "units": "0"
+      },
+      {
+        "row_index": 23,
+        "course_id": "SWE 43",
+        "section_code": "37514",
+        "section_type": "dis",
+        "section_num": "B4",
+        "units": "0"
+      },
+      {
+        "row_index": 24,
+        "course_id": "SWE 43",
+        "section_code": "37515",
+        "section_type": "dis",
+        "section_num": "B5",
+        "units": "0"
+      }
+    ],
+    "co_class_references": [],
+    "needs_lookup": false,
+    "co_class_base_rules": {}
+  },
+  "pairing_lookup_status": "available"
+}

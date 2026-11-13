@@ -18,6 +18,7 @@ const SOURCE_BADGE_LABELS = {
   db_verified: 'DB Verified',
   uci_catalog: 'UCI Catalog',
   uci_websoc: 'UCI WebSoc',
+  registrar_websoc: 'UCI WebSoc',
   official_uci: 'Official UCI',
   official_web: 'Official Web',
   live_anteater_websoc: 'Live WebSoc',
@@ -38,16 +39,6 @@ function _catSlug(card) {
   return CATEGORY_LABELS[c] ? c : 'elective';
 }
 
-function _firstSection(card) {
-  // Sections from db.get_sections may include cancelled rows — prefer
-  // the first non-cancelled section with a time, else first overall.
-  const all = card?.sections || [];
-  for (const s of all) {
-    if (!s.is_cancelled && s.days && s.start_time) return s;
-  }
-  return all[0] || null;
-}
-
 function _renderCardBadges(card, cat) {
   const out = [];
   out.push(
@@ -66,6 +57,212 @@ function _renderCardBadges(card, cat) {
   return out.join('');
 }
 
+/* Dynamic prefilter metadata is opt-in on each backend payload. Ranking
+   remains a backend calculation; these scores never alter raw grade charts. */
+function _renderDynamicPrefilterMetadata(payload, options = {}) {
+  const metadata = payload?.prefilter;
+  const enabled = metadata?.enabled === true
+    || (metadata == null && options.enabled === true);
+  if (!enabled) return '';
+  const zh = typeof currentResponseLanguage === 'string' && /^zh/i.test(currentResponseLanguage);
+  const score = payload?.ranking?.final_score;
+  const hasScore = typeof score === 'number' && Number.isFinite(score) && score >= 0 && score <= 100;
+  const scoreLabel = options.primary
+    ? (zh ? '主讲分' : 'Lecturer score') : (zh ? '推荐分' : 'Recommendation score');
+  const explanation = zh
+    ? '按可用历史成绩与教授评价、样本量计算的推荐分，不是预计成绩或 A 率。修读条件另行核实。'
+    : 'Based on available grade and professor-rating evidence, adjusted for sample size. This is not an expected grade or A rate; enrollment conditions are assessed separately.';
+  const warnings = [];
+  const seen = new Set();
+  for (const warning of (Array.isArray(metadata?.warnings) ? metadata.warnings : [])) {
+    const message = typeof warning?.message === 'string' ? warning.message.trim() : '';
+    const scope = [payload?.course_id, payload?.term, warning?.section_code || warning?.primary_code || '',
+      warning?.code || message].join('|');
+    if (!message || seen.has(scope)) continue;
+    seen.add(scope);
+    warnings.push(message);
+  }
+  if (metadata?.status === 'needs_verification' && warnings.length === 0) {
+    warnings.push(zh ? '选课条件仍需核实。' : 'Enrollment conditions still need verification.');
+  }
+  if (!hasScore && warnings.length === 0) return '';
+  return `<div class="cc-prefilter-metadata">
+    ${hasScore ? `<span class="cc-badge cc-prefilter-score" title="${_gradeAttr(explanation)}">${scoreLabel} ${score.toFixed(1)}/100</span>` : ''}
+    ${warnings.length ? `<ul class="cc-prefilter-warnings">${warnings.map(message => `<li>${escHTML(message)}</li>`).join('')}</ul>` : ''}
+  </div>`;
+}
+
+/* Raw historical outcomes share one renderer for recommendations and
+   comparison turns. Ranking adjustments never enter this chart. */
+function _gradeText(value) {
+  return typeof value === 'string' ? value : '';
+}
+
+function _gradeAttr(value) {
+  return escAttr(value).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function _gradeLabels(language) {
+  const lang = language || (typeof currentResponseLanguage === 'string' ? currentResponseLanguage : 'en');
+  return /^zh/i.test(lang) ? {
+    history: '历史给分', comparison: '历史给分比较', allCourses: '教授全部课程',
+    allInstructors: '课程总体历史', fallback: '教授全部课程参考，不代表本课程的给分分布。',
+    total: '成绩记录总数', graded: 'A–F 成绩记录', aRate: '排名使用的原始 A 率（A ÷ A–F）',
+    gpa: 'Zotistics 报告 GPA', noGpa: '未提供', estimate: '分档估算 GPA',
+    range: '实际历史范围', noRange: '范围未知', updated: '源成绩更新至',
+    raw: '柱高以全部成绩记录为分母（含 P/NP）；数字为原始记录数。纵轴为 0–100%。', wIncluded: ' 含 W 记录。',
+    noAF: '没有 A–F 成绩记录，A 率不可用。', approximate: '按 A=4、B=3、C=2、D=1、F=0 估算，不含 +/- 或 P/NP。',
+    unavailable: '历史成绩暂时不可用', noData: '没有匹配的历史成绩记录',
+    ambiguous: '教授姓名尚未明确', invalid: '历史查询无法确认', source: '查看 Zotistics',
+  } : {
+    history: 'Historical grades', comparison: 'Historical grade comparison', allCourses: 'All courses by this instructor',
+    allInstructors: 'Course-wide history', fallback: 'Instructor history across all courses; this is not a distribution for this course.',
+    total: 'Total grade records', graded: 'A–F grade records', aRate: 'Raw A rate for ranking (A ÷ A–F)',
+    gpa: 'Zotistics reported GPA', noGpa: 'Unavailable', estimate: 'Bucket GPA estimate',
+    range: 'Actual historical range', noRange: 'Range unavailable', updated: 'Source grades updated through',
+    raw: 'Bars use all grade records, including P/NP; counts are shown below. Scale: 0–100%.', wIncluded: ' W included.',
+    noAF: 'No A–F records; A rate unavailable.', approximate: 'Estimated with A=4, B=3, C=2, D=1, F=0; no +/- or P/NP.',
+    unavailable: 'Historical grades temporarily unavailable', noData: 'No matching historical grade records',
+    ambiguous: 'Instructor name needs clarification', invalid: 'Historical query could not be verified', source: 'View Zotistics',
+  };
+}
+
+function _isZotisticsHistory(evidence) {
+  return _gradeText(evidence?.source).toLowerCase() === 'zotistics';
+}
+
+function _gradeChartData(evidence) {
+  if (!_isZotisticsHistory(evidence) || evidence.found !== true) return null;
+  const grades = evidence.grades;
+  const counts = grades?.letter_counts;
+  if (!counts || typeof counts !== 'object' || Array.isArray(counts)) return null;
+  const letters = ['A', 'B', 'C', 'D', 'F', 'P', 'NP'];
+  if (Object.prototype.hasOwnProperty.call(counts, 'W')) letters.push('W');
+  if (letters.some(l => !Number.isSafeInteger(counts[l]) || counts[l] < 0)) return null;
+  const samples = letters.reduce((total, l) => total + counts[l], 0);
+  const graded = letters.slice(0, 5).reduce((total, l) => total + counts[l], 0);
+  if (!Number.isSafeInteger(samples) || samples <= 0) return null;
+  // A contradictory envelope cannot supply a meaningful denominator.
+  if (grades.samples != null && grades.samples !== samples) return null;
+  if (grades.graded != null && grades.graded !== graded) return null;
+  return {
+    letters, counts, samples, graded,
+    aRate: graded > 0 ? counts.A / graded * 100 : null,
+    percentages: Object.fromEntries(letters.map(l => [l, counts[l] / samples * 100])),
+  };
+}
+
+function _gradeHistoryContext(evidence, options, labels) {
+  const grades = evidence?.grades || {};
+  const instructor = _gradeText(options.instructor) || _gradeText(evidence.instructor)
+    || _gradeText(evidence.instructor_name) || _gradeText(grades.instructor_name);
+  const course = _gradeText(options.courseId) || _gradeText(evidence.course_id)
+    || _gradeText(evidence.query?.course_id) || _gradeText(grades.course_id);
+  const scope = _gradeText(evidence.scope) || _gradeText(grades.scope);
+  const instructorWide = scope === 'instructor' || scope === 'instructor_all_courses';
+  const context = instructorWide ? [instructor, labels.allCourses]
+    : instructor ? [instructor, course] : [course, labels.allInstructors];
+  return {label: context.filter(Boolean).join(' · '), instructorWide, course};
+}
+
+function _renderGradeChartBody(evidence, options = {}) {
+  const labels = _gradeLabels(options.language);
+  const data = _gradeChartData(evidence);
+  const context = _gradeHistoryContext(evidence, options, labels);
+  const source = `<a class="grade-chart-source" href="https://zotistics.com/" target="_blank" rel="noopener noreferrer">${labels.source}</a>`;
+  if (!data) {
+    const status = evidence?.status;
+    const message = status === 'no_data' || status === 'not_found' ? labels.noData
+      : status === 'ambiguous_instructor' ? labels.ambiguous
+      : status === 'invalid_query' ? labels.invalid : labels.unavailable;
+    return `<div class="grade-history-unavailable"><p>${message}</p>${source}</div>`;
+  }
+  const grades = evidence.grades;
+  const coverage = {...(evidence.coverage || {}), ...(grades.coverage || {})};
+  const range = grades.term_range || evidence.term_range || coverage.term_range || {};
+  const first = _gradeText(range.first);
+  const last = _gradeText(range.last);
+  const rangeLabel = [first, last !== first ? last : ''].filter(Boolean).join(' – ') || labels.noRange;
+  const validGpa = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 4;
+  const sourceGpa = validGpa(grades.source_reported_gpa) ? grades.source_reported_gpa.toFixed(3) : labels.noGpa;
+  const estimate = validGpa(grades.avg_gpa) ? grades.avg_gpa.toFixed(3) : null;
+  const aLabel = data.aRate !== null ? `${data.aRate.toFixed(1)}%` : labels.noGpa;
+  const accessible = [context.label, ...data.letters.map(l => `${l}: ${data.counts[l]} (${data.percentages[l].toFixed(1)}%)`)].join(' · ');
+  const columns = data.letters.map(l => {
+    const percentage = data.percentages[l];
+    return `<div class="grade-chart-column" data-grade="${l}" data-count="${data.counts[l]}"
+                 data-percentage="${percentage}" title="${l}: ${data.counts[l]} (${percentage.toFixed(1)}%)">
+      <span class="grade-chart-percent">${percentage.toFixed(1)}%</span>
+      <div class="grade-chart-track"><span class="grade-chart-bar" style="height:${percentage}%"></span></div>
+      <span class="grade-chart-letter">${l}</span><span class="grade-chart-count">${data.counts[l]}</span>
+    </div>`;
+  }).join('');
+  return `<figure class="grade-chart">
+    <div class="grade-chart-bars" role="img" aria-label="${_gradeAttr(accessible)}"
+         style="--grade-columns:${data.letters.length}"><div class="grade-chart-grid" aria-hidden="true"></div>
+      <div class="grade-chart-columns" aria-hidden="true">${columns}</div>
+    </div>
+    <figcaption>
+      <p class="grade-chart-denominator">${labels.raw}${data.letters.includes('W') ? labels.wIncluded : ''}</p>
+      ${context.instructorWide && context.course ? `<p class="grade-chart-scope-note">${labels.fallback}</p>` : ''}
+      <dl class="grade-chart-metrics">
+        <div><dt>${labels.total}</dt><dd>${data.samples}</dd></div>
+        <div><dt>${labels.graded}</dt><dd>${data.graded}</dd></div>
+        <div><dt>${labels.aRate}</dt><dd>${aLabel}</dd></div>
+        <div><dt>${labels.gpa}</dt><dd>${sourceGpa}</dd></div>
+      </dl>
+      ${data.graded === 0 ? `<p class="grade-chart-note">${labels.noAF}</p>` : ''}
+      ${sourceGpa === labels.noGpa && estimate !== null && data.graded > 0
+        ? `<p class="grade-chart-note">${labels.estimate} ≈ ${estimate}. ${labels.approximate}</p>` : ''}
+      <p class="grade-chart-range">${labels.range}: ${escHTML(rangeLabel)}</p>
+      ${_gradeText(coverage.last_grade_update) ? `<p class="grade-chart-note">${labels.updated}: ${escHTML(coverage.last_grade_update)}</p>` : ''}
+      ${source}
+    </figcaption>
+  </figure>`;
+}
+
+function _renderZotisticsHistory(evidence, instructor, courseId, language) {
+  if (!_isZotisticsHistory(evidence)) return '';
+  const labels = _gradeLabels(language);
+  const options = {instructor, courseId, language};
+  const context = _gradeHistoryContext(evidence, options, labels);
+  return `<details class="grade-history-details">
+    <summary>${labels.history}<span class="grade-history-source-label">Zotistics</span></summary>
+    <div class="grade-history-content">
+      <p class="grade-history-context">${escHTML(context.label)}</p>
+      ${_renderGradeChartBody(evidence, options)}
+    </div>
+  </details>`;
+}
+
+/* Comparison charts are native structured UI, open on first render. */
+function renderGradeChartsBlock(entries, language) {
+  if (!Array.isArray(entries)) return '';
+  const histories = entries.filter(e => e && typeof e === 'object' && _isZotisticsHistory(e));
+  if (!histories.length) return '';
+  const labels = _gradeLabels(language);
+  return `<section class="grade-comparison" aria-label="${_gradeAttr(labels.comparison)}">
+    <h3>${labels.comparison}</h3>
+    <div class="grade-comparison-grid">${histories.map(e => {
+      const options = {instructor: e.instructor, courseId: e.course_id, language};
+      const context = _gradeHistoryContext(e, options, labels);
+      return `<article class="grade-comparison-item">
+        <h4>${escHTML(context.label)}</h4>${_renderGradeChartBody(e, options)}
+      </article>`;
+    }).join('')}</div>
+  </section>`;
+}
+
+function renderGradeChartsForMessage(wrap, entries) {
+  const html = renderGradeChartsBlock(entries, wrap._responseLanguage);
+  const existing = wrap.querySelector('.grade-comparison');
+  if (existing) existing.remove();
+  if (!html) return;
+  const block = document.createElement('div');
+  block.innerHTML = html;
+  if (block.firstElementChild) wrap.appendChild(block.firstElementChild);
+}
+
 function _renderCardSourceBadges(card) {
   // Field-level provenance stays separate from core DB fields
   // (`course_source`, `course_provenance`, `section_source`) so web
@@ -81,17 +278,33 @@ function _renderCardSourceBadges(card) {
     if (section?.source) sectionSources.push(section.source);
   }
   const badges = [...explicit, ...sectionSources];
-  if (badges.length === 0) return '';
   const seen = new Set();
-  return badges.map((raw) => {
-    const key = (typeof raw === 'string' ? raw : raw?.kind || raw?.source_class || '')
+  const sourceHTML = badges.map((raw) => {
+    const source = (typeof raw === 'string' ? raw : raw?.kind || raw?.source_class || '')
       .toLowerCase();
-    if (seen.has(key)) return '';
-    seen.add(key);
-    const label = SOURCE_BADGE_LABELS[key] || SOURCE_BADGE_LABELS.unverified;
-    const css = key && SOURCE_BADGE_LABELS[key] ? key : 'unverified';
-    return `<span class="cc-badge cc-source-badge cc-source-${escAttr(css)}">${label}</span>`;
+    if (!source || source === 'prefilter_metadata') return '';
+    const key = source === 'registrar_websoc' ? 'uci_websoc' : source;
+    const canonical = SOURCE_BADGE_LABELS[key] ? key : 'unknown';
+    if (seen.has(canonical)) return '';
+    seen.add(canonical);
+    const zh = typeof currentResponseLanguage === 'string' && /^zh/i.test(currentResponseLanguage);
+    const label = SOURCE_BADGE_LABELS[key] || (zh ? '来源待识别' : 'Source unknown');
+    const timestamps = [...new Set([card?.section_retrieved_at,
+      ...(card?.sections || []).filter(section => {
+        const actual = section?.source === 'registrar_websoc' ? 'uci_websoc' : section?.source;
+        return actual === key;
+      }).map(section => section?.retrieved_at)].filter(value => typeof value === 'string' && value))];
+    const freshness = timestamps.length ? `${zh ? '获取于' : 'Retrieved'} ${timestamps.join(', ')}` : '';
+    return `<span class="cc-badge cc-source-badge cc-source-${escAttr(canonical)}"${freshness ? ` title="${_gradeAttr(freshness)}"` : ''}>${escHTML(label)}</span>`
+      + (freshness ? `<span class="cc-source-freshness">${escHTML(freshness)}</span>` : '');
   }).join('');
+  const ge = card?.ge_evidence;
+  const geSource = ge?.source;
+  const url = geSource?.source_url;
+  const officialGE = ge?.status === 'verified' && geSource?.source === 'uci_catalogue'
+    && /^\d{4}-\d{2}$/.test(geSource?.catalogue_year || '')
+    && typeof url === 'string' && /^https:\/\/catalogue\.uci\.edu\//.test(url);
+  return sourceHTML + (officialGE ? `<a class="cc-badge cc-source-badge cc-source-uci_catalog" href="${_gradeAttr(url)}" target="_blank" rel="noopener noreferrer">UCI GE ${escHTML(geSource.catalogue_year)}</a>` : '');
 }
 
 /* Section enrollment row: the primary (Lec) code as the headline
@@ -103,41 +316,120 @@ function _renderCardSourceBadges(card) {
 function _renderCodeRow(card) {
   const codes = card?.enrollment_codes || [];
   // Primary first (dispatcher orders enrollment_codes[0] = primary).
-  const primary = codes[0] || null;
+  const primary = (card.primary_code ? codes.find(section => String(section.code) === String(card.primary_code)) : codes[0]) || null;
   // Legacy non-agent path: fall back to first raw section.
-  const fallback = primary ? null : (card?.sections || [])[0];
+  const fallback = primary ? null : (card.primary_code
+    ? (card?.sections || []).find(section => String(section.section_code || section.code) === String(card.primary_code))
+    : (card?.sections || [])[0]);
   const code = primary?.code || fallback?.section_code;
   if (!code) return '';
-  const meta = primary || fallback || {};
+  const fullSections = [...(card?.sections || []), ...(card?.section_groups || []).flatMap(
+    group => [group.primary, ...(group.secondaries || [])])].filter(Boolean);
+  const fullPrimary = fullSections.find(section => String(section.code || section.section_code) === String(code));
+  const meta = {...(primary || fallback || {}), ...(fullPrimary || {})};
   const tip = [meta.type || meta.section_type,
-               meta.days,
-               meta.time || (meta.start_time && meta.end_time
-                              ? `${meta.start_time}-${meta.end_time}` : null),
+               _sectionDaysTimeText(meta),
                (meta.instructors || [])[0]]
               .filter(Boolean).join(' · ');
 
   let secondaryPill = '';
-  if (card?.requires_secondary) {
+  const pairing = _cardPairing(card);
+  if (pairing) {
+    const verified = pairing.evidence?.status === 'verified';
+    const requirement = verified ? pairing.requirement : 'unknown';
+    const zh = typeof currentResponseLanguage === 'string' && /^zh/i.test(currentResponseLanguage);
+    const label = requirement === 'required'
+      ? (zh ? `需配 ${_pairingComponentLabel(pairing, zh)}` : `+ ${_pairingComponentLabel(pairing, zh)} required`)
+      : requirement === 'not_required'
+        ? (_usesDiscussionPolicy(pairing) ? (zh ? '无需选 Dis' : 'No discussion required') : (zh ? '无需附加配对' : 'No secondary required'))
+        : (zh ? '配对待核实' : 'Pairing unverified');
+    const codes = (pairing.allowed_bundles || []).flatMap(bundle => Array.isArray(bundle) ? bundle : bundle.secondary_codes || []);
+    const allowed = [...new Set(codes)];
+    const details = requirement === 'required' && allowed.length
+      ? `${zh ? '可配班次' : 'Allowed sections'}: ${allowed.join(', ')}` : '';
+    const missing = requirement === 'required' && card.selection_verification?.status !== 'satisfied';
+    secondaryPill = `<span class="cc-badge cc-pairing-status" data-pairing="${escHTML(requirement)}" title="${_gradeAttr(details)}">${escHTML(label)}</span>`
+      + (missing ? `<span class="cc-pairing-selection">${zh ? '尚未选择完整配套班次' : 'Complete secondary selection needed'}</span>` : '');
+  } else if (card?.requires_secondary) {
     const secs = card?.secondary_codes || [];
     const type = card?.secondary_type || 'Dis';
     // Tooltip lists each bookable secondary so the student can see
     // their options without rendering 10 chips on the card itself.
     const secTip = secs.slice(0, 12).map(s => {
       const inst = (s.instructors || [])[0];
-      return [s.code, s.type, s.days, s.time, inst].filter(Boolean).join(' · ');
+      const full = fullSections.find(section => String(section.code || section.section_code) === String(s.code));
+      return [s.code, s.type, _sectionDaysTimeText({...s, ...(full || {})}), inst].filter(Boolean).join(' · ');
     }).join('\n');
     const overflow = secs.length > 12 ? `\n…and ${secs.length - 12} more` : '';
     secondaryPill = `<span class="cc-code-secondary"
-                           title="Must also enroll in a ${escHTML(type)}:\n${escHTML(secTip + overflow)}">
+                           title="Must also enroll in a ${escAttr(type)}:\n${escAttr(secTip + overflow)}">
       + ${escHTML(type)} required
     </span>`;
   }
 
   return `<div class="cc-codes">
     <span class="cc-code cc-code-primary"
-          title="${escHTML(tip || '')}">${escHTML(code)}</span>
+          title="${escAttr(tip || '')}">${escHTML(code)}</span>
     ${secondaryPill}
   </div>`;
+}
+
+function _cardPairing(card) {
+  const current = _savedCardPairing(card);
+  const pair = current?.pairing || card?.pairing;
+  if (pair?.version === 1) return pair;
+  if (pair?.version !== 2) return null;
+  const raw = pair.per_primary?.[String(card.primary_code)];
+  if (!raw) return {requirement: 'unknown', evidence: {status: 'unverified'}};
+  const types = raw.required_types || [...new Set((raw.required_components || []).flatMap(component => component.types || []))];
+  return {...raw, required_types: types};
+}
+
+function _usesDiscussionPolicy(pairing) {
+  return pairing?.evidence?.policy_id === 'user_confirmed_discussion_presence'
+    && pairing.evidence.policy_version === 1 && pairing.evidence.user_confirmed === true;
+}
+
+function _savedCardPairing(card) {
+  if (typeof scheduleValidation === 'undefined' || !Array.isArray(scheduleValidation?.pairing)) return null;
+  if (!addedCourses.has(scheduleCourseKey(card.term, card.course_id))) return null;
+  const termKey = value => typeof canonicalTerm === 'function' ? canonicalTerm(value) : value;
+  return scheduleValidation.pairing.find(row => row.course_id === card.course_id && termKey(row.term) === termKey(card.term)) || null;
+}
+
+function _renderCoursePairingSummary(card) {
+  if (card?.pairing?.version !== 2) return '';
+  const proof = _cardPairing(card);
+  const zh = typeof currentResponseLanguage === 'string' && /^zh/i.test(currentResponseLanguage);
+  const current = _savedCardPairing(card);
+  const selection = current ? current.selection_verification : card.selection_verification;
+  const samePrimary = !current || String(selection?.primary_code) === String(card.primary_code);
+  const satisfied = samePrimary && selection?.status === 'satisfied';
+  let text;
+  if (proof?.evidence?.status !== 'verified' || proof.requirement === 'unknown') {
+    text = zh ? '此主班的配对要求待核实。' : 'Pairing requirements for this primary remain unverified.';
+  } else if (proof.requirement === 'not_required') {
+    text = _usesDiscussionPolicy(proof)
+      ? (zh ? '讨论课：无需选 Dis；其他修读条件分开判断。' : 'No discussion required; other enrollment conditions are assessed separately.')
+      : (zh ? '已确认此主班无需附加配对；其他修读条件另行核实。' : 'No secondary required for this primary; other enrollment conditions remain separate.');
+  } else {
+    text = (zh ? `配套要求：${_pairingComponentLabel(proof, zh)}。` : `Required components: ${_pairingComponentLabel(proof, zh)}. `)
+      + (satisfied ? (zh ? '当前选择已满足配对要求。' : 'The current selection satisfies pairing requirements.')
+        : (zh ? '尚未选择完整配套班次。' : 'Complete secondary selection needed.'));
+    if (proof.relationship === 'unknown') text += zh ? '可配班次待核实。' : 'Compatible sections remain unverified.';
+    const linked = (proof.required_course_components || []).map(item => item?.course_id).filter(Boolean);
+    if (linked.length) text += (zh ? '关联 co-class：' : ' Linked co-class: ') + [...new Set(linked)].join(' / ');
+  }
+  return `<p class="cc-pairing-summary">${escHTML(text)}</p>`;
+}
+
+function _pairingComponentLabel(pairing, zh) {
+  const components = pairing.required_components;
+  if (!Array.isArray(components) || !components.length) return (pairing.required_types || []).join(' + ');
+  return components.map(component => {
+    const types = (component.types || []).join(zh ? ' 或 ' : ' or ');
+    return (component.min === 1 && component.max === 1) ? types : `${types} (${component.min}–${component.max})`;
+  }).join(' + ');
 }
 
 /* Per-term deadline footer.
@@ -198,18 +490,21 @@ function _renderSectionGroups(card) {
   const term = card?.term || currentTermContext?.term || '';
   return `<div class="cc-sg-wrap">
     <div class="cc-sg-cards">
-      ${groups.map(g => _renderOneSectionGroup(g, cid, term)).join('')}
+      ${groups.map(g => _renderOneSectionGroup(g, cid, term, card?.prefilter?.enabled === true)).join('')}
     </div>
   </div>`;
 }
 
-function _renderOneSectionGroup(g, courseId, term) {
+function _renderOneSectionGroup(g, courseId, term, prefilterEnabled = false) {
   const p = g.primary;
   if (!p) {
+    const zh = typeof currentResponseLanguage === 'string' && /^zh/i.test(currentResponseLanguage);
+    const orphanLabel = g.relationship === 'unknown'
+      ? (zh ? '附属班次，配对关系待核实' : 'Unassigned sections · pairing unverified') : 'Lec unavailable';
     return `<div class="cc-sg-card cc-sg-orphan">
       <div class="cc-sg-card-head">
         <span class="cc-sg-letter">${escHTML(g.letter || '?')}</span>
-        <em>Lec unavailable</em>
+        <em>${escHTML(orphanLabel)}</em>
       </div>
       <div class="cc-sg-secs-block">
         ${_renderSecondaryChips(g.secondaries, courseId, term)}
@@ -220,9 +515,9 @@ function _renderOneSectionGroup(g, courseId, term) {
   const code     = escHTML(p.code || '');
   const letter   = escHTML(p.num || p.type || g.letter);
   const time     = _fmtSectionDaysTime(p);
-  const room     = p.location ? escHTML(p.location) : '<em>Room TBA</em>';
+  const room     = _fmtSectionLocations(p);
   const status   = _renderSeatBadge(p);
-  const profs    = _renderProfRow(p.ratings, p.instructors);
+  const profs    = _renderProfRow(p.ratings, p.instructors, p.grade_history, courseId);
   const finalExam = _renderFinalExam(p.final_exam);
 
   const lecNum = p.num || g.letter || '?';
@@ -236,7 +531,8 @@ function _renderOneSectionGroup(g, courseId, term) {
       <span class="cc-sg-spacer"></span>
       ${addBtn}
     </div>
-    ${profs}
+    ${profs}${_renderDynamicPrefilterMetadata(p, {primary: true, enabled: prefilterEnabled})}
+    ${p.pairing_selected ? _renderPrimaryPairing(p.pairing_selected, g.secondaries) : ''}
     <dl class="cc-sg-facts">
       <div class="cc-sg-fact">
         <span class="material-symbols-outlined">${solonIcon('schedule')}</span>
@@ -257,13 +553,93 @@ function _renderOneSectionGroup(g, courseId, term) {
   </div>`;
 }
 
-/* Helpers — kept private to the section-group renderer. */
-function _fmtSectionDaysTime(s) {
-  // Prefer the pre-formatted time_display; otherwise build "MWF 10-10:50".
-  if (s.time) return escHTML(s.time);
-  const bits = [s.days, s.start_time && s.end_time
-                  ? `${s.start_time}-${s.end_time}` : s.start_time].filter(Boolean);
-  return bits.length ? escHTML(bits.join(' ')) : 'TBA';
+function _renderPrimaryPairing(pairing, sections) {
+  const zh = typeof currentResponseLanguage === 'string' && /^zh/i.test(currentResponseLanguage);
+  const requirement = pairing.evidence?.status === 'verified' ? pairing.requirement : 'unknown';
+  const label = requirement === 'required'
+    ? (zh ? `需配 ${_pairingComponentLabel(pairing, zh)}` : `Required: ${_pairingComponentLabel(pairing, zh)}`)
+    : requirement === 'not_required' ? (_usesDiscussionPolicy(pairing)
+      ? (zh ? '无需选 Dis' : 'No discussion required') : (zh ? '无需附加配对' : 'No secondary required'))
+      : (zh ? '配对条件待核实' : 'Pairing unverified');
+  const choices = requirement === 'required' ? (sections || []).map(section => section.num || section.code).join(', ') : '';
+  return `<div class="cc-primary-pairing"><span class="cc-badge">${escHTML(label)}</span>`
+    + (choices ? `<span>${zh ? '可选' : 'Options'}: ${escHTML(choices)}</span>` : '') + '</div>';
+}
+
+function _sectionClockText(value) {
+  if (value && typeof value === 'object') {
+    const {hour, minute} = value;
+    return Number.isInteger(hour) && Number.isInteger(minute) && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59
+      ? `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}` : null;
+  }
+  return typeof value === 'string' ? value.trim() : null;
+}
+
+function _sectionClockMinutes(value) {
+  const match = /^(\d{1,2}):(\d{2})\s*([AP]M?)?$/i.exec(value || '');
+  if (!match) return null;
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (minute > 59 || hour > 23 || match[3] && (hour < 1 || hour > 12)) return null;
+  if (match[3]) hour = hour % 12 + (/^p/i.test(match[3]) ? 12 : 0);
+  return hour * 60 + minute;
+}
+
+/* Shared by cards and the calendar. An explicit empty/broken meetings array
+   is unknown evidence; only absent/None arrays may use legacy flat fields. */
+function sectionMeetingsForDisplay(section) {
+  const raw = section?.meetings;
+  const rows = raw == null ? [section || {}] : Array.isArray(raw) && raw.length ? raw : [{}];
+  return rows.map(value => {
+    const row = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const dayText = typeof row.days === 'string' ? row.days.replace(/[ ,/\-\s]/g, '') : '';
+    const dayTokens = dayText.match(/Tu|Th|Sa|Su|M|W|F/g) || [];
+    const days = dayTokens.length && [...new Set(dayTokens)].join('') === dayText ? dayText : null;
+    const startText = _sectionClockText(Object.hasOwn(row, 'start_time') ? row.start_time : row.startTime);
+    const endText = _sectionClockText(Object.hasOwn(row, 'end_time') ? row.end_time : row.endTime);
+    let start = _sectionClockMinutes(startText);
+    const end = _sectionClockMinutes(endText);
+    // Registrar ranges share the end's AM/PM suffix, e.g. 3:30–4:50p.
+    if (start !== null && end !== null && /[ap](?:m)?$/i.test(endText || '') && !/[ap](?:m)?$/i.test(startText || '')) {
+      const hour = Number(startText.split(':')[0]);
+      if (hour >= 1 && hour <= 12) {
+        const base = start % 720;
+        const candidates = [base, base + 720].filter(minute => minute < end);
+        start = candidates.length ? Math.max(...candidates) : null;
+      }
+    }
+    const validWindow = start !== null && end !== null && start < end;
+    const clock = minute => minute === null ? null : `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+    const rawLocation = Object.hasOwn(row, 'location') ? row.location : row.bldg;
+    const location = Array.isArray(rawLocation) ? rawLocation.filter(value => typeof value === 'string').join(', ')
+      : typeof rawLocation === 'string' ? rawLocation : null;
+    const tba = /^(true|1|yes|y)$/i.test(String(row.time_is_tba)) || /^(true|1|yes|y)$/i.test(String(row.timeIsTBA))
+      || [row.days, row.start_time, row.end_time, row.time_display].some(value => /^(TBA|TBD|UNKNOWN)$/i.test(String(value || '').trim()));
+    return {days, start_time: validWindow ? clock(start) : null, end_time: validWindow ? clock(end) : null,
+      location, time_is_tba: tba || !days || !validWindow};
+  });
+}
+
+function _sectionDaysTimeLines(section) {
+  if (section?.meetings == null) {
+    const text = section?.time || section?.time_display;
+    if (text) return [String(text)];
+  }
+  return sectionMeetingsForDisplay(section).map(meeting => [meeting.days,
+    meeting.time_is_tba ? 'TBA' : `${meeting.start_time}-${meeting.end_time}`].filter(Boolean).join(' '));
+}
+
+function _sectionDaysTimeText(section) {
+  return _sectionDaysTimeLines(section).join('; ');
+}
+
+function _fmtSectionDaysTime(section) {
+  return _sectionDaysTimeLines(section).map(text => escHTML(text)).join('<br>');
+}
+
+function _fmtSectionLocations(section) {
+  return sectionMeetingsForDisplay(section).map(meeting => meeting.location
+    ? escHTML(meeting.location) : '<em>Room TBA</em>').join('<br>');
 }
 
 function _renderSeatBadge(s) {
@@ -276,7 +652,7 @@ function _renderSeatBadge(s) {
   return '';
 }
 
-function _renderProfRow(ratings, fallback_instructors) {
+function _renderProfRow(ratings, fallback_instructors, grade_history, courseId) {
   // ratings: [{instructor, avg_rating, num_ratings, tier, tier_label}]
   // fallback_instructors: raw strings if ratings array is missing
   const list = (ratings && ratings.length) ? ratings
@@ -295,10 +671,19 @@ function _renderProfRow(ratings, fallback_instructors) {
              <span class="cc-sg-rmp-n">(${p.num_ratings || 0})</span>
            </span>`
         : `<span class="cc-sg-rmp cc-sg-rmp-na" title="No RateMyProfessor data on file">no rmp</span>`;
+      // Only evidence explicitly matched to this lecturer belongs beside
+      // their name. Course-wide grades never fill a professor's history.
+      const history = (Array.isArray(grade_history) ? grade_history : [])
+        .find(h => h?.instructor === p.instructor && h.scope !== 'course');
+      // Legacy saved rows had only {instructor, grades}; new rows carry
+      // the full envelope, including no-data and explicit fallback scope.
+      const evidence = history && history.source == null && history.found == null
+        ? {found: true, source: 'zotistics', ...history} : history;
+      const gradeChart = evidence ? _renderZotisticsHistory(evidence, p.instructor, courseId) : '';
       return `<div class="cc-sg-prof">
         <span class="cc-sg-prof-name">${escHTML(p.instructor)}</span>
         ${star}
-      </div>`;
+      </div>${gradeChart ? `<div class="cc-sg-prof-grade">${gradeChart}</div>` : ''}`;
     }).join('')
       || `<div class="cc-sg-prof"><span class="cc-sg-prof-name">STAFF</span></div>`}
   </div>`;
@@ -401,8 +786,7 @@ function _renderOneSecondaryRow(s, courseId, term) {
   const num   = escHTML(s.num || s.type || '?');
   const code  = escHTML(s.code || '—');
   const time  = _fmtSectionDaysTime(s);          // already escaped
-  const room  = (s.location && !/^(tba|tbd|on(line|line tba))$/i.test(s.location.trim()))
-                ? escHTML(s.location) : '<em>TBA</em>';
+  const room  = _fmtSectionLocations(s);
   const status = _renderSeatBadge(s);
   // Instructor: drop STAFF / TBA / empty; show the first real name
   // and a tier-colored RMP pill if we have a rating for them.
@@ -482,7 +866,7 @@ function cardClickHandler(e) {
   // .cc-sg-add covers both Lec and Dis +/✓ buttons even though they
   // also stopPropagation in their own handler — belt and suspenders.
   const skip = e.target.closest(
-    '.cc-sg-add, .cc-sg-toggle, .cc-sg-wrap, a, button, input, select, textarea'
+    '.cc-sg-add, .cc-sg-toggle, .cc-sg-wrap, .grade-history-details, a, button, input, select, textarea'
   );
   if (skip) return;
   toggleSectionGroups(e.currentTarget);
@@ -662,16 +1046,6 @@ function renderCard(card) {
     card.found === false ? 'not-found' : '',
   ].filter(Boolean).join(' ');
 
-  // Pull the registrar enrollment code(s) — these are what the
-  // student actually inputs to register. Per the propose_recommendation
-  // contract the dispatcher only stages cards that HAVE a primary code,
-  // so card.primary_code is reliable here; the older `sections[0]`
-  // fallback stays for the legacy non-agent rec path.
-  const sec        = _firstSection(card);
-  const primaryCode = card.primary_code
-                      || sec?.section_code
-                      || null;
-  const addIcon    = isAdded ? 'check' : 'add';
   const title      = card.title || (card.found === false
                        ? 'Not in catalog' : '');
   const reason     = card.reason || '';
@@ -681,7 +1055,7 @@ function renderCard(card) {
     <button class="cc-sg-toggle"
             type="button"
             aria-expanded="false"
-            onclick="toggleSectionGroups(this)">
+            onclick="event.stopPropagation(); toggleSectionGroups(this)">
       <span>${groupCount === 1 ? '1 section' : groupCount + ' Lec groups'}</span>
       <span class="material-symbols-outlined">${solonIcon('expand_more')}</span>
     </button>` : '';
@@ -696,7 +1070,9 @@ function renderCard(card) {
     </div>
     <div class="cc-body">
       <div class="cc-badges">${_renderCardBadges(card, cat)}${_renderCardSourceBadges(card)}</div>
-      ${reason ? `<p class="cc-reason">${escHTML(reason)}</p>` : ''}
+      ${reason ? `<p class="cc-reason">${escHTML(reason)}</p>` : ''}${_renderDynamicPrefilterMetadata(card)}
+      ${_renderCoursePairingSummary(card)}
+      ${_renderZotisticsHistory(card.zotistics_grades, null, cid)}
       ${_renderRestrictionChips(card)}
       ${_renderDeadlineRow(card)}
       ${showSectionsBtn}
@@ -707,17 +1083,6 @@ function renderCard(card) {
     </div>
     ${_renderSectionGroups(card)}
   </div>`;
-}
-
-/* One-button toggle (Stitch UX: the + button stays in place, just
-   changes icon). Routes to existing add/remove endpoints. */
-function toggleCard(courseId, section, btnEl, term) {
-  const effectiveTerm = term || currentTermContext?.term || '';
-  if (addedCourses.has(scheduleCourseKey(effectiveTerm, courseId))) {
-    removeCourse(courseId, btnEl, null, effectiveTerm);
-  } else {
-    addCourse(courseId, section, btnEl, effectiveTerm);
-  }
 }
 
 /* Plan summaries retain the existing detailed card/section renderers. */

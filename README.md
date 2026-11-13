@@ -18,7 +18,7 @@ This project is not an official UCI advisor, degree audit, or enrollment system.
 - Expandable fetch audit under restriction tool chips showing each real GET/POST request, response status, byte count, source role, depth, and whether it supplied the final facts.
 - Direct answer streaming with no post-generation Check or hidden rewrite step; evidence and uncertainty rules live in the Agent answer contract.
 - Structured recommendation cards remain available for planning; unresolved sections can be kept in Schedule without creating a fabricated calendar block.
-- Automatic Week 8 planning defaults, a read-only default badge, conversational term inference, and multi-term offering/professor comparisons.
+- Automatic planning defaults (next term once its timetable is synced, Week 7 at the latest), a read-only default badge, conversational term inference, and multi-term offering/professor comparisons.
 - Structured XML runtime context plus a backend tool guard keeps the conversation default separate from the term(s) each tool is allowed to query.
 - Cross-term schedules: every entry keeps its own term, overlaps are non-blocking, and the same course/section can coexist across terms.
 - Schedule shows only added sections, with TBA/unknown-time sections in a visible untimed area above the weekly grid. Suggested meeting previews are disabled. Exact server-refreshed meeting data takes precedence over older catalog times for both calendar blocks and conflict checks.
@@ -307,14 +307,28 @@ Once a catalogue is stored, every reader of course metadata (catalog views, depa
 lookup, transcript-import titles, the profile course picker) uses it through
 `app/catalog/course_source.py`; without one they all read `data/uci/courses.csv`.
 
+Degree requirements are a third snapshot in the same file: every major, minor and
+specialization (about 300 programs) plus the campus-wide GE, UC and CHC sets, stored as the
+requirement trees Anteater returns.
+
+```bash
+python scripts/sync_programs.py            # ~310 requests, roughly two minutes
+python scripts/sync_programs.py --status
+```
+
+`app/data/uci_general/anteater_programs.py` reads majors and GE/UC requirements from this
+snapshot once it exists and falls back to live requests before the first sync. These are
+published requirement lists, not a student's degree audit.
+
 The server also syncs in the background (`CATALOG_AUTO_SYNC_ENABLED=true`, checked every
 15 minutes): the current term, the next regular term, and last year's same quarter as a
 reference. A timetable has one life cycle. Nothing is requested for the next term until the
 day before the calendar's Schedule-of-Classes date (Week 5 of the current term when the
 calendar has no date); from then it is probed every 6 hours until it arrives. A published
 term is refreshed daily until its own Week 2 Friday, fetched once more after that deadline,
-and then left alone. The reference term is fetched once. The course catalogue is fetched
-once per term, when a tracked term's timetable first arrives. See `app/catalog/scheduler.py`.
+and then left alone. The reference term is fetched once. The course catalogue and the
+degree requirements are each fetched once per term, when a tracked term's timetable first
+arrives. See `app/catalog/scheduler.py`.
 
 Useful checks:
 
@@ -330,7 +344,7 @@ Network/data refresh scripts exist under `scripts/`, but default tests and offli
 
 The user-confirmed contract, implementation map, and known parsing gaps are recorded in [学期规则与实现核对](docs/term-rules.md). Read it before changing term behavior; `AGENTS.md` also points maintainers to this contract. The 2026-09-20 audit found that the main flows are implemented, but unrelated yearless queries, mixed explicit/relative dates, and custom historical year ranges still have documented gaps.
 
-The backend uses `America/Los_Angeles` and UCI instruction dates from Anteater `calendar/all`. The actual ongoing `current_term` is separate from the planning `default_term`. At Week 8 Monday 00:00 Pacific time, the default advances Fall → Winter → Spring → Fall, regardless of whether the next timetable is published. Week 1 starts on the first Monday on or after instruction begins, accounting for Fall's opening Week 0. Official term end dates are preferred; when absent, the bounded calendar fallback ends after finals in Week 11. Summer queries are not supported yet.
+The backend uses `America/Los_Angeles` and UCI instruction dates from Anteater `calendar/all`. The actual ongoing `current_term` is separate from the planning `default_term`. The default advances Fall → Winter → Spring → Fall as soon as the next term's complete timetable has been synced into the catalog store, and at Week 7 Monday 00:00 Pacific time at the latest, whether or not that timetable is published. A switch is never rolled back within a term. Week 1 starts on the first Monday on or after instruction begins, accounting for Fall's opening Week 0. Official term end dates are preferred; when absent, the bounded calendar fallback ends after finals in Week 11. Summer queries are not supported yet.
 
 `GET /api/term-state` returns `automatic_term`, `source`, `status`, and `next_cutoff`. The composer displays a read-only `@ Quarter YYYY` badge alongside the existing default-term display, and refreshes at the next boundary and when the tab becomes visible. Per-answer query badges never overwrite this default. Legacy manual/pinned sessions migrate to automatic mode (metadata schema v3); the old mutation endpoint rejects manual requests with `manual_term_disabled` and continues accepting auto refresh for compatibility.
 
@@ -338,7 +352,7 @@ Complete user dates and actual-current relative references take precedence, foll
 
 `get_course_offerings` queries every requested term and summarizes whether a course runs and its lecture/seminar professors. Pattern questions inspect the six previous completed regular terms (two years). Only verified records support conclusions about seasonality; missing data is not evidence of absence. The tool distinguishes `offered`, `not_offered`, `unpublished`, and `unavailable`. An unpublished future quarter is identified from a successful official WebSoc form lookup, not a transport error or a missing local catalog. Its previous two same-season quarters are returned separately as `historical_reference`; an observed offering supports a labelled **possible** future offering, never a professor or section prediction. Reference lookups do not replace the user's target or update discussion focus.
 
-Successful calendar state is refreshed after 30 days and remains usable as last-known-good data for 45 days. The versioned code fallback remains explicitly labelled when live synchronization cannot recover. Calendar-backed date selection and timetable availability are independent. The JSON store uses atomic replacement and a process-local lock; multi-process production deployments require shared storage and a distributed lock.
+The calendar and the WebSoc term list are fetched once per term — on the first check after a regular term's instruction begins, or after 120 days as a safety net — and stay usable as last-known-good data for 180 days. Whether a term's timetable is published is not probed separately: it is read from the synced snapshots in `data/catalog.db` (`app/terms/availability.py`). The versioned code fallback remains explicitly labelled when live synchronization cannot recover. Calendar-backed date selection and timetable availability are independent. The JSON store uses atomic replacement and a process-local lock; multi-process production deployments require shared storage and a distributed lock.
 
 The LLM receives one XML runtime block with UCI time, current/default/query terms, query intent, inference status, and response language. Query scopes remain server-validated; historical reference expansion is bounded inside the offering tool to the previous two same-season quarters.
 
@@ -364,7 +378,7 @@ python scripts/smoke_term_state.py --term "2026 Fall"
 
 ### Restriction evidence pipeline
 
-Questions about major/school restrictions, New Only restrictions, course-specific restrictions, and related enrollment rules always enter through the Registrar WebSoc workflow. The workflow submits the real WebSoc department query, reads only query-relevant links explicitly published in the returned comments, and follows a tightly allowlisted second hop only when required fields are still missing.
+Questions about major/school restrictions, New Only restrictions, course-specific restrictions, and related enrollment rules always enter through the Registrar WebSoc workflow. School and department notices are read from the synced term snapshot when it is under 48 hours old (no request); otherwise the live Registrar page is fetched as before. Linked official pages are still read on demand, and a page that passed every check is reused for 24 hours instead of being requested again. The fetch audit lists such sources separately from real requests. The workflow submits the real WebSoc department query, reads only query-relevant links explicitly published in the returned comments, and follows a tightly allowlisted second hop only when required fields are still missing.
 
 Fetched HTML is cleaned into ordered headings, paragraphs, lists, tables, and links. A sequential parser binds department, date, time, action, audience, course scope, and exceptions into typed events using the `America/Los_Angeles` timezone. A completeness gate then marks the evidence `verified`, `partial`, `conflicting`, or `unavailable`; missing or conflicting data is never converted into a guessed date.
 

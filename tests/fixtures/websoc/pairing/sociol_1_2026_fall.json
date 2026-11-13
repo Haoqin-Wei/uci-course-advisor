@@ -1,0 +1,34 @@
+{
+  "fixture_kind": "public_registrar_websoc_raw_post",
+  "captured_at": "2026-10-20T20:44:33.898073+00:00",
+  "request": {
+    "method": "POST",
+    "url": "https://www.reg.uci.edu/perl/WebSoc",
+    "form": {
+      "YearTerm": "2026-92",
+      "Dept": "SOCIOL",
+      "CourseNum": "1",
+      "Breadth": "ANY",
+      "ClassType": "ALL",
+      "ShowComments": "on",
+      "ShowFinals": "on",
+      "CancelledCourses": "Include",
+      "Submit": "Display Web Results"
+    }
+  },
+  "response": {
+    "status_code": 200,
+    "content_type": "text/html; charset=ISO-8859-1",
+    "encoding": "ISO-8859-1",
+    "byte_count": 34389,
+    "sha256": "c7dc318ef54ce19201ad62edf9b9d6aa0e1eeb73440a153e1b2fcf1e537ef591"
+  },
+  "scope": {
+    "course_id": "SOCIOL 1",
+    "term": "2026 Fall"
+  },
+  "notes": [
+    "Public course information only; no account, cookies, credentials or registration operations.",
+    "Capture timestamp records completion of the public response capture; the HTML is preserved byte-for-byte."
+  ]
+}

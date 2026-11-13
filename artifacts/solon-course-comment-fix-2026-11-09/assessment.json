@@ -1,0 +1,58 @@
+{
+  "overall": "core_acceptance_passed_in_final_run",
+  "review_type": "manual_reading_of_saved_actual_model_answers_plus_payload_assertions",
+  "final_run": "run-03",
+  "model": "deepseek-v4-flash",
+  "final_provider_requests": 2,
+  "core_checks": {
+    "original_comment_visible": true,
+    "INF43_normalized_to_IN4MATX43": true,
+    "prior_credit_prohibition_explained_correctly": true,
+    "no_deadline_or_credit_accounting_claim_in_final": true,
+    "not_routed_to_recommendation": true,
+    "default_term_unchanged": true,
+    "all_30_comment_fields_and_20_meeting_arrays_unchanged": true
+  },
+  "all_attempts": [
+    {
+      "run": "run-01",
+      "passed": false,
+      "reason": "HTML extraction lacked structured INF alias evidence; unsupported expansion"
+    },
+    {
+      "run": "run-02",
+      "passed": false,
+      "reason": "Core answer correct but expanded to deadlines and credit accounting"
+    },
+    {
+      "run": "run-03",
+      "core_passed": true
+    }
+  ],
+  "offline_tests": {
+    "command": ".venv/bin/python -m pytest --no-cov -q",
+    "passed": 1501,
+    "skipped": 5,
+    "deselected": 2
+  },
+  "synthetic_reading_checks": {
+    "provider_requests": 2,
+    "source_is_synthetic": true,
+    "application_end_to_end": false,
+    "former_code_only": "Relationship supported; prior-credit prohibition not inferred",
+    "missing_comment": "Relationship and prior-credit eligibility both left unconfirmed"
+  },
+  "limits": [
+    "One successful real adapter/agent run is not a guarantee for future generations.",
+    "The final model answer uses old/current wording about INF and IN4MATX aliases; no alias chronology or effective date was verified.",
+    "This run supplies the explicit two-term scope and is not browser/full HTTP endpoint acceptance."
+  ],
+  "code_sha256": {
+    "app/llm/intent_rules.py": "31a953ca6ea1d7f40ceb94228906bcc3f684287767f76469b2172de45bd8f898",
+    "app/agent/prefilter.py": "6dde856a954822fae008f8dcac8ca7cd0b198c48643b0467f8c8fc8f95c02f27",
+    "app/data/websoc_payload.py": "3e43126921ca01024e254d79c2ce1986f9fc6558c2218ba52480c64ee78b6a78",
+    "app/agent/tools.py": "9e33b34296354ba7cd16ef9ef58966008098900391c4edc1ecf45a52f15a9d11",
+    "app/llm/adapter.py": "865ce92f22addae2f806d6bf68a11255b7e41930821da9052ea2a41c1c0acd76",
+    "docs/current-agent-system-prompt.txt": "633c2a5034ad11067305202a321701a7b49fe8e76a433ecff97df4d2b0bc2bd5"
+  }
+}

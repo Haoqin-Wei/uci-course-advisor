@@ -1,0 +1,34 @@
+{
+  "fixture_kind": "public_registrar_websoc_raw_post",
+  "captured_at": "2026-10-20T20:44:33.898306+00:00",
+  "request": {
+    "method": "POST",
+    "url": "https://www.reg.uci.edu/perl/WebSoc",
+    "form": {
+      "YearTerm": "2026-92",
+      "Dept": "PHILOS",
+      "CourseNum": "3",
+      "Breadth": "ANY",
+      "ClassType": "ALL",
+      "ShowComments": "on",
+      "ShowFinals": "on",
+      "CancelledCourses": "Include",
+      "Submit": "Display Web Results"
+    }
+  },
+  "response": {
+    "status_code": 200,
+    "content_type": "text/html; charset=ISO-8859-1",
+    "encoding": "ISO-8859-1",
+    "byte_count": 19745,
+    "sha256": "c4858ef364754a4fc879b36ae62671e69cf2e172d4f9a31965c2f738fa11c326"
+  },
+  "scope": {
+    "course_id": "PHILOS 3",
+    "term": "2026 Fall"
+  },
+  "notes": [
+    "Public course information only; no account, cookies, credentials or registration operations.",
+    "Capture timestamp records completion of the public response capture; the HTML is preserved byte-for-byte."
+  ]
+}

@@ -234,6 +234,7 @@ async function loadSession(sessionId) {
         appendAssistantStatic(t.content || '', {
           response_language: currentResponseLanguage,
             cards:      t.cards,
+            grade_charts: t.grade_charts,
             followups:  t.followups,
           validation: t.validation,
           web_fetches: t.web_fetches,
@@ -262,7 +263,7 @@ async function loadSession(sessionId) {
  * structure built by finalizeAiMessage so an opened session looks
  * identical to the live one — cards, followup chips, and the
  * `extras` is the parsed-back JSONL extras dict ({cards, followups,
- * web_fetches}); each field is optional and falsy values are skipped
+ * web_fetches, grade_charts}); each field is optional and falsy values are skipped
  * (legacy turns persisted before Round 4 won't have them).
  */
 function appendAssistantStatic(text, extras) {
@@ -282,11 +283,14 @@ function appendAssistantStatic(text, extras) {
     renderWebFetchSummary(wrap, extras.web_fetches);
   }
 
-  if (extras.cards && extras.cards.length > 0) {
+  if (Array.isArray(extras.cards) && extras.cards.some(card => card?.presentation?.version === 1)) {
+    replaceControlledRecommendationCards(wrap, extras.cards);
+  } else if (extras.cards && extras.cards.length > 0) {
     const block = document.createElement('div');
     block.innerHTML = renderCardsBlock(extras.cards);
     if (block.firstElementChild) wrap.appendChild(block.firstElementChild);
   }
+  renderGradeChartsForMessage(wrap, extras.grade_charts);
 
   setComposerSuggestions(Array.isArray(extras.followups) ? extras.followups : []);
 
@@ -316,16 +320,4 @@ async function deleteSession(sessionId) {
 function _prettyCourseId(cid) {
   // 'ICS33' → 'ICS 33', 'CS122A' → 'CS 122A', 'MATH2A' → 'MATH 2A'.
   return cid.replace(/^([A-Z]+)(\d.*)$/, '$1 $2');
-}
-
-function _inferGradClass(year) {
-  // Heuristic: current academic year is 2025-26, ending in June 2026.
-  if (!year) return null;
-  const y = year.toLowerCase();
-  const ACADEMIC_YEAR_END = 2026;
-  const offsets = {
-    freshman: 4, sophomore: 3, junior: 2, senior: 1,
-    "1st year": 4, "2nd year": 3, "3rd year": 2, "4th year": 1,
-  };
-  return offsets[y] != null ? ACADEMIC_YEAR_END + offsets[y] - 1 : null;
 }

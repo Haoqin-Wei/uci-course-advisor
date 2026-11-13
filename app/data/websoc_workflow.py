@@ -10,10 +10,14 @@ not from a model-selected search result.
 from __future__ import annotations
 
 import logging
+import hashlib
 import re
+import time
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from html.parser import HTMLParser
+from html import escape
 from typing import Any, Optional
 from urllib.parse import urljoin, urlsplit
 
@@ -21,6 +25,7 @@ import requests
 
 from app import observability
 from app.catalog.term import Term
+from app.catalog.normalization import parse_course_mention
 from app.scheduling import normalize_section_meeting
 from app.data.restriction_timeline import (
     RestrictionQuery,
@@ -44,6 +49,8 @@ AGENT_TOOL = "get_department_restrictions"
 WORKFLOW_ID = "websoc_department_restrictions"
 COURSE_AGENT_TOOL = "get_sections"
 COURSE_WORKFLOW_ID = "websoc_course_offering"
+MAX_COCLASS_LOOKUPS = 3
+COCLASS_LOOKUP_BUDGET_S = 24
 
 _QUARTER_CODES = {
     "Winter": "03",
@@ -119,13 +126,131 @@ def build_websoc_course_params(
     if not normalized_course:
         raise ValueError("course_number is required")
     params["CourseNum"] = normalized_course
-    params.pop("ShowComments", None)
+    # Pairing evidence depends on current scoped comments and the complete
+    # original row order, before any capacity/type/time filtering.
+    params["CancelledCourses"] = "Include"
     return params
 
 
 def build_websoc_department_url(term: str, department: str) -> str:
     build_websoc_department_params(term, department)
     return WEBSOC_URL
+
+
+# A synced snapshot older than this is not trusted for notices; the live
+# Registrar page is read instead. Active terms are re-synced daily.
+SNAPSHOT_NOTICE_MAX_AGE_S = 48 * 60 * 60
+SNAPSHOT_SOURCE_ROLE = "catalog_store_snapshot"
+
+
+def department_restrictions_from_snapshot(
+    *,
+    term: str,
+    department: str,
+    max_age_s: float = SNAPSHOT_NOTICE_MAX_AGE_S,
+) -> Optional[dict[str, Any]]:
+    """School and department notices from the synced term snapshot, without a request.
+
+    The whole-term sync stores the same notices the WebSoc department page
+    shows. When that snapshot is recent, this returns a result shaped like
+    ``fetch_websoc_department_restrictions`` so link following and evidence
+    extraction work unchanged. Returns None — meaning "read the live page" —
+    when the term is not stored, the snapshot is stale, or it holds no notices.
+
+    Course-number-range notices apply only to the range in their own heading.
+    They are returned separately and are not mixed into the department text
+    that dates and scopes are extracted from.
+    """
+    from app.catalog import store
+
+    requested_term = Term.parse(term or "")
+    requested_department = _normalize_department(department)
+    if requested_term is None or not requested_department:
+        return None
+    snapshot = next((item for item in store.read_term_snapshots()
+                     if item.get("term_id") == requested_term.term_id), None)
+    if not snapshot or not int(snapshot.get("section_count") or 0):
+        return None
+    synced_at = snapshot.get("last_synced_at")
+    try:
+        synced = datetime.fromisoformat(str(synced_at).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if synced.tzinfo is None:
+        synced = synced.replace(tzinfo=timezone.utc)
+    if (datetime.now(timezone.utc) - synced).total_seconds() > max_age_s:
+        return None
+    scope = store.get_department_scope(requested_term.term_id, requested_department)
+    if not isinstance(scope, dict):
+        return None
+    school = scope.get("school") if isinstance(scope.get("school"), dict) else {}
+    dept = scope.get("department") if isinstance(scope.get("department"), dict) else {}
+
+    parts: list[str] = []
+    if isinstance(school.get("comment"), str) and school["comment"].strip():
+        parts.append(f"<p><b>{escape(str(school.get('name') or 'School'))} comments:</b></p>\n"
+                     f"{school['comment']}")
+    if isinstance(dept.get("comment"), str) and dept["comment"].strip():
+        parts.append(f"<p><b>{escape(str(dept.get('name') or requested_department))} "
+                     f"department comments:</b></p>\n{dept['comment']}")
+    if not parts:
+        return None
+    html = "\n".join(parts)
+    source_url = build_websoc_department_url(term, requested_department)
+    parsed = _parse_html(html)
+    blocks = _extract_comment_blocks(parsed.text)
+    if not blocks:
+        return None
+    links = _assign_links_to_blocks(parsed.links, blocks, source_url=source_url)
+    fields = _extract_restriction_fields("\n\n".join(block["text"] for block in blocks))
+    extracted_any = any(
+        fields.get(name) not in (None, "", [])
+        for name in ("add_deadline", "drop_deadline", "change_deadline",
+                     "major_restriction_removed_at", "nors_removed_at")
+    )
+    range_notices = [
+        _parse_html(item).text
+        for key in ("course_number_range_comments", "section_code_range_comments")
+        for item in (dept.get(key) or []) if isinstance(item, str) and item.strip()
+    ]
+    snapshot_read = _fetch_record(
+        method="LOCAL", url=source_url, final_url=source_url, source_role=SNAPSHOT_SOURCE_ROLE,
+        status_code=None, content_length=len(html.encode("utf-8")), duration_ms=0.0, ok=True, depth=0,
+    )
+    snapshot_read.update({"local": True, "snapshot_synced_at": synced_at})
+    result = {
+        "ok": True,
+        "mode": "workflow",
+        "workflow_id": "websoc_department_restrictions",
+        "notice_source": SNAPSHOT_SOURCE_ROLE,
+        "term": term,
+        "department": requested_department,
+        "source_url": source_url,
+        # When the notices were actually read from the source, not "now".
+        "retrieved_at": synced_at,
+        "response_term": requested_term.display(),
+        "search_criteria": {"department": requested_department, "exclude_cancelled_courses": False},
+        "registration_ends": None,
+        "school_comments": "\n\n".join(b["text"] for b in blocks if b["block_type"] == "school").strip() or None,
+        "department_comments": "\n\n".join(
+            b["text"] for b in blocks if b["block_type"] == "department").strip() or None,
+        "comment_blocks": blocks,
+        "course_range_notices": range_notices,
+        "fields": fields,
+        "links": links,
+        "validation": {"ok": True, "errors": []},
+        "extraction_status": "complete" if extracted_any else "partial",
+        "request_method": None,
+        "request_form": None,
+        "fetches": [snapshot_read],
+    }
+    observability.log_event(
+        logger, logging.INFO, "agent_web_extraction_completed",
+        workflow_id=result["workflow_id"], tool=AGENT_TOOL, term=term, department=requested_department,
+        extraction_status=result["extraction_status"], notice_source=SNAPSHOT_SOURCE_ROLE,
+        comment_block_count=len(blocks), link_count=len(links),
+    )
+    return result
 
 
 def fetch_websoc_department_restrictions(
@@ -300,6 +425,9 @@ def fetch_websoc_course_offering(
     department: str,
     course_number: str,
     session: Optional[requests.Session] = None,
+    request_timeout_s: Optional[float] = None,
+    _follow_references: bool = True,
+    _form_result: Optional[dict] = None,
 ) -> dict[str, Any]:
     """Fetch one course from the Registrar's fixed WebSoc POST workflow.
 
@@ -309,13 +437,15 @@ def fetch_websoc_course_offering(
     """
 
     params = build_websoc_course_params(term, department, course_number)
+    timeout = min(REQUEST_TIMEOUT_S, max(0.1, float(request_timeout_s))) if request_timeout_s is not None else REQUEST_TIMEOUT_S
     source_url = WEBSOC_URL
     http = session or requests.Session()
     retrieved_at = _utc_now()
-    form_result = fetch_websoc_form_options(
+    form_result = _form_result or fetch_websoc_form_options(
         session=http,
         agent_tool=COURSE_AGENT_TOOL,
         workflow_id=COURSE_WORKFLOW_ID,
+        request_timeout_s=timeout,
     )
     base = {
         "workflow_id": COURSE_WORKFLOW_ID,
@@ -372,7 +502,7 @@ def fetch_websoc_course_offering(
         timeout_seconds=REQUEST_TIMEOUT_S,
     )
     try:
-        response = http.post(WEBSOC_URL, data=params, timeout=REQUEST_TIMEOUT_S)
+        response = http.post(WEBSOC_URL, data=params, timeout=timeout)
         response.raise_for_status()
         duration_ms = observability.elapsed_ms(request_started)
         post_fetch = _fetch_record(
@@ -441,10 +571,17 @@ def fetch_websoc_course_offering(
         course_number=params["CourseNum"],
         source_url=source_url,
         retrieved_at=retrieved_at,
+        request_form=params,
+        html_sha256=hashlib.sha256(
+            response.content if isinstance(getattr(response, "content", None), bytes)
+            else response.text.encode("utf-8")
+        ).hexdigest(),
     )
     result["request_method"] = "POST"
     result["request_form"] = params
     result["fetches"] = [*(form_result.get("fetches") or []), post_fetch]
+    if _follow_references and result.get("ok") and result.get("offering_status") == "offered":
+        result = _resolve_websoc_co_classes(result, session=http, form_result=form_result, timeout=timeout)
     observability.log_event(
         logger,
         logging.INFO if result.get("ok") else logging.WARNING,
@@ -461,15 +598,129 @@ def fetch_websoc_course_offering(
     return result
 
 
+def _lookup_websoc_reference_code(code, *, term, session, form_result, timeout):
+    """Resolve a five-digit reference on fixed WebSoc, then request its full course.
+
+    A code-filtered response is identity discovery only. It never proves that
+    omitted components do not exist. No page-supplied URL is followed.
+    """
+    if not re.fullmatch(r"\d{5}", str(code or "")):
+        return {"ok": False, "error_code": "invalid_co_class_code"}
+    params = build_websoc_department_params(term, "ALL")
+    params.update(Dept=" ALL", CourseCodes=code, CancelledCourses="Include")
+    response = session.post(WEBSOC_URL, data=params, timeout=timeout)
+    response.raise_for_status()
+    html = response.text
+    text = _parse_html(html).text
+    target = Term.parse(term)
+    criteria = (_search_text(r"Course Code Range:\s*([^\n]+)", text) or "").strip()
+    if (not target or _extract_result_term(text) != target.display() or criteria != code
+            or not re.search(r"Schedule of Classes search results", text, re.I)
+            or not re.search(r"</html\s*>", html, re.I)):
+        return {"ok": False, "error_code": "co_class_code_response_mismatch"}
+    table = _parse_websoc_course_table(html, department="", course_number="", retrieved_at=_utc_now())
+    active = None
+    matches = []
+    for row in table["source_rows"]:
+        for cell, css in zip(row["cells"], row["cell_classes"]):
+            if "coursetitle" in css.lower():
+                active = parse_course_mention(cell)
+        if row["cells"] and row["cells"][0] == code and active is not None:
+            matches.append(active)
+    courses = {ref.display(): ref for ref in matches}
+    if len(courses) != 1:
+        return {"ok": False, "error_code": "co_class_code_course_ambiguous"}
+    ref = next(iter(courses.values()))
+    full = fetch_websoc_course_offering(
+        term=term, department=ref.department, course_number=ref.course_number, session=session,
+        request_timeout_s=timeout, _follow_references=False, _form_result=form_result)
+    full["reference_section_code"] = code
+    raw = response.content if isinstance(getattr(response, "content", None), bytes) else html.encode("utf-8")
+    full["code_resolution"] = {"source": "registrar_websoc", "source_url": WEBSOC_URL,
+                               "request_method": "POST", "request_form": params,
+                               "course_id": ref.display(), "term": f"{target.year} {target.quarter}",
+                               "section_code": code, "retrieved_at": _utc_now(),
+                               "html_sha256": hashlib.sha256(raw).hexdigest()}
+    return full
+
+
+def _resolve_websoc_co_classes(result, *, session, form_result, timeout):
+    """Bounded same-term references produced by the trusted source parser only."""
+    from app.data.websoc_pairing import resolve_pairing_references
+    proof = result.get("source_proof") or {}
+    references = proof.get("co_class_references") or (result.get("pairing") or {}).get("evidence", {}).get("co_class_references") or []
+    target = Term.parse(result.get("term") or "")
+    own = parse_course_mention(result.get("course_id") or "")
+    if not target or not isinstance(references, list) or not references:
+        return result
+    lookups, audits = {}, []
+    deadline = time.monotonic() + COCLASS_LOOKUP_BUDGET_S
+    for reference in references:
+        if not isinstance(reference, dict) or reference.get("relation") != "co_class":
+            continue
+        if Term.parse(str(reference.get("term") or "")) != target:
+            audits.append({"status": "unavailable", "error_code": "cross_term_co_class_reference"})
+            continue
+        raw_course = reference.get("course_id")
+        ref = parse_course_mention(raw_course) if isinstance(raw_course, str) else None
+        code = reference.get("section_code")
+        key = ref.display() if ref else f"code:{code}" if isinstance(code, str) and re.fullmatch(r"\d{5}", code) else None
+        if not key or (ref is not None and own == ref) or key in lookups:
+            continue
+        if len(lookups) >= MAX_COCLASS_LOOKUPS:
+            audits.append({"status": "unavailable", "error_code": "co_class_lookup_limit"})
+            break
+        remaining = deadline - time.monotonic()
+        if remaining <= 0.2:
+            audits.append({"status": "unavailable", "error_code": "co_class_lookup_budget"})
+            break
+        bounded_timeout = min(timeout, remaining / 3)
+        try:
+            if ref is not None:
+                envelope = fetch_websoc_course_offering(
+                    term=target.display(), department=ref.department, course_number=ref.course_number,
+                    session=session, request_timeout_s=bounded_timeout, _follow_references=False,
+                    _form_result=form_result)
+            else:
+                envelope = _lookup_websoc_reference_code(code, term=target.display(), session=session,
+                                                         form_result=form_result, timeout=bounded_timeout)
+        except Exception as exc:
+            envelope = {"ok": False, "offering_status": "unavailable", "term": target.display(),
+                        "error_code": type(exc).__name__}
+        # Related rows travel outside the target course response. Bind each
+        # row to its own returned identity, never to the requesting course.
+        related_ref = parse_course_mention(str(envelope.get("course_id") or ""))
+        related_term = Term.parse(str(envelope.get("term") or ""))
+        if related_ref and related_term:
+            envelope = deepcopy(envelope)
+            for section in envelope.get("sections") or []:
+                if isinstance(section, dict):
+                    section.setdefault("course_id", related_ref.display())
+                    section.setdefault("term", f"{related_term.year} {related_term.quarter}")
+        lookups[key] = envelope
+        audits.append({"key": key, "course_id": envelope.get("course_id"), "term": envelope.get("term"),
+                       "status": "available" if envelope.get("ok") else "unavailable",
+                       "error_code": envelope.get("error_code")})
+    pairing, resolved_proof = resolve_pairing_references(result.get("pairing"), proof, lookups)
+    out = {**result, "pairing": pairing, "source_proof": resolved_proof, "co_class_lookup_audit": audits}
+    # Keep course/term identities on related records; never append their rows to
+    # the target course's sections or relabel them as target-course evidence.
+    out["co_class_sources"] = [{"lookup_key": key, **deepcopy(envelope)} for key, envelope in lookups.items()]
+    out["source_proof"]["co_class_lookup_audit"] = deepcopy(audits)
+    return out
+
+
 def fetch_websoc_form_options(
     *,
     session: Optional[requests.Session] = None,
     agent_tool: str = AGENT_TOOL,
     workflow_id: str = WORKFLOW_ID,
+    request_timeout_s: Optional[float] = None,
 ) -> dict[str, Any]:
     """Read the live form so submitted term and department values are validated."""
 
     http = session or requests.Session()
+    timeout = min(REQUEST_TIMEOUT_S, max(0.1, float(request_timeout_s))) if request_timeout_s is not None else REQUEST_TIMEOUT_S
     retrieved_at = _utc_now()
     request_started = observability.now()
     observability.log_agent_web_fetch_started(
@@ -481,7 +732,7 @@ def fetch_websoc_form_options(
         timeout_seconds=REQUEST_TIMEOUT_S,
     )
     try:
-        response = http.get(WEBSOC_URL, timeout=REQUEST_TIMEOUT_S)
+        response = http.get(WEBSOC_URL, timeout=timeout)
         response.raise_for_status()
         duration_ms = observability.elapsed_ms(request_started)
         fetch_record = _fetch_record(
@@ -589,6 +840,8 @@ def parse_websoc_course_html(
     course_number: str,
     source_url: str,
     retrieved_at: Optional[str] = None,
+    request_form: Optional[dict[str, str]] = None,
+    html_sha256: Optional[str] = None,
 ) -> dict[str, Any]:
     parsed = _parse_html(html)
     text = parsed.text
@@ -707,6 +960,15 @@ def parse_websoc_course_html(
         "validation": {"ok": validation_ok, "errors": validation_errors},
         "extraction_status": "complete" if validation_ok else "invalid",
     }
+    from app.data.websoc_pairing import produce_websoc_pairing
+    result["pairing"], result["source_proof"] = produce_websoc_pairing(
+        course_table["source_rows"], department=requested_department, course_number=requested_course,
+        term=term, source_url=source_url, retrieved_at=result["retrieved_at"],
+        html_sha256=html_sha256 or hashlib.sha256(html.encode("utf-8")).hexdigest(),
+        request_form=request_form, validation_ok=validation_ok,
+        parsed_section_codes=[section["section_code"] for section in sections],
+        document_complete=bool(re.search(r"</html\s*>", html, re.I)),
+    )
     if offering_status == "not_offered":
         result["reason"] = (
             f"Registrar WebSoc reported no matching sections for "
@@ -877,6 +1139,8 @@ class _WebSocCourseTableHTMLParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.rows: list[list[dict[str, Any]]] = []
+        self.row_attributes: list[dict[str, str]] = []
+        self._row_attributes: dict[str, str] = {}
         self._row: Optional[list[dict[str, Any]]] = None
         self._cell: Optional[dict[str, Any]] = None
 
@@ -884,22 +1148,29 @@ class _WebSocCourseTableHTMLParser(HTMLParser):
         attr = {key.lower(): value or "" for key, value in attrs}
         if tag == "tr":
             self._row = []
+            self._row_attributes = attr
         elif tag in {"td", "th"} and self._row is not None:
-            self._cell = {"class": attr.get("class", ""), "parts": []}
+            self._cell = {"class": attr.get("class", ""), "parts": [], "html_parts": []}
         elif tag == "br" and self._cell is not None:
             self._cell["parts"].append("\n")
+        if self._cell is not None and tag not in {"td", "th", "tr"}:
+            self._cell["html_parts"].append(self.get_starttag_text() or f"<{tag}>")
 
     def handle_data(self, data: str) -> None:
         if self._cell is not None:
             self._cell["parts"].append(data)
+            self._cell["html_parts"].append(escape(data))
 
     def handle_endtag(self, tag: str) -> None:
+        if self._cell is not None and tag not in {"td", "th", "tr", "br"}:
+            self._cell["html_parts"].append(f"</{tag}>")
         if tag in {"td", "th"} and self._row is not None and self._cell is not None:
             self._row.append(self._cell)
             self._cell = None
         elif tag == "tr" and self._row is not None:
             if self._row:
                 self.rows.append(self._row)
+                self.row_attributes.append(self._row_attributes)
             self._row = None
             self._cell = None
 
@@ -916,8 +1187,15 @@ def _parse_websoc_course_table(
     parser.close()
     course_title: Optional[str] = None
     sections: list[dict[str, Any]] = []
-    for row in parser.rows:
+    source_rows = []
+    header = None
+    for row_index, row in enumerate(parser.rows):
         cells = [_websoc_cell_text(cell) for cell in row]
+        source_rows.append({"index": row_index, "class": parser.row_attributes[row_index].get("class", ""),
+                            "cells": cells, "cell_classes": [cell.get("class", "") for cell in row],
+                            "cell_html": ["".join(cell.get("html_parts") or []) for cell in row]})
+        if cells and cells[0].lower() == "code" and any(cell.lower() == "status" for cell in cells):
+            header = {re.sub(r"[^a-z]", "", cell.lower()): index for index, cell in enumerate(cells)}
         for index, cell in enumerate(row):
             if "coursetitle" not in str(cell.get("class") or "").lower():
                 continue
@@ -933,15 +1211,33 @@ def _parse_websoc_course_table(
 
         if len(cells) < 15 or not re.fullmatch(r"\d{5}", cells[0]):
             continue
-        max_capacity = _websoc_int(cells[8])
-        enrolled = _websoc_int(cells[9])
+        def column(*names, fallback):
+            index = next((header[name] for name in names if header and name in header), fallback)
+            return cells[index] if index < len(cells) else ""
+
+        max_capacity = _websoc_int(column("max", fallback=8))
+        enrolled = _websoc_int(column("enr", fallback=9))
         seats_open = (
             max(0, max_capacity - enrolled)
             if max_capacity is not None and enrolled is not None
             else None
         )
-        days, start_time, end_time, time_display = _split_websoc_time(cells[6])
-        status = _collapse_ws(cells[14]).upper() or None
+        time_lines = _websoc_cell_lines(row[6]) or [cells[6]]
+        places = _websoc_cell_lines(row[7])
+        meetings = []
+        for index, time_line in enumerate(time_lines):
+            meeting_days, meeting_start, meeting_end, meeting_display = _split_websoc_time(time_line)
+            meetings.append({
+                "days": meeting_days, "start_time": meeting_start, "end_time": meeting_end,
+                "time_display": meeting_display,
+                "location": (places[index] if index < len(places) else places[0] if len(places) == 1 else None),
+                "time_is_tba": not bool(meeting_days and meeting_start and meeting_end),
+            })
+        primary_meeting = meetings[0]
+        days, start_time, end_time, time_display = (
+            primary_meeting[key] for key in ("days", "start_time", "end_time", "time_display")
+        )
+        status = _collapse_ws(column("status", fallback=14)).upper() or None
         sections.append(
             {
                 "section_code": cells[0],
@@ -952,6 +1248,8 @@ def _parse_websoc_course_table(
                 "start_time": start_time,
                 "end_time": end_time,
                 "time_display": time_display,
+                "meetings": meetings,
+                "time_is_tba": primary_meeting["time_is_tba"],
                 "location": cells[7] or None,
                 "instructors": _websoc_cell_lines(row[4]),
                 "modality": cells[5] or None,
@@ -959,18 +1257,81 @@ def _parse_websoc_course_table(
                 "enrolled": enrolled,
                 "seats_open": seats_open,
                 "waitlisted": None,
-                "requests": _websoc_int(cells[10]),
+                "requests": _websoc_int(column("req", fallback=10)),
                 "status": status,
                 "is_cancelled": status in {"CANCELLED", "CANCELED"},
                 "ge_categories": [],
-                "restrictions": cells[11] or None,
+                "restrictions": column("rstr", fallback=11) or None,
                 "final_exam": None,
                 "source": "registrar_websoc",
                 "is_live": False,
                 "retrieved_at": retrieved_at,
             }
         )
-    return {"course_title": course_title, "sections": sections}
+    _preserve_course_table_comments(sections, source_rows, department, course_number, course_title)
+    return {"course_title": course_title, "sections": sections, "source_rows": source_rows}
+
+
+def _preserve_course_table_comments(sections, rows, department, course_number, course_title):
+    """Retain every comment row, including its source scope and position.
+
+    Generic WebSoc course-comment rows can apply to a lecture group rather
+    than the whole course. Preserve that ambiguity instead of promoting the
+    text into a confirmed course-wide restriction.
+    """
+    school_name = department_name = None
+    school_comments, department_comments, course_comments, blocks = [], [], [], []
+    course_range_comments, section_range_comments = [], []
+    active_code = None
+    section_comments = {}
+    for row in rows:
+        css = str(row.get("class") or "").lower()
+        cells = row.get("cells") or []
+        text = " ".join(str(value) for value in cells).strip()
+        if "college-title" in css:
+            school_name = text
+        if "dept-title" in css:
+            department_name = text
+        if cells and re.fullmatch(r"\d{5}", str(cells[0]).strip()):
+            active_code = str(cells[0]).strip()
+        if "comment" not in css:
+            continue
+        scope = ("course_number_range" if "num-range-comment" in css
+                 else "section_code_range" if "ccode-range-comment" in css
+                 else "school" if "college-comment" in css else "department" if "dept-comment" in css
+                 else "section" if "section-comment" in css else "course" if active_code is None
+                 else "course_or_section")
+        raw_html = "\n".join(row.get("cell_html") or [])
+        block = {"scope": scope, "row_class": css, "row_index": row.get("index"), "text": text,
+                 "raw_html": raw_html}
+        if active_code is not None:
+            block["preceding_section_code"] = active_code
+        blocks.append(block)
+        if scope == "school":
+            school_comments.append(text)
+        elif scope == "department":
+            department_comments.append(text)
+        elif scope == "course":
+            course_comments.append(text)
+        elif scope == "course_number_range":
+            course_range_comments.append(raw_html or text)
+        elif scope == "section_code_range":
+            section_range_comments.append(raw_html or text)
+        elif scope == "section" and active_code:
+            section_comments.setdefault(active_code, []).append(text)
+    context = {
+        "school": {"name": school_name, "comment": "\n\n".join(school_comments) or None},
+        "department": {"code": department, "name": department_name,
+                       "comment": "\n\n".join(department_comments) or None,
+                       "course_number_range_comments": course_range_comments or None,
+                       "section_code_range_comments": section_range_comments or None},
+        "course": {"course_id": f"{department} {course_number}", "title": course_title,
+                   "comment": "\n\n".join(course_comments) or None},
+        "source_blocks": blocks,
+    }
+    for section in sections:
+        section["comments"] = deepcopy(context)
+        section["section_comment"] = "\n\n".join(section_comments.get(section["section_code"], [])) or None
 
 
 def _websoc_cell_text(cell: dict[str, Any]) -> str:
@@ -1313,6 +1674,13 @@ def _fetch_and_parse_linked_page(
 ) -> tuple[Optional[dict[str, Any]], Optional[dict[str, Any]]]:
     retrieved_at = _utc_now()
     linked_url = link["url"]
+    cached = _cached_linked_page(linked_url)
+    if cached is not None:
+        return _parse_linked_page_response(
+            cached["response"], _cached_fetch_record(cached, link, depth, parent_url), link,
+            workflow_result=workflow_result, query=query, allowed_url=allowed_url, depth=depth,
+            parent_url=parent_url, retrieved_at=cached["retrieved_at"], cacheable=False,
+        )
     request_started = observability.now()
     observability.log_agent_web_fetch_started(
         logger,
@@ -1389,6 +1757,85 @@ def _fetch_and_parse_linked_page(
             "fetch": request_fetch,
         }
 
+    return _parse_linked_page_response(
+        response, request_fetch, link, workflow_result=workflow_result, query=query,
+        allowed_url=allowed_url, depth=depth, parent_url=parent_url, retrieved_at=retrieved_at,
+        cacheable=True,
+    )
+
+
+# Linked department pages change rarely; the same page is not requested again
+# within a day. Only bodies that passed every check below are kept, in memory.
+LINKED_PAGE_CACHE_TTL_S = 24 * 60 * 60
+LINKED_PAGE_CACHE_MAX = 200
+_linked_page_cache: dict[str, dict[str, Any]] = {}
+
+
+@dataclass(frozen=True)
+class _CachedResponse:
+    url: str
+    status_code: Optional[int]
+    headers: dict
+    text: str
+
+
+def clear_linked_page_cache() -> None:
+    _linked_page_cache.clear()
+
+
+def _cached_linked_page(url: str) -> Optional[dict[str, Any]]:
+    entry = _linked_page_cache.get(url)
+    if entry is None:
+        return None
+    if time.monotonic() - entry["stored"] > LINKED_PAGE_CACHE_TTL_S:
+        _linked_page_cache.pop(url, None)
+        return None
+    return entry
+
+
+def _store_linked_page(url: str, response, retrieved_at: str) -> None:
+    if len(_linked_page_cache) >= LINKED_PAGE_CACHE_MAX:
+        oldest = min(_linked_page_cache, key=lambda key: _linked_page_cache[key]["stored"])
+        _linked_page_cache.pop(oldest, None)
+    _linked_page_cache[url] = {
+        "stored": time.monotonic(),
+        "retrieved_at": retrieved_at,
+        "response": _CachedResponse(
+            url=getattr(response, "url", None) or url,
+            status_code=getattr(response, "status_code", None),
+            headers={"content-type": (getattr(response, "headers", {}) or {}).get("content-type", "")},
+            text=getattr(response, "text", "") or "",
+        ),
+    }
+
+
+def _cached_fetch_record(entry, link, depth, parent_url) -> dict[str, Any]:
+    response = entry["response"]
+    record = _fetch_record(
+        method="GET", url=link["url"], final_url=response.url,
+        source_role=link.get("link_role") or "official_link", status_code=response.status_code,
+        content_length=len(response.text.encode("utf-8")), duration_ms=0.0, ok=True,
+        depth=depth, parent_url=parent_url,
+    )
+    record.update({"cached": True, "cached_at": entry["retrieved_at"]})
+    observability.increment("agent.web_fetch.cache", result="hit", tool=AGENT_TOOL)
+    return record
+
+
+def _parse_linked_page_response(
+    response,
+    request_fetch: dict[str, Any],
+    link: dict[str, Any],
+    *,
+    workflow_result: dict[str, Any],
+    query: RestrictionQuery,
+    allowed_url,
+    depth: int,
+    parent_url: Optional[str],
+    retrieved_at: str,
+    cacheable: bool,
+) -> tuple[Optional[dict[str, Any]], Optional[dict[str, Any]]]:
+    linked_url = link["url"]
     final_url = getattr(response, "url", linked_url) or linked_url
     if not allowed_url(final_url):
         return None, {
@@ -1429,6 +1876,8 @@ def _fetch_and_parse_linked_page(
             "fetch": request_fetch,
         }
 
+    if cacheable:
+        _store_linked_page(linked_url, response, retrieved_at)
     parsed = _parse_html(response_text)
     content_blocks = extract_main_content_blocks(response_text)
     focused_blocks = select_query_focused_blocks(content_blocks, query)

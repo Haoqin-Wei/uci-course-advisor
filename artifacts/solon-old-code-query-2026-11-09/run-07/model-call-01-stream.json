@@ -1,0 +1,3096 @@
+[
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": "assistant",
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": "call_00_rB2vIh5V6IleGQ1UUlFw9116",
+              "function": {
+                "arguments": "",
+                "name": "get_live_sections"
+              },
+              "type": "function"
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": null,
+              "function": {
+                "arguments": "{\"",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": null,
+              "function": {
+                "arguments": "course",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": null,
+              "function": {
+                "arguments": "_id",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": null,
+              "function": {
+                "arguments": "\"",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": null,
+              "function": {
+                "arguments": ": \"",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": null,
+              "function": {
+                "arguments": "SW",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": null,
+              "function": {
+                "arguments": "E",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": null,
+              "function": {
+                "arguments": "43",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": null,
+              "function": {
+                "arguments": "\"",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": null,
+              "function": {
+                "arguments": ", \"",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": null,
+              "function": {
+                "arguments": "term",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": null,
+              "function": {
+                "arguments": "\"",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": null,
+              "function": {
+                "arguments": ": \"",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": null,
+              "function": {
+                "arguments": "202",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": null,
+              "function": {
+                "arguments": "6",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": null,
+              "function": {
+                "arguments": " Fall",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": null,
+              "function": {
+                "arguments": "\"",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 0,
+              "id": null,
+              "function": {
+                "arguments": "}",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 1,
+              "id": "call_01_F3rCdrxbCPKC3JZOMsGJ8503",
+              "function": {
+                "arguments": "",
+                "name": "check_prerequisites_met"
+              },
+              "type": "function"
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 1,
+              "id": null,
+              "function": {
+                "arguments": "{\"",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 1,
+              "id": null,
+              "function": {
+                "arguments": "course",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 1,
+              "id": null,
+              "function": {
+                "arguments": "_id",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 1,
+              "id": null,
+              "function": {
+                "arguments": "\"",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 1,
+              "id": null,
+              "function": {
+                "arguments": ": \"",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 1,
+              "id": null,
+              "function": {
+                "arguments": "SW",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 1,
+              "id": null,
+              "function": {
+                "arguments": "E",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 1,
+              "id": null,
+              "function": {
+                "arguments": "43",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 1,
+              "id": null,
+              "function": {
+                "arguments": "\"",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": null,
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": [
+            {
+              "index": 1,
+              "id": null,
+              "function": {
+                "arguments": "}",
+                "name": null
+              },
+              "type": null
+            }
+          ]
+        },
+        "finish_reason": null,
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": null
+  },
+  {
+    "id": "6cd1898e-fc68-41c8-9e28-7bcafa3d1477",
+    "choices": [
+      {
+        "delta": {
+          "content": "",
+          "function_call": null,
+          "refusal": null,
+          "role": null,
+          "tool_calls": null,
+          "reasoning_content": "[omitted]"
+        },
+        "finish_reason": "tool_calls",
+        "index": 0,
+        "logprobs": null
+      }
+    ],
+    "created": 1794269052,
+    "model": "deepseek-flash",
+    "object": "chat.completion.chunk",
+    "service_tier": null,
+    "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+    "usage": {
+      "completion_tokens": 181,
+      "prompt_tokens": 19687,
+      "total_tokens": 19868,
+      "completion_tokens_details": {
+        "accepted_prediction_tokens": null,
+        "audio_tokens": null,
+        "reasoning_tokens": 85,
+        "rejected_prediction_tokens": null
+      },
+      "prompt_tokens_details": {
+        "audio_tokens": null,
+        "cached_tokens": 11776
+      },
+      "prompt_cache_hit_tokens": 11776,
+      "prompt_cache_miss_tokens": 7911
+    }
+  }
+]

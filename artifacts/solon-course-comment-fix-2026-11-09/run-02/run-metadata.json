@@ -1,0 +1,47 @@
+{
+  "question": "请核实 SWE43 和 IN4MATX43 是什么关系，并说明依据。假设我在 2026 Winter 修过 IN4MATX43，而且已经获得这门课的学分，还能在 2026 Fall 再修 SWE43 吗？请根据课程说明回答。",
+  "started_at_utc": "2026-11-09T23:38:26.459559+00:00",
+  "model": "deepseek-v4-flash",
+  "provider_host": "api.deepseek.com",
+  "dynamic_prefilter_enabled": true,
+  "recommendation_ranking_enabled": true,
+  "state": {
+    "automatic_term": "2026 Fall",
+    "source": "code_fallback",
+    "status": "fallback",
+    "last_success_at": null,
+    "last_attempt_at": "2026-11-09T15:38:26-08:00",
+    "last_error": null,
+    "next_cutoff": null,
+    "checked_at": "2026-11-09T15:38:26.459501-08:00",
+    "cache_age_days": null,
+    "availability": null,
+    "transition": null,
+    "fallback": true,
+    "default_term": "2026 Fall",
+    "query_terms": [
+      "2026 Winter",
+      "2026 Fall"
+    ],
+    "query_term_source": "explicit",
+    "query_intent": "lookup",
+    "query_course_ids": [
+      "SWE 43",
+      "IN4MATX 43"
+    ],
+    "pending_schedule": [],
+    "completed_courses": [],
+    "selected_courses": []
+  },
+  "synthetic_context": true,
+  "max_wall_seconds": 180,
+  "max_provider_requests": 16,
+  "prompt_modified_for_test": false,
+  "application_prompt_sha256": "13e9eca9909b44d554f452374d6d9cd6348ae639177dbfd62d00d135f09fbf63",
+  "source_results_mocked": false,
+  "outcome": "completed",
+  "elapsed_seconds": 56.8152352499892,
+  "provider_requests": 4,
+  "source_http_requests": 15,
+  "default_term_unchanged": true
+}

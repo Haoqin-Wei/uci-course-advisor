@@ -293,8 +293,12 @@ def isolated_test_environment(
     anteater_programs._all_courses_token = None
     from app.catalog import course_source
     course_source.clear_cache(keep_csv=True)
+    from app.terms import availability as term_availability
+    term_availability.clear_cache()
     web_search.clear_web_search_state()
     deep_search.clear_deep_search_state()
+    from app.data import websoc_workflow
+    websoc_workflow.clear_linked_page_cache()
 
     yield runtime_paths
 

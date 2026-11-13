@@ -101,16 +101,14 @@ def run(requested_term: str | None = None) -> None:
         raise SystemExit("FAIL websoc/terms returned no parseable terms")
 
     candidate = _choose_term(requested_term, calendar_terms, websoc_terms)
-    availability = anteater.check_term_data_availability(candidate)
-    if availability.status != "ok":
+    # The same whole-term request the catalog sync makes (about 8 MB).
+    listing = anteater.fetch_full_websoc(candidate)
+    _require_ok(f"websoc {candidate.canonical_name}", listing)
+    course_count, section_count = anteater._websoc_counts(listing.data or {})
+    if not course_count or not section_count:
         raise SystemExit(
-            f"FAIL WebSoc availability probe {candidate.canonical_name}: "
-            f"status={availability.status} error={availability.error or 'unknown'}"
-        )
-    if not availability.available:
-        raise SystemExit(
-            f"FAIL WebSoc availability probe {candidate.canonical_name} is empty "
-            f"(courses={availability.course_count}, sections={availability.section_count})"
+            f"FAIL WebSoc listing {candidate.canonical_name} is empty "
+            f"(courses={course_count}, sections={section_count})"
         )
 
     print(
@@ -122,9 +120,9 @@ def run(requested_term: str | None = None) -> None:
         f"terms={len(websoc_terms)} bytes={terms.content_length}"
     )
     print(
-        f"PASS WebSoc probe term={candidate.canonical_name} "
-        f"courses={availability.course_count} sections={availability.section_count} "
-        f"bytes={availability.content_length}"
+        f"PASS WebSoc listing term={candidate.canonical_name} "
+        f"courses={course_count} sections={section_count} "
+        f"bytes={listing.content_length}"
     )
 
 

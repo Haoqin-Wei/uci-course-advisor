@@ -47,6 +47,12 @@ import time
 from pathlib import Path
 from typing import Optional
 
+# Keep direct invocation from any working directory compatible with shared
+# lossless payload helpers used by the application data adapters.
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 try:
     import requests
 except ImportError:
@@ -514,7 +520,7 @@ SECTIONS_COLUMNS = [
     "num_on_waitlist", "num_requested",
     # ── State ──
     "is_cancelled", "final_exam_json", "meetings_json",
-    "updated_at",
+    "updated_at", "comments_json", "section_comment", "payload_version",
 ]
 
 SECTION_INSTRUCTORS_COLUMNS = ["section_id", "instructor_name_raw"]
@@ -523,12 +529,13 @@ SECTION_GE_COLUMNS = ["section_id", "ge_code"]
 
 def _format_time(t: Optional[dict]) -> str:
     """{hour: 14, minute: 30} → '14:30'."""
-    if not t:
+    if not isinstance(t, dict):
         return ""
     h, m = t.get("hour"), t.get("minute")
-    if h is None or m is None:
+    if (isinstance(h, bool) or isinstance(m, bool) or not isinstance(h, int)
+            or not isinstance(m, int) or not 0 <= h <= 23 or not 0 <= m <= 59):
         return ""
-    return f"{int(h):02d}:{int(m):02d}"
+    return f"{h:02d}:{m:02d}"
 
 
 def _format_location(bldg) -> str:
@@ -552,6 +559,7 @@ def _course_number_to_numeric(course_number: str) -> int:
 def _websoc_section_to_rows(
     sec: dict, course: dict, dept: dict,
     year: int, quarter: str,
+    *, school: Optional[dict] = None,
 ) -> tuple[dict, list[dict]]:
     """Convert one websoc section into (sections_row, [section_instructor_rows])."""
     section_code = sec.get("sectionCode", "")
@@ -562,8 +570,11 @@ def _websoc_section_to_rows(
     term_id = f"{year}_{quarter}"
     course_id_csv = to_csv_course_id(department, course_number)
 
-    meetings = sec.get("meetings") or []
-    first = meetings[0] if meetings else {}
+    meetings = sec.get("meetings")
+    from app.scheduling.service import section_meetings
+    first = section_meetings({"meetings": meetings})[0]
+    from app.data.websoc_payload import cancellation_fields, course_comment_context
+    cancelled = cancellation_fields(sec.get("isCancelled"))["is_cancelled"]
 
     enrolled = sec.get("numCurrentlyEnrolled") or {}
 
@@ -582,19 +593,22 @@ def _websoc_section_to_rows(
         "units": sec.get("units", "") or "",
         "status": sec.get("status", "") or "",
         "restrictions": sec.get("restrictions", "") or "",
-        "days": first.get("days", "") or "",
-        "start_time": _format_time(first.get("startTime")),
-        "end_time": _format_time(first.get("endTime")),
-        "location": _format_location(first.get("bldg")),
-        "time_is_tba": str(bool(first.get("timeIsTBA"))).lower(),
+        "days": first.get("days") or "",
+        "start_time": first.get("start_time") or "",
+        "end_time": first.get("end_time") or "",
+        "location": first.get("location") or "",
+        "time_is_tba": str(first["time_is_tba"]).lower(),
         "max_capacity": sec.get("maxCapacity", "") or "",
         "total_enrolled": str(enrolled.get("totalEnrolled", "") or ""),
         "section_enrolled": str(enrolled.get("sectionEnrolled", "") or ""),
         "num_on_waitlist": sec.get("numOnWaitlist", "") or "",
         "num_requested": sec.get("numRequested", "") or "",
-        "is_cancelled": str(bool(sec.get("isCancelled"))).lower(),
+        "is_cancelled": "" if cancelled is None else str(cancelled).lower(),
         "final_exam_json": json.dumps(sec.get("finalExam") or {}, ensure_ascii=False),
         "meetings_json": json.dumps(meetings, ensure_ascii=False),
+        "comments_json": json.dumps(course_comment_context(school or {}, dept, course), ensure_ascii=False),
+        "section_comment": sec.get("sectionComment") if isinstance(sec.get("sectionComment"), str) else "",
+        "payload_version": "2",
         "updated_at": sec.get("updatedAt", "") or "",
     }
 
@@ -724,7 +738,7 @@ def fetch_websoc(
                     for sec in (course_block.get("sections") or []):
                         try:
                             sec_row, inst_rows = _websoc_section_to_rows(
-                                sec, course_block, dept_block, year, quarter,
+                                sec, course_block, dept_block, year, quarter, school=school,
                             )
                             all_section_rows.append(sec_row)
                             all_instructor_rows.extend(inst_rows)

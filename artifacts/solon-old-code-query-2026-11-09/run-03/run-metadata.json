@@ -1,0 +1,45 @@
+{
+  "question": "我能上swe43吗？",
+  "started_at_utc": "2026-11-10T00:02:01.460932+00:00",
+  "model": "deepseek-v4-flash",
+  "provider_host": "api.deepseek.com",
+  "dynamic_prefilter_enabled": true,
+  "recommendation_ranking_enabled": true,
+  "state": {
+    "automatic_term": "2026 Fall",
+    "source": "code_fallback",
+    "status": "fallback",
+    "last_success_at": null,
+    "last_attempt_at": "2026-11-09T16:02:01-08:00",
+    "last_error": null,
+    "next_cutoff": null,
+    "checked_at": "2026-11-09T16:02:01.460742-08:00",
+    "cache_age_days": null,
+    "availability": null,
+    "transition": null,
+    "fallback": true,
+    "default_term": "2026 Fall",
+    "query_terms": [
+      "2026 Fall"
+    ],
+    "query_term_source": "default",
+    "query_intent": "lookup",
+    "query_course_ids": [
+      "IN4MATX 43"
+    ],
+    "pending_schedule": [],
+    "completed_courses": [],
+    "selected_courses": []
+  },
+  "synthetic_context": true,
+  "max_wall_seconds": 180,
+  "max_provider_requests": 16,
+  "prompt_modified_for_test": false,
+  "application_prompt_sha256": "83baf705dbf1709e0b326884a1d2de6b20b942177db86b820553970f6c0bb49a",
+  "source_results_mocked": false,
+  "outcome": "completed",
+  "elapsed_seconds": 49.679970666999,
+  "provider_requests": 2,
+  "source_http_requests": 4,
+  "default_term_unchanged": true
+}

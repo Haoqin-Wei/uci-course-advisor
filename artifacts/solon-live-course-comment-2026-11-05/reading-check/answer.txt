@@ -1,0 +1,38 @@
+**SWE 43 · IN4MATX 43 关系核实**
+
+> **结论：需进一步信息。** 两门课同名同内容，SWE 43 的课程说明里确有“旧代码学分不得再修”的条款，但抓到的记录没有把 IN4MATX 43 明确写成旧代码 INF 43。
+
+──────────────────────────────────
+
+**课程说明原文**（Registrar WebSoc，2026 Fall，经 Anteater API 取得，retrieved 2026-11-06）
+
+SWE 43 的 course-level comment 原文：
+
+> "Previously offered as INF 43, "Intro Software Engr". Students with prior credit for INF 43, "Intro Software Engr" may not take SWE 43, "Intro Software Engr"."
+
+──────────────────────────────────
+
+**两边记录的对照**
+
+| 项目 | SWE 43 (2026 Fall) | IN4MATX 43 (2026 Winter) |
+|---|---|---|
+| 课程标题 | INTRO SOFTWARE ENGR | INTRO SOFTWARE ENGR |
+| 学分 | 4 | 4 |
+| 课程层级说明 | 有，指明旧代码 INF 43 | **空白**，无等价或重复学分说明 |
+| 显式映射到 INF 43 | 是（"previously offered as INF 43"） | **未出现** |
+
+──────────────────────────────────
+
+**依据与推断边界**
+
+- 可以确认的：SWE 43 这个课程编号本身是“前身 INF 43、同名同内容”的重新编号产物，且修过 INF 43 拿过学分的学生不得再修 SWE 43。这一条是 UCI Registrar WebSoc 的课程说明，不是我推测的。
+- 不能确认的：IN4MATX 43 是否等同 INF 43。记录里 IN4MATX 43 的 course comment 是空的，也没有任何字段把 IN4MATX 43 与 INF 43 或 SWE 43 交叉引用。两门课标题相同、学分相同、都带 Dis 讨论课、且都属 ICS 下的同名课，这是强线索，但**记录本身不足以替代学籍系统里的等同课程认定**。
+- 还有一点：同一份 Fall 2026 SWE 43 记录中，ICS 学院 comment 写明 add/drop/change grade option 的 WebReg 截止是 **2026 年 10 月 9 日（周五）17:00**。抓取时间是 2026-11-06，该窗口已过；此后只能走 StudentAccess 的 Enrollment Exception，且仅限有据可查、非学生可控的特殊情况。
+
+──────────────────────────────────
+
+**建议**
+
+分两层看。第一层是学分规则：如果你的 IN4MATX 43 学分在学籍系统里被认定为“同一门 INTRO SOFTWARE ENGR”（即等同 INF 43），按上述课程说明就**不能再修 SWE 43**，重复学分不会被计入。第二层是现实可行性：即便不考虑重复学分，2026 Fall 的常规加课截止（10/9 17:00）已过，现在也无法直接加课。另外提醒一句，SWE 43 各 section 标注的 "A" 是先修要求代码，和重复学分是两件不同的事，不要混为一谈。
+
+**下一步：** 把 IN4MATX 43 是否被 Registrar 记为 INF 43 的等同课程，向 ICS Undergraduate Student Affairs 核实一次（他们能看到学籍侧的等同课程认定），拿到答复后再判断 SWE 43 是否属于可修范围。

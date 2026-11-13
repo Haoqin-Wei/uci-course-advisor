@@ -1,0 +1,621 @@
+{
+  "found": true,
+  "source": "live_anteater_websoc",
+  "is_live": true,
+  "stale": false,
+  "stale_age_seconds": null,
+  "term": "Winter 2026",
+  "course_id": "IN4MATX 43",
+  "coverage_status": "unavailable",
+  "data_coverage": {
+    "term_id": "2026_Winter",
+    "name": "Winter 2026",
+    "coverage_status": "unavailable",
+    "section_count": 0,
+    "course_count": 0,
+    "department_count": 0,
+    "departments": [],
+    "source": "data/uci",
+    "updated_at": "2026-05-13T20:51:25.924618+00:00",
+    "schema_version": "uci-relational-v1"
+  },
+  "retrieved_at": "2026-11-06T01:10:40Z",
+  "cache_hit": false,
+  "sections": [
+    {
+      "section_code": "36015",
+      "section_num": "A5",
+      "section_type": "Dis",
+      "days": "F",
+      "start_time": "13:00",
+      "end_time": "13:50",
+      "time_display": "F 13:00-13:50",
+      "time_is_tba": false,
+      "location": "ICS 180",
+      "instructors": [
+        "NOROMBABA, J.",
+        "ZIV, H."
+      ],
+      "max_capacity": 50,
+      "enrolled": 49,
+      "seats_open": 1,
+      "waitlisted": null,
+      "status": "OPEN",
+      "is_cancelled": false,
+      "cancellation_status": "not_cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "NO_FINAL"
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "ICS 180"
+          ],
+          "days": "F",
+          "startTime": {
+            "hour": 13,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 13,
+            "minute": 50
+          }
+        }
+      ],
+      "section_comment": "",
+      "waitlist_capacity": null,
+      "new_only_reserved": null,
+      "updated_at": "2026-04-29T21:36:28.968Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_b7e79d6ebefa8f47"
+    },
+    {
+      "section_code": "36016",
+      "section_num": "A6",
+      "section_type": "Dis",
+      "days": "F",
+      "start_time": "14:00",
+      "end_time": "14:50",
+      "time_display": "F 14:00-14:50",
+      "time_is_tba": false,
+      "location": "ICS 180",
+      "instructors": [
+        "NOROMBABA, J.",
+        "ZIV, H."
+      ],
+      "max_capacity": 50,
+      "enrolled": 50,
+      "seats_open": 0,
+      "waitlisted": null,
+      "status": "FULL",
+      "is_cancelled": false,
+      "cancellation_status": "not_cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "NO_FINAL"
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "ICS 180"
+          ],
+          "days": "F",
+          "startTime": {
+            "hour": 14,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 14,
+            "minute": 50
+          }
+        }
+      ],
+      "section_comment": "",
+      "waitlist_capacity": null,
+      "new_only_reserved": null,
+      "updated_at": "2026-04-29T21:36:28.968Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_b7e79d6ebefa8f47"
+    },
+    {
+      "section_code": "36014",
+      "section_num": "A4",
+      "section_type": "Dis",
+      "days": "F",
+      "start_time": "12:00",
+      "end_time": "12:50",
+      "time_display": "F 12:00-12:50",
+      "time_is_tba": false,
+      "location": "ICS 180",
+      "instructors": [
+        "NOROMBABA, J.",
+        "ZIV, H."
+      ],
+      "max_capacity": 50,
+      "enrolled": 48,
+      "seats_open": 2,
+      "waitlisted": null,
+      "status": "OPEN",
+      "is_cancelled": false,
+      "cancellation_status": "not_cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "NO_FINAL"
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "ICS 180"
+          ],
+          "days": "F",
+          "startTime": {
+            "hour": 12,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 12,
+            "minute": 50
+          }
+        }
+      ],
+      "section_comment": "",
+      "waitlist_capacity": null,
+      "new_only_reserved": null,
+      "updated_at": "2026-04-29T21:36:28.968Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_b7e79d6ebefa8f47"
+    },
+    {
+      "section_code": "36010",
+      "section_num": "A",
+      "section_type": "Lec",
+      "days": "TuTh",
+      "start_time": "14:00",
+      "end_time": "15:20",
+      "time_display": "TuTh 14:00-15:20",
+      "time_is_tba": false,
+      "location": "ELH 100",
+      "instructors": [
+        "ZIV, H."
+      ],
+      "max_capacity": 300,
+      "enrolled": 294,
+      "seats_open": 6,
+      "waitlisted": null,
+      "status": "OPEN",
+      "is_cancelled": false,
+      "cancellation_status": "not_cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "SCHEDULED_FINAL",
+        "dayOfWeek": "Thu",
+        "month": 2,
+        "day": 19,
+        "startTime": {
+          "hour": 13,
+          "minute": 30
+        },
+        "endTime": {
+          "hour": 15,
+          "minute": 30
+        },
+        "bldg": [
+          "ELH 100"
+        ]
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "ELH 100"
+          ],
+          "days": "TuTh",
+          "startTime": {
+            "hour": 14,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 15,
+            "minute": 20
+          }
+        }
+      ],
+      "section_comment": "",
+      "waitlist_capacity": null,
+      "new_only_reserved": null,
+      "updated_at": "2026-04-29T21:36:28.968Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_b7e79d6ebefa8f47"
+    },
+    {
+      "section_code": "36011",
+      "section_num": "A1",
+      "section_type": "Dis",
+      "days": "F",
+      "start_time": "09:00",
+      "end_time": "09:50",
+      "time_display": "F 09:00-09:50",
+      "time_is_tba": false,
+      "location": "ICS 180",
+      "instructors": [
+        "KHATUN, A.",
+        "ZIV, H."
+      ],
+      "max_capacity": 50,
+      "enrolled": 47,
+      "seats_open": 3,
+      "waitlisted": null,
+      "status": "OPEN",
+      "is_cancelled": false,
+      "cancellation_status": "not_cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "NO_FINAL"
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "ICS 180"
+          ],
+          "days": "F",
+          "startTime": {
+            "hour": 9,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 9,
+            "minute": 50
+          }
+        }
+      ],
+      "section_comment": "",
+      "waitlist_capacity": null,
+      "new_only_reserved": null,
+      "updated_at": "2026-04-29T21:36:28.968Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_b7e79d6ebefa8f47"
+    },
+    {
+      "section_code": "36012",
+      "section_num": "A2",
+      "section_type": "Dis",
+      "days": "F",
+      "start_time": "10:00",
+      "end_time": "10:50",
+      "time_display": "F 10:00-10:50",
+      "time_is_tba": false,
+      "location": "ICS 180",
+      "instructors": [
+        "KHATUN, A.",
+        "ZIV, H."
+      ],
+      "max_capacity": 50,
+      "enrolled": 50,
+      "seats_open": 0,
+      "waitlisted": null,
+      "status": "FULL",
+      "is_cancelled": false,
+      "cancellation_status": "not_cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "NO_FINAL"
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "ICS 180"
+          ],
+          "days": "F",
+          "startTime": {
+            "hour": 10,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 10,
+            "minute": 50
+          }
+        }
+      ],
+      "section_comment": "",
+      "waitlist_capacity": null,
+      "new_only_reserved": null,
+      "updated_at": "2026-04-29T21:36:28.968Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_b7e79d6ebefa8f47"
+    },
+    {
+      "section_code": "36013",
+      "section_num": "A3",
+      "section_type": "Dis",
+      "days": "F",
+      "start_time": "11:00",
+      "end_time": "11:50",
+      "time_display": "F 11:00-11:50",
+      "time_is_tba": false,
+      "location": "ICS 180",
+      "instructors": [
+        "KHATUN, A.",
+        "ZIV, H."
+      ],
+      "max_capacity": 50,
+      "enrolled": 50,
+      "seats_open": 0,
+      "waitlisted": null,
+      "status": "FULL",
+      "is_cancelled": false,
+      "cancellation_status": "not_cancelled",
+      "ge_categories": [],
+      "restrictions": "A",
+      "final_exam": {
+        "examStatus": "NO_FINAL"
+      },
+      "meetings": [
+        {
+          "timeIsTBA": false,
+          "bldg": [
+            "ICS 180"
+          ],
+          "days": "F",
+          "startTime": {
+            "hour": 11,
+            "minute": 0
+          },
+          "endTime": {
+            "hour": 11,
+            "minute": 50
+          }
+        }
+      ],
+      "section_comment": "",
+      "waitlist_capacity": null,
+      "new_only_reserved": null,
+      "updated_at": "2026-04-29T21:36:28.968Z",
+      "retrieved_at": "2026-11-06T01:10:40Z",
+      "source": "live_anteater_websoc",
+      "is_live": true,
+      "comment_context_id": "comments_b7e79d6ebefa8f47"
+    }
+  ],
+  "comment_contexts": {
+    "comments_b7e79d6ebefa8f47": {
+      "school": {
+        "name": "Donald Bren School of Information and Computer Sciences",
+        "comment": "\n\t\t<p>For detailed information on ICS course restrictions, visit the ICS Course Restrictions webpage:</p>\n\t\t<p><b>Undergraduate courses:</b> <a href=\"http://ics.uci.edu/course-enrollment-restrictions/\">http://ics.uci.edu/course-enrollment-restrictions/</a></p>\n\t\t<p><b>Graduate courses:</b> <a href=\"http://ics.uci.edu/academics/graduate-academic-advising/course-updates/\">http://ics.uci.edu/academics/graduate-academic-advising/course-updates/</a></p>\n\t\t<p>It is incumbent <i>on the student</i> to check the restriction status and seating availability of a course <i>before</i> adding or attempting to change their discussion/lab section enrollment.</p>\n\t\t<p><b>COURSE PREREQUISITES ARE STRICTLY ENFORCED.</b> The School of ICS <b>WILL DROP</b> students who do not meet the required course prerequisite(s). <i>These drops may take place at any time after grades are posted until Friday of Week 2.</i> Note that meeting the prerequisites for a course does not guarantee a seat in that course.</p>\n\t\t<p><b>WAITLIST: </b> Students on the waitlist for an ICS course should be in communication with that course's instructor to arrange for access to course materials and submission of any assignments. Being on the waitlist or completing coursework DOES NOT guarantee a seat in the course.</p>\n\t\t<p><b>DEADLINES TO ADD, DROP, OR CHANGE GRADE OPTION FOR ALL SCHOOL OF ICS COURSES</b></p>\n\t\t<p><b>5:00pm on Friday of Week 1: </b> Courses with an early deadline to add/drop/change grade option are noted with a comment in the Schedule of Classes. Permission from the instructor and an authorization code will be required after Week 1 to add or drop these courses.</p>\n\t\t<p><b>5:00pm on Friday of Week 2:</b> The deadline to add/drop/change grade option in WebReg is 5:00pm on Friday, January 16, 2026 . The Bren School of ICS <i>strictly</i> adheres to and enforces this deadline for undergraduate and graduate courses.</p>\n\t\t<p><b>ADDING, DROPPING, OR CHANGING GRADE OPTION AFTER WEEK 2:</b> Students must submit an Enrollment Exception request online through StudentAccess.<i> Exception requests will only be approved for extenuating and documented circumstances outside of the student's control.</i><b> For more information on ICS policies:</b> <a href=\"http://ics.uci.edu/academics/undergraduate-academic-advising/ics-course-enrollment-policies/\">http://ics.uci.edu/academics/undergraduate-academic-advising/ics-course-enrollment-policies/</a></p>\n\t\t<p><b>GRADUATE ENROLLMENT IN UNDERGRADUATE COURSES: </b>Graduate students seeking to enroll in an ICS undergraduate level course must submit a request to ICS Undergraduate Students Affairs. Priority for seating in undergraduate courses is given first to undergraduate students. Unauthorized students found enrolled in undergraduate courses WILL BE DROPPED by ICS Student Affairs.</p>\n\t\t<p><b>UNDERGRADUATE ENROLLMENT IN GRADUATE COURSES: </b>Undergraduate students seeking to enroll in an ICS graduate level course must obtain a written permission from the instructor before submitting a request for an authorization to ICS Graduate Student Affairs. Priority for seating in graduate courses is given first to graduate students. <i>Graduate level courses taken as an undergraduate will not count toward a graduate degree program.</i></p>\n\t\t<p><b>DCE CONCURRENT ENROLLMENT:</b> Students enrolling in courses through Division of Continuing Education Programs may only request courses that show as &quot;OPEN&quot; in the Schedule of Classes. Approval of requests is contingent on seating availability and prerequisite eligibility. <b>For more information:</b> <a href=\"http://ics.uci.edu/academics/undergraduate-academic-advising/concurrent-enrollment/\">http://ics.uci.edu/academics/undergraduate-academic-advising/concurrent-enrollment/</a></p>\n\t\t\n\t    "
+      },
+      "department": {
+        "code": "IN4MATX",
+        "name": "Informatics",
+        "comment": "\n\t\t    <p><b>RESTRICTIONS:</b> Most IN4MATX courses will be initially restricted to majors in the Donald Bren School of Information and Computer Sciences ONLY. Some courses will be additionally restricted to specific majors or level(s) of standing. <b>For restriction details and timeline:</b> <a href=\"http://ics.uci.edu/course-enrollment-restrictions/\">http://ics.uci.edu/course-enrollment-restrictions/</a></p>\n\t\t    <p><b>WAITLIST: </b> Students on the waitlist for an ICS course should be in communication with that course's instructor to arrange for access to course materials and submission of any assignments. Being on the waitlist or completing coursework DOES NOT guarantee a seat in the course.</p>\n\t\t    <p><b>DISCUSSIONS &amp; LABS:</b> Discussion and lab sections begin meeting AFTER the first lecture unless otherwise specified by the course instructor. Always check for messages from your instructors before the start of instruction.</p>\n\t\t    <p>Some lab sections are scheduled in laptop instructional labs ICS 364A, ICS2 162, or ICS2 170. Students enrolled in these labs are required to bring a personal laptop to class meetings.</p>\n\t\t    <p><b>B or X Restricted Courses: </b>Courses with a B or X restriction require an authorization code from the instructor to enroll.</p>\n\t\t    \n\t\t",
+        "course_number_range_comments": [
+          "\n\t\t    <p class=\"comment-heading\">In4matx course numbers 200 - 299:</p>\n\t\t    <p>IN4MATX graduate courses will initially be restricted to majors within the Donald Bren School of Information and Computer Sciences ONLY. <b>For restriction details and timeline: </b> <a href=\"http://ics.uci.edu/academics/graduate-academic-advising/course-updates/\">http://ics.uci.edu/academics/graduate-academic-advising/course-updates/</a></p>\n\t\t    <p>The Add/Drop Deadline for all IN4MATX graduate courses is <b>5:00pm, January 16, 2026.</b><i>This deadline is strictly enforced.</i></p>\n\t\t    \n\t\t",
+          "\n\t\t    <p class=\"comment-heading\">In4matx course numbers 283 - 289:</p>\n\t\t    <p>In4matx 283 - 289  are restricted to students in the MHCID program ONLY.</p>\n\t\t    \n\t\t"
+        ],
+        "section_code_range_comments": []
+      },
+      "course": {
+        "course_id": "IN4MATX43",
+        "title": "INTRO SOFTWARE ENGR",
+        "comment": ""
+      }
+    }
+  },
+  "course_notices": [
+    {
+      "scope": "course",
+      "department": "IN4MATX",
+      "course_id": "IN4MATX43",
+      "title": "INTRO SOFTWARE ENGR",
+      "comment_context_id": "comments_b7e79d6ebefa8f47",
+      "source": "anteater_websoc",
+      "source_url": "https://anteaterapi.com/v2/rest/websoc",
+      "term": "2026 Winter",
+      "retrieved_at": "2026-11-06T01:10:40Z"
+    }
+  ],
+  "reason": null,
+  "pairing": {
+    "version": 2,
+    "course_id": "IN4MATX43",
+    "term": "2026 Winter",
+    "per_primary": {
+      "36010": {
+        "requirement": "required",
+        "required_components": [
+          {
+            "types": [
+              "Dis"
+            ],
+            "min": 1,
+            "max": 1
+          }
+        ],
+        "required_types": [
+          "Dis"
+        ],
+        "relationship": "unknown",
+        "relationship_complete": false,
+        "allowed_bundles": [],
+        "evidence": {
+          "source": "registrar_websoc",
+          "course_id": "IN4MATX43",
+          "term": "2026 Winter",
+          "source_url": "https://www.reg.uci.edu/perl/WebSoc",
+          "retrieved_at": "2026-11-06T01:14:19.868218Z",
+          "html_sha256": "a9b533dfdfa58559fb62aaa9339bd5827326bded864487f39f28d6f8f0a7dfb7",
+          "policy_id": "user_confirmed_discussion_presence",
+          "policy_version": 1,
+          "policy_source": "user_confirmed_product_policy",
+          "user_confirmed": true,
+          "co_class_references": [],
+          "needs_lookup": false,
+          "status": "verified",
+          "reason_codes": [
+            "scoped_pairing_exception_unresolved",
+            "pairing_relationship_unknown"
+          ],
+          "source_row_index": 9,
+          "boundary_row_index": 16,
+          "discussion_present": true,
+          "no_required_discussion": false,
+          "primary_code": "36010"
+        }
+      }
+    },
+    "requirement": "unknown",
+    "required_components": [],
+    "required_types": [],
+    "relationship": "unknown",
+    "relationship_complete": false,
+    "allowed_bundles": [],
+    "evidence": {
+      "source": "registrar_websoc",
+      "course_id": "IN4MATX43",
+      "term": "2026 Winter",
+      "source_url": "https://www.reg.uci.edu/perl/WebSoc",
+      "retrieved_at": "2026-11-06T01:14:19.868218Z",
+      "html_sha256": "a9b533dfdfa58559fb62aaa9339bd5827326bded864487f39f28d6f8f0a7dfb7",
+      "policy_id": "user_confirmed_discussion_presence",
+      "policy_version": 1,
+      "policy_source": "user_confirmed_product_policy",
+      "user_confirmed": true,
+      "co_class_references": [],
+      "needs_lookup": false,
+      "status": "partial"
+    }
+  },
+  "pairing_source_proof": {
+    "version": 1,
+    "source": "registrar_websoc",
+    "course_id": "IN4MATX 43",
+    "term": "2026 Winter",
+    "source_url": "https://www.reg.uci.edu/perl/WebSoc",
+    "retrieved_at": "2026-11-06T01:14:19.868218Z",
+    "html_sha256": "a9b533dfdfa58559fb62aaa9339bd5827326bded864487f39f28d6f8f0a7dfb7",
+    "policy_id": "user_confirmed_discussion_presence",
+    "policy_version": 1,
+    "policy_source": "user_confirmed_product_policy",
+    "user_confirmed": true,
+    "request_method": "POST",
+    "request_form": {
+      "Submit": "Display Web Results",
+      "YearTerm": "2026-03",
+      "ShowComments": "on",
+      "ShowFinals": "on",
+      "Breadth": "ANY",
+      "Dept": "IN4MATX",
+      "CourseNum": "43",
+      "CourseCodes": "",
+      "InstrName": "",
+      "CourseTitle": "",
+      "ClassType": "ALL",
+      "Units": "",
+      "Days": "",
+      "StartTime": "",
+      "EndTime": "",
+      "MaxCap": "",
+      "FullCourses": "ANY",
+      "FontSize": "100",
+      "CancelledCourses": "Include",
+      "Bldg": "",
+      "Room": ""
+    },
+    "response_identity_validated": true,
+    "response_document_complete": true,
+    "full_unfiltered_request": true,
+    "source_rows_fully_parsed": true,
+    "comments": [
+      {
+        "scope": "department",
+        "scope_confirmed": true,
+        "row_index": 5,
+        "text": "Informatics department comments: RESTRICTIONS: Most IN4MATX courses will be initially restricted to majors in the Donald Bren School of Information and Computer Sciences ONLY. Some courses will be additionally restricted to specific majors or level(s) of standing. For restriction details and timeline: http://ics.uci.edu/course-enrollment-restrictions/ WAITLIST: Students on the waitlist for an ICS course should be in communication with that course's instructor to arrange for access to course materials and submission of any assignments. Being on the waitlist or completing coursework DOES NOT guarantee a seat in the course. DISCUSSIONS & LABS: Discussion and lab sections begin meeting AFTER the first lecture unless otherwise specified by the course instructor. Always check for messages from your instructors before the start of instruction. Some lab sections are scheduled in laptop instructional labs ICS 364A, ICS2 162, or ICS2 170. Students enrolled in these labs are required to bring a personal laptop to class meetings. B or X Restricted Courses: Courses with a B or X restriction require an authorization code from the instructor to enroll."
+      }
+    ],
+    "section_order": [
+      {
+        "row_index": 9,
+        "course_id": "IN4MATX 43",
+        "section_code": "36010",
+        "section_type": "lec",
+        "section_num": "A",
+        "units": "4"
+      },
+      {
+        "row_index": 10,
+        "course_id": "IN4MATX 43",
+        "section_code": "36011",
+        "section_type": "dis",
+        "section_num": "A1",
+        "units": "0"
+      },
+      {
+        "row_index": 11,
+        "course_id": "IN4MATX 43",
+        "section_code": "36012",
+        "section_type": "dis",
+        "section_num": "A2",
+        "units": "0"
+      },
+      {
+        "row_index": 12,
+        "course_id": "IN4MATX 43",
+        "section_code": "36013",
+        "section_type": "dis",
+        "section_num": "A3",
+        "units": "0"
+      },
+      {
+        "row_index": 13,
+        "course_id": "IN4MATX 43",
+        "section_code": "36014",
+        "section_type": "dis",
+        "section_num": "A4",
+        "units": "0"
+      },
+      {
+        "row_index": 14,
+        "course_id": "IN4MATX 43",
+        "section_code": "36015",
+        "section_type": "dis",
+        "section_num": "A5",
+        "units": "0"
+      },
+      {
+        "row_index": 15,
+        "course_id": "IN4MATX 43",
+        "section_code": "36016",
+        "section_type": "dis",
+        "section_num": "A6",
+        "units": "0"
+      }
+    ],
+    "co_class_references": [],
+    "needs_lookup": false,
+    "co_class_base_rules": {}
+  },
+  "pairing_lookup_status": "available"
+}

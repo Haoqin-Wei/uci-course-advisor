@@ -130,6 +130,55 @@ def departments() -> list[dict]:
     return list(_departments_cache)  # defensive copy — caller may mutate
 
 
+# ── Synced requirement snapshot ──────────────────────────
+#
+# Majors, minors, specializations and the campus-wide requirement sets are
+# synced into the catalog store once per term. When a snapshot is stored it is
+# the source for the functions below; live requests remain the fallback for a
+# deployment that has not synced yet, or for an id the snapshot does not hold.
+
+def _stored_programs(kind: str) -> Optional[list[dict]]:
+    from app.catalog import program_store
+
+    if not program_store.has_programs():
+        return None
+    rows = [row for row in program_store.list_programs(kind) if row.get("name") and row.get("id")]
+    return sorted(rows, key=lambda row: row["name"].lower())
+
+
+def _stored_program(kind: str, program_id: str) -> Optional[dict]:
+    from app.catalog import program_store
+
+    return program_store.get_program(kind, program_id)
+
+
+def minors() -> list[dict]:
+    """Every minor in the synced snapshot: {id, name}. [] before the first sync."""
+    return _stored_programs("minor") or []
+
+
+def minor(program_id: str) -> Optional[dict]:
+    """Requirement tree for one minor from the synced snapshot, or None."""
+    return _stored_program("minor", program_id) if program_id else None
+
+
+def specializations(major_id: Optional[str] = None) -> list[dict]:
+    """Synced specializations ({id, majorId, name}), optionally for one major."""
+    rows = _stored_programs("specialization") or []
+    return [row for row in rows if not major_id or row.get("majorId") == major_id]
+
+
+def specialization(program_id: str) -> Optional[dict]:
+    """Requirement tree for one specialization from the synced snapshot, or None."""
+    return _stored_program("specialization", program_id) if program_id else None
+
+
+def programs_source() -> str:
+    from app.catalog import program_store
+
+    return "catalog_store" if program_store.has_programs() else "anteater_api"
+
+
 # ── Majors ───────────────────────────────────────────────
 
 def majors(
@@ -145,14 +194,17 @@ def majors(
                  specializations: [...]}.
     """
     global _majors_cache
-    if _majors_cache is None:
-        data = _get("/programs/majors") or []
-        _majors_cache = sorted(
-            (m for m in data if m.get("name") and m.get("id")),
-            key=lambda m: m["name"].lower(),
-        )
-
-    out = _majors_cache
+    stored = _stored_programs("major")
+    if stored is not None:
+        out = stored
+    else:
+        if _majors_cache is None:
+            data = _get("/programs/majors") or []
+            _majors_cache = sorted(
+                (m for m in data if m.get("name") and m.get("id")),
+                key=lambda m: m["name"].lower(),
+            )
+        out = _majors_cache
     if division:
         out = [m for m in out if m.get("division") == division]
     if type_filter:
@@ -172,6 +224,9 @@ def major(
     """
     if not program_id:
         return None
+    stored = _stored_program("major", program_id)
+    if stored is not None:
+        return stored
     if program_id in _major_detail_cache:
         return _major_detail_cache[program_id]
     data = _get(
@@ -229,6 +284,9 @@ def extra_requirements(kind: str) -> Optional[dict]:
 
 
 def _get_external(kind: str) -> Optional[dict]:
+    stored = _stored_program("ugrad_requirement", kind)
+    if stored is not None:
+        return stored
     if kind in _ext_req_cache:
         return _ext_req_cache[kind]
     data = _get("/programs/ugradRequirements", params={"id": kind})

@@ -1,0 +1,27 @@
+**IN4MATX 43 → SWE 43（2026 Fall）**
+
+> **结论：前置课满足；但这门课在 2026 Fall 已不再以 IN4MATX 43 编号开课，官方课表列在 SWE 43 下。**
+
+──────────────────────────────────
+
+**编号与先修**（Registrar WebSoc / 本地课表）
+
+- 2026 Fall 官方课表里 **IN4MATX 43** 这个代码没有任何 section；同一门课现在列在 Software Engineering 系下，编号 **SWE 43**（INTRO SOFTWARE ENGR），4 学分。
+- WebSoc 课程备注原文："Previously offered as **INF 43**, 'Intro Software Engr'. Students with prior credit for INF 43, 'Intro Software Engr' may not take SWE 43"。备注里的 "INF 43" 经部门别名规则对应到 IN4MATX 43 —— 即旧代码是 INF 43，课程本身没变。
+- 先修要求是 I&C SCI 32 或 H32（最低 D-），你已修 **I&C SCI 32（B+）**，判定为 **已满足**，无需 H32。
+- 你只修过 ICS 32，没有 INF 43 的记录，所以上面那条 prior-credit 禁修限制对你不适用。
+
+──────────────────────────────────
+
+**选课要看的两点**
+
+- **输入的是 SWE 43 的 5 位代码**，不是 IN4MATX 43。课表上有两个讲座：Lec A（37500, TuTh 18:30–19:50, Gillespie）、Lec B（37510, TuTh 11:00–12:20, Mannan）。课表同时列出了 Dis 段，按当前产品策略即需配一个讨论课；A4、A5、B2、B3、B5 这几个 Dis 已满或已取消。
+- **专业限制未核实**：课程元数据写的是 CS/CSE 与 ICS 学生优先，但你的档案里没有记录专业（只有已完成课程），所以这条我无法替你判断。若你不是 ICS/CSE 相关专业，需要去 ICS enrollment restrictions 页面确认该课是否已对非 ICS 学生开放。
+
+──────────────────────────────────
+
+**时间风险**
+
+按 WebSoc 上 ICS 的说明，2026 Fall 增退课/改评分方式的 WebReg 截止时间是 **2026 年 10 月 9 日（周五）17:00**，已经过去。也就是说本学期这门课现在只能走 Enrollment Exception，且仅限有据可查的特殊情况——上面的空位数字只能作为参考，不代表你能加进去。
+
+**下一步：** 你的专业是哪个？告诉我，我帮你确认 SWE 43 的专业限制是否对你有影响。

@@ -299,7 +299,7 @@ def build_runtime_context(
         "  <rule>query_terms apply only to the current question.</rule>\n"
         "  <rule>Never change default_term from user text or tool calls.</rule>\n"
         "  <rule>Use only query_terms for term-scoped tools.</rule>\n"
-        "  <rule>current_term is the real ongoing quarter; default_term is only a planning fallback. They can differ after Week 8.</rule>\n"
+        "  <rule>current_term is the real ongoing quarter; default_term is only a planning fallback. They can differ once the next term's timetable is published, and always from Week 7.</rule>\n"
         "  <rule>State the queried year and quarter. For inferred_year, explicitly state the year assumption.</rule>\n"
         "  <rule>Use get_course_offerings for opening/professor comparisons and offering_pattern; query every listed term.</rule>\n"
         "  <rule>Historical reference is evidence, never a replacement for the user's target term or discussion focus.</rule>\n"

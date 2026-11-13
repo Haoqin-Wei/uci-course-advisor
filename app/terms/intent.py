@@ -23,7 +23,12 @@ the provided deterministic scope win. The UI default never overrides user
 intent. A follow-up such as 'and ICS 32?', 'same for that course', 'continue'
 inherits discussion terms; an unrelated new question uses default_term.
 An offering_pattern asks when a course usually runs or whether it is only
-offered in one season; it examines the six recent completed regular terms.
+offered in one season. Asking when enrollment opens to other majors, when a
+restriction is lifted, or who may enroll is NOT an offering_pattern: it is a
+lookup for the default term unless the user named another term. An explicit year range wins: examine Fall, Winter and
+Spring within those years; never replace it with a recent-history window.
+Only when no range or specific target was given, examine the six recent
+completed regular terms. Preserve deterministic explicit-range terms.
 Missing years: use discussion context if relevant, otherwise the current or
 upcoming occurrence of the named quarter; past tense uses the past occurrence.
 Keep the user's target term even when its timetable has not been published.
@@ -56,19 +61,27 @@ async def refine_query_scope(
         )
         plan = adapter._parse_json_response(raw)
         return apply_semantic_plan(scope, plan, default_term=default_term,
-                                   current_term=current_term, focus=focus)
+                                   current_term=current_term, focus=focus, message=message)
     except (Exception, asyncio.TimeoutError):
         logger.info("Temporal semantic resolution unavailable; using deterministic scope")
         return scope
 
 
 def apply_semantic_plan(scope: QueryScope, plan: dict | None, *, default_term: str,
-                        current_term: str | None, focus: dict | None) -> QueryScope:
-    if scope.explicit or scope.source == "relative":
+                        current_term: str | None, focus: dict | None,
+                        message: str | None = None) -> QueryScope:
+    if (scope.explicit or scope.source in {"relative", "history"}
+            or scope.source == "followup" and scope.intent == "offering_pattern"):
         return scope
     if not isinstance(plan, dict) or plan.get("intent") not in {"lookup", "comparison", "offering_pattern"}:
         return scope
     if plan["intent"] == "offering_pattern":
+        # "When does it open to other majors?" is about enrollment rules for the
+        # term being planned, not about which quarters a course runs in. The
+        # six-term history window would exclude exactly the term that matters.
+        from app.data.restriction_timeline import is_enrollment_restriction_question
+        if message and is_enrollment_restriction_question(message):
+            return scope
         anchor = parse_term_key(current_term or default_term)
         if anchor.kind != "single" or not anchor.terms[0].is_regular:
             return scope

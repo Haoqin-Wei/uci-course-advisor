@@ -1,0 +1,29 @@
+{
+  "scope": "old-code discovery and prerequisite evidence, not full enrollment or deployed-site acceptance",
+  "offline": {
+    "passed": 1510,
+    "skipped": 5,
+    "deselected": 2,
+    "focused_after_last_guard_change": 57
+  },
+  "runs": {
+    "run-06": {
+      "real_model": "deepseek-v4-flash",
+      "provider_requests": 3,
+      "relationship_core_passed": true,
+      "prerequisite_tool_met": true,
+      "default_unchanged": true,
+      "full_enrollment_answer_passed": "not_assessed",
+      "note": "old code alone discovers SWE43; ICS32 B+ confirmed"
+    },
+    "run-07": {
+      "real_model": "deepseek-v4-flash",
+      "provider_requests": 2,
+      "relationship_core_passed": true,
+      "prerequisite_tool_met": true,
+      "default_unchanged": true,
+      "full_enrollment_answer_passed": false,
+      "note": "run-07 headline overstates eligibility despite unknown major/pairing; retained as a limitation"
+    }
+  }
+}

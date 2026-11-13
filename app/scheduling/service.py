@@ -8,6 +8,7 @@ bundle validation will build on this surface in M3.2.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Callable, Iterable, Literal, Optional
 
 
@@ -109,10 +110,15 @@ def meeting_time_minutes(start, end) -> tuple[Optional[int], Optional[int]]:
 def normalize_section_meeting(section: dict) -> dict:
     """Normalize copied source/legacy records, without changing their evidence text."""
     result = dict(section)
-    start, end = meeting_time_minutes(section.get("start_time"), section.get("end_time"))
-    if start is not None and end is not None:
-        result["start_time"] = f"{start // 60:02d}:{start % 60:02d}"
-        result["end_time"] = f"{end // 60:02d}:{end % 60:02d}"
+    first = section_meetings(section)[0]
+    # Keep the original meeting array and its extra source fields intact. Flat
+    # fields remain a compatibility view of the first authoritative meeting.
+    if section.get("meetings") is not None:
+        for field in ("days", "start_time", "end_time", "location", "time_is_tba"):
+            result[field] = first[field]
+    elif first["start_time"] is not None and first["end_time"] is not None:
+        result["start_time"] = first["start_time"]
+        result["end_time"] = first["end_time"]
     return result
 
 
@@ -129,7 +135,63 @@ def _section_time_is_tba(section: dict) -> bool:
         section.get("end_time"),
         section.get("time_display"),
     )
-    return any(str(value or "").strip().upper() == "TBA" for value in fields)
+    return any(str(value or "").strip().upper() in {"TBA", "TBD", "UNKNOWN"} for value in fields)
+
+
+def _meeting_clock(value) -> str | None:
+    """Read API clock objects without inventing missing hours or minutes."""
+    if isinstance(value, Mapping):
+        hour, minute = value.get("hour"), value.get("minute")
+        if (isinstance(hour, bool) or isinstance(minute, bool)
+                or not isinstance(hour, int) or not isinstance(minute, int)
+                or not 0 <= hour <= 23 or not 0 <= minute <= 59):
+            return None
+        return f"{hour:02d}:{minute:02d}"
+    return value if isinstance(value, str) else None
+
+
+def _meeting_days(value) -> str | None:
+    if not isinstance(value, str):
+        return None
+    days = parse_day_codes(value)
+    compact = "".join(char for char in value if char not in " ,/-\t\r\n")
+    return "".join(days) if days and "".join(days) == compact else None
+
+
+def section_meetings(section: Mapping) -> list[dict]:
+    """Return every meeting with canonical fields, preserving source extras.
+
+    An explicit empty/malformed array is missing schedule evidence, not a
+    license to reuse stale flat fields. Only absent/None arrays use the
+    legacy single-meeting representation. Unknown rows remain explicit so
+    callers cannot mistake an empty iteration for a verified clear schedule.
+    """
+    raw = section.get("meetings")
+    if raw is None:
+        rows = [section]
+    elif isinstance(raw, (list, tuple)) and raw:
+        rows = raw
+    else:
+        rows = [{}]
+    meetings = []
+    for row in rows:
+        source = row if isinstance(row, Mapping) else {}
+        days = _meeting_days(source.get("days"))
+        start_raw = source.get("start_time") if "start_time" in source else source.get("startTime")
+        end_raw = source.get("end_time") if "end_time" in source else source.get("endTime")
+        start, end = meeting_time_minutes(_meeting_clock(start_raw), _meeting_clock(end_raw))
+        location = source.get("location") if "location" in source else source.get("bldg")
+        if isinstance(location, (list, tuple)):
+            location = ", ".join(item for item in location if isinstance(item, str))
+        elif not isinstance(location, str):
+            location = None
+        tba = (_section_time_is_tba(source) or _truthy(source.get("timeIsTBA"))
+               or days is None or start is None or end is None)
+        meetings.append({**dict(source), "days": days,
+                         "start_time": f"{start // 60:02d}:{start % 60:02d}" if start is not None else None,
+                         "end_time": f"{end // 60:02d}:{end % 60:02d}" if end is not None else None,
+                         "location": location, "time_is_tba": tba})
+    return meetings
 
 
 def section_time_status(a: dict, b: dict) -> SectionTimeStatus:
@@ -145,22 +207,20 @@ def section_time_status(a: dict, b: dict) -> SectionTimeStatus:
     term_b = str(b.get("term") or "").strip()
     if term_a and term_b and term_a != term_b:
         return "clear"
-    if _section_time_is_tba(a) or _section_time_is_tba(b):
-        return "unknown"
-
-    days_a = parse_days(a.get("days") or "")
-    days_b = parse_days(b.get("days") or "")
-    if not days_a or not days_b:
-        return "unknown"
-    if not (days_a & days_b):
-        return "clear"
-
-    start_a, end_a = meeting_time_minutes(a.get("start_time"), a.get("end_time"))
-    start_b, end_b = meeting_time_minutes(b.get("start_time"), b.get("end_time"))
-    if None in (start_a, end_a, start_b, end_b):
-        return "unknown"
-
-    return "conflict" if start_a < end_b and start_b < end_a else "clear"
+    meetings_a, meetings_b = section_meetings(a), section_meetings(b)
+    unknown = any(meeting["time_is_tba"] for meeting in (*meetings_a, *meetings_b))
+    for left in meetings_a:
+        for right in meetings_b:
+            if left["time_is_tba"] or right["time_is_tba"]:
+                continue
+            if not (parse_days(left["days"]) & parse_days(right["days"])):
+                continue
+            start_a, end_a = meeting_time_minutes(left["start_time"], left["end_time"])
+            start_b, end_b = meeting_time_minutes(right["start_time"], right["end_time"])
+            if start_a < end_b and start_b < end_a:
+                # A proven conflict is still a conflict if another meeting is TBA.
+                return "conflict"
+    return "unknown" if unknown else "clear"
 
 
 def sections_overlap(a: dict, b: dict) -> bool:
@@ -235,6 +295,7 @@ def build_pending_schedule_bundle_items(
     """
     entries_by_course: dict[tuple[str, str], list[dict]] = {}
     sections_by_course: dict[tuple[str, str], list[dict]] = {}
+    pairing_by_course: dict[tuple[str, str], dict] = {}
 
     for entry in pending_schedule or []:
         if not isinstance(entry, dict):
@@ -259,6 +320,9 @@ def build_pending_schedule_bundle_items(
                 envelope = section_lookup(course_id, entry_term)
             except Exception:
                 envelope = {}
+            from app.recommendations.pairing import contract_enabled, normalize_pairing_evidence
+            if "pairing" in envelope or contract_enabled():
+                pairing_by_course[course_key] = normalize_pairing_evidence({**envelope, "course_id": course_id}, term=entry_term)
             raw_sections = envelope.get("sections", []) if envelope.get("found") else []
             sections_by_course[course_key] = [
                 _with_course_id(section, course_id, term=entry_term)
@@ -326,7 +390,14 @@ def build_pending_schedule_bundle_items(
             "term": entry_term,
             "selected_sections": selected_sections,
         }
-        if primaries and secondaries:
+        if (entry_term, course_id) in pairing_by_course:
+            from app.recommendations.pairing import pairing_for_primary, verify_selection
+            pairing = pairing_by_course[(entry_term, course_id)]
+            item["selection_verification"] = verify_selection(pairing, selected_sections)
+            item["pairing"] = pairing_for_primary(pairing, item["selection_verification"]["primary_code"])
+            if item["pairing"]["version"] == 2:
+                item["pairing_selected"] = item["pairing"]
+        elif primaries and secondaries:
             item["requires_secondary"] = True
             item["secondary_type"] = _secondary_type_label(
                 {"course_id": course_id},
@@ -351,6 +422,12 @@ def _section_code(section: dict) -> str:
 
 
 def _format_meeting_window(section: dict) -> str:
+    if section.get("meetings") is not None:
+        return " / ".join(
+            (f"{meeting['days'] or 'TBA'} TBA" if meeting["time_is_tba"] else
+             f"{meeting['days']} {meeting['start_time']}\u2013{meeting['end_time']}")
+            for meeting in section_meetings(section)
+        )
     days = section.get("days") or "TBA"
     start = section.get("start_time") or "?"
     end = section.get("end_time") or "?"
@@ -391,7 +468,7 @@ def _section_summary(section: dict) -> dict:
 
 
 def _section_has_unknown_time(section: dict) -> bool:
-    return section_time_status(section, section) == "unknown"
+    return any(meeting["time_is_tba"] for meeting in section_meetings(section))
 
 
 def _with_course_id(
@@ -530,6 +607,10 @@ def _selected_sections_for_item(item: dict) -> list[dict]:
                 or _section_num(section) == primary_code
             ]
             if primary:
+                if "pairing" in item:
+                    selected_codes = (item.get("selection_verification") or {}).get("selected_secondary_codes") or []
+                    primary.extend(section for section in normalized
+                                   if _section_code(section) in selected_codes and section not in primary)
                 return primary
         return normalized[:1] if len(normalized) == 1 else normalized
 
@@ -681,9 +762,27 @@ def _section_status_key(section: dict) -> str:
 def _section_is_cancelled(section: dict) -> bool:
     return (
         _truthy(section.get("is_cancelled"))
+        or _truthy(section.get("isCancelled"))
         or _truthy(section.get("cancelled"))
         or _section_status_key(section) in {"CANCELLED", "CANCELED"}
     )
+
+
+def section_cancellation_status(section: Mapping) -> Literal["cancelled", "not_cancelled", "unknown"]:
+    """Preserve explicit unknown API cancellation without changing old fixtures."""
+    if _section_is_cancelled(section):
+        return "cancelled"
+    for field in ("is_cancelled", "isCancelled", "cancelled"):
+        if field in section:
+            value = section[field]
+            if (value is False
+                    or isinstance(value, str) and value.strip().lower() in {"false", "0", "no", "n"}
+                    or type(value) is int and value == 0):
+                return "not_cancelled"
+            return "unknown"
+    # Legacy records predate this field. An explicit None from a newer source
+    # is materially different from that absent compatibility field.
+    return "not_cancelled"
 
 
 def _section_is_full(section: dict) -> bool:
@@ -737,6 +836,16 @@ def _section_availability_issues(section: dict, scope: str) -> tuple[list[dict],
             )
         )
         return conflicts, warnings
+
+    if section_cancellation_status(section) == "unknown":
+        warnings.append(
+            _single_section_issue(
+                "section_status_unknown",
+                scope,
+                f"{subject} cancellation status is unknown",
+                section,
+            )
+        )
 
     if _section_is_full(section):
         conflicts.append(
@@ -796,6 +905,7 @@ def validate_schedule_bundle(
     warnings: list[dict] = []
     conflicts: list[dict] = []
     unknowns: list[dict] = []
+    pairing_results: list[dict] = []
 
     bundle_sections: list[dict] = []
     for item in recommended_items or []:
@@ -807,9 +917,28 @@ def validate_schedule_bundle(
             unknowns.append(_missing_section_unknown(course_id))
             continue
         bundle_sections.extend(selected_sections)
-        pairing_conflict = _incomplete_pairing_conflict(item, selected_sections)
-        if pairing_conflict:
-            conflicts.append(pairing_conflict)
+        if "pairing" in item:
+            from app.recommendations.pairing import normalize_pairing_evidence, pairing_for_primary, verify_selection
+            pairing = normalize_pairing_evidence(item, term=item.get("term"), primary_code=item.get("primary_code"))
+            selection = verify_selection(pairing, selected_sections, primary_code=item.get("primary_code"))
+            pairing = pairing_for_primary(pairing, selection["primary_code"])
+            pairing_result = {"course_id": course_id, "term": item.get("term"),
+                              "pairing": pairing, "selection_verification": selection}
+            if pairing["version"] == 2:
+                pairing_result["pairing_selected"] = pairing
+            pairing_results.append(pairing_result)
+            issue = {"type": "pairing_unknown" if selection["status"] == "unknown" else "incomplete_pairing",
+                     "scope": "bundle", "message": f"{course_id}: pairing {selection['status']}",
+                     "reason_codes": selection["reason_codes"],
+                     "sections": [_section_summary(section) for section in selected_sections]}
+            if selection["status"] == "unknown":
+                unknowns.append(issue)
+            elif selection["status"] == "unsatisfied":
+                conflicts.append(issue)
+        else:
+            pairing_conflict = _incomplete_pairing_conflict(item, selected_sections)
+            if pairing_conflict:
+                conflicts.append(pairing_conflict)
         for section in selected_sections:
             section_conflicts, section_warnings = _section_availability_issues(
                 section,
@@ -949,6 +1078,7 @@ def validate_schedule_bundle(
         "warnings": warnings,
         "conflicts": conflicts,
         "unknowns": unknowns,
+        **({"pairing": pairing_results} if pairing_results else {}),
     }
 
 

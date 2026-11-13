@@ -18,9 +18,10 @@ The reference term is fetched once; past listings do not change. A failed
 attempt is retried after an hour at the earliest, or after six hours when
 usable rows are already stored.
 
-The course catalogue (titles, prerequisites, GE labels, …) is one snapshot for
-all terms. It is fetched once per term: whenever a tracked term's timetable was
-first published after the catalogue was last synced.
+The course catalogue (titles, prerequisites, GE labels, …) and the degree
+requirements (majors, minors, specializations, GE and UC sets) are each one
+snapshot for all terms. Each is fetched once per term: whenever a tracked
+term's timetable was first published after that snapshot was last synced.
 
 ``plan_due`` and the ``is_*_due`` functions are pure; ``run_due`` adds the
 calendar lookup and the actual sync calls.
@@ -36,8 +37,9 @@ from pathlib import Path
 from typing import Callable, Iterable, Mapping, Optional
 
 from app import observability
-from app.catalog import course_store, store
+from app.catalog import course_store, program_store, store
 from app.catalog.course_sync import sync_courses
+from app.catalog.program_sync import sync_programs
 from app.catalog.sync import SyncResult, sync_term
 
 logger = logging.getLogger(__name__)
@@ -102,19 +104,20 @@ def is_due(term: TrackedTerm, snapshot: Optional[Mapping], now: datetime) -> boo
 
 def is_course_sync_due(
     snapshot: Optional[Mapping], now: datetime, *, latest_publication: Optional[datetime] = None,
+    count_key: str = "course_count",
 ) -> bool:
-    """Whether the whole course catalogue should be fetched now.
+    """Whether a once-per-term snapshot (course catalogue, degree requirements) is due.
 
     ``latest_publication`` is when a tracked term's timetable most recently
-    appeared for the first time. A catalogue older than that predates the new
-    term's courses.
+    appeared for the first time. A snapshot older than that predates the new
+    term. ``count_key`` names the snapshot's row-count field.
     """
     if snapshot is None:
         return True
     attempted = _parse(snapshot.get("last_attempt_at"))
     if not _older_than(attempted, RETRY_INTERVAL, now):
         return False
-    if not int(snapshot.get("course_count") or 0):
+    if not int(snapshot.get(count_key) or 0):
         return True
     if snapshot.get("last_error") and not _older_than(attempted, PROBE_INTERVAL, now):
         return False
@@ -196,21 +199,21 @@ def _latest_publication(tracked, path) -> Optional[datetime]:
     return max(stamps) if stamps else None
 
 
-def _sync_courses_if_due(now, tracked, course_syncer, path) -> None:
+def _sync_snapshot_if_due(name, snapshot, count_key, syncer, now, latest, path) -> None:
+    """Run one once-per-term sync (course catalogue or degree requirements) when due."""
     try:
-        latest = _latest_publication(tracked, path)
-        if not is_course_sync_due(course_store.get_course_snapshot(path=path), now, latest_publication=latest):
+        if not is_course_sync_due(snapshot, now, latest_publication=latest, count_key=count_key):
             return
-        outcome = course_syncer(path=path)
+        outcome = syncer(path=path)
     except Exception as exc:
-        observability.increment("catalog.course_sync", result="error")
-        observability.log_event(logger, logging.WARNING, "catalog_course_sync_error",
+        observability.increment(f"catalog.{name}_sync", result="error")
+        observability.log_event(logger, logging.WARNING, f"catalog_{name}_sync_error",
                                 error=f"{type(exc).__name__}: {exc}")
         return
-    observability.increment("catalog.course_sync", result=outcome.outcome)
+    observability.increment(f"catalog.{name}_sync", result=outcome.outcome)
     observability.log_event(
-        logger, logging.INFO if outcome.ok else logging.WARNING, "catalog_course_sync",
-        outcome=outcome.outcome, courses=outcome.course_count, pages=outcome.pages, error=outcome.error,
+        logger, logging.INFO if outcome.ok else logging.WARNING, f"catalog_{name}_sync",
+        outcome=outcome.outcome, rows=getattr(outcome, count_key, None), error=outcome.error,
     )
 
 
@@ -220,12 +223,14 @@ def run_due(
     service=None,
     syncer: Callable[..., SyncResult] = sync_term,
     course_syncer: Optional[Callable] = sync_courses,
+    program_syncer: Optional[Callable] = sync_programs,
     path: Optional[Path] = None,
 ) -> list[SyncResult]:
-    """Sync every tracked term that is due, then the course catalogue if due.
+    """Sync every tracked term that is due, then the once-per-term snapshots if due.
 
     Returns the term results. Safe to call often; never raises. Pass
-    ``course_syncer=None`` to leave the course catalogue alone.
+    ``course_syncer=None`` / ``program_syncer=None`` to leave the course
+    catalogue / the degree requirements alone.
     """
     if not _run_lock.acquire(blocking=False):
         return []  # Another pass is still downloading.
@@ -255,8 +260,17 @@ def run_due(
                 term=term.term_id, role=term.role, outcome=result.outcome, status=result.status,
                 sections=result.section_count, error=result.error,
             )
-        if course_syncer is not None:
-            _sync_courses_if_due(now, tracked, course_syncer, path)
+        if course_syncer is not None or program_syncer is not None:
+            try:
+                latest = _latest_publication(tracked, path)
+            except Exception:
+                latest = None
+            if course_syncer is not None:
+                _sync_snapshot_if_due("course", course_store.get_course_snapshot(path=path),
+                                      "course_count", course_syncer, now, latest, path)
+            if program_syncer is not None:
+                _sync_snapshot_if_due("program", program_store.get_program_snapshot(path=path),
+                                      "program_count", program_syncer, now, latest, path)
         return results
     finally:
         _run_lock.release()

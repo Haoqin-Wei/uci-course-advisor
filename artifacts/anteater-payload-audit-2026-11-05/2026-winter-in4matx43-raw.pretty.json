@@ -1,0 +1,366 @@
+{
+  "ok": true,
+  "data": {
+    "schools": [
+      {
+        "departments": [
+          {
+            "courses": [
+              {
+                "sections": [
+                  {
+                    "units": "0",
+                    "status": "OPEN",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "ICS 180"
+                        ],
+                        "days": "F",
+                        "startTime": {
+                          "hour": 13,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 13,
+                          "minute": 50
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "NO_FINAL"
+                    },
+                    "sectionNum": "A5",
+                    "instructors": [
+                      "NOROMBABA, J.",
+                      "ZIV, H."
+                    ],
+                    "maxCapacity": "50",
+                    "sectionCode": "36015",
+                    "sectionType": "Dis",
+                    "numRequested": "51",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "",
+                    "sectionComment": "",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "49",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": false,
+                    "updatedAt": "2026-04-29T21:36:28.968Z",
+                    "webURL": ""
+                  },
+                  {
+                    "units": "0",
+                    "status": "FULL",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "ICS 180"
+                        ],
+                        "days": "F",
+                        "startTime": {
+                          "hour": 14,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 14,
+                          "minute": 50
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "NO_FINAL"
+                    },
+                    "sectionNum": "A6",
+                    "instructors": [
+                      "NOROMBABA, J.",
+                      "ZIV, H."
+                    ],
+                    "maxCapacity": "50",
+                    "sectionCode": "36016",
+                    "sectionType": "Dis",
+                    "numRequested": "51",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "",
+                    "sectionComment": "",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "50",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": false,
+                    "updatedAt": "2026-04-29T21:36:28.968Z",
+                    "webURL": ""
+                  },
+                  {
+                    "units": "0",
+                    "status": "OPEN",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "ICS 180"
+                        ],
+                        "days": "F",
+                        "startTime": {
+                          "hour": 12,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 12,
+                          "minute": 50
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "NO_FINAL"
+                    },
+                    "sectionNum": "A4",
+                    "instructors": [
+                      "NOROMBABA, J.",
+                      "ZIV, H."
+                    ],
+                    "maxCapacity": "50",
+                    "sectionCode": "36014",
+                    "sectionType": "Dis",
+                    "numRequested": "57",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "",
+                    "sectionComment": "",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "48",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": false,
+                    "updatedAt": "2026-04-29T21:36:28.968Z",
+                    "webURL": ""
+                  },
+                  {
+                    "units": "4",
+                    "status": "OPEN",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "ELH 100"
+                        ],
+                        "days": "TuTh",
+                        "startTime": {
+                          "hour": 14,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 15,
+                          "minute": 20
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "SCHEDULED_FINAL",
+                      "dayOfWeek": "Thu",
+                      "month": 2,
+                      "day": 19,
+                      "startTime": {
+                        "hour": 13,
+                        "minute": 30
+                      },
+                      "endTime": {
+                        "hour": 15,
+                        "minute": 30
+                      },
+                      "bldg": [
+                        "ELH 100"
+                      ]
+                    },
+                    "sectionNum": "A",
+                    "instructors": [
+                      "ZIV, H."
+                    ],
+                    "maxCapacity": "300",
+                    "sectionCode": "36010",
+                    "sectionType": "Lec",
+                    "numRequested": "371",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "",
+                    "sectionComment": "",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "294",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": false,
+                    "updatedAt": "2026-04-29T21:36:28.968Z",
+                    "webURL": "https://canvas.eee.uci.edu/courses/sis_course_id:CourseSpace-Section-W26-36010/assignments/syllabus"
+                  },
+                  {
+                    "units": "0",
+                    "status": "OPEN",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "ICS 180"
+                        ],
+                        "days": "F",
+                        "startTime": {
+                          "hour": 9,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 9,
+                          "minute": 50
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "NO_FINAL"
+                    },
+                    "sectionNum": "A1",
+                    "instructors": [
+                      "KHATUN, A.",
+                      "ZIV, H."
+                    ],
+                    "maxCapacity": "50",
+                    "sectionCode": "36011",
+                    "sectionType": "Dis",
+                    "numRequested": "38",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "",
+                    "sectionComment": "",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "47",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": false,
+                    "updatedAt": "2026-04-29T21:36:28.968Z",
+                    "webURL": ""
+                  },
+                  {
+                    "units": "0",
+                    "status": "FULL",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "ICS 180"
+                        ],
+                        "days": "F",
+                        "startTime": {
+                          "hour": 10,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 10,
+                          "minute": 50
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "NO_FINAL"
+                    },
+                    "sectionNum": "A2",
+                    "instructors": [
+                      "KHATUN, A.",
+                      "ZIV, H."
+                    ],
+                    "maxCapacity": "50",
+                    "sectionCode": "36012",
+                    "sectionType": "Dis",
+                    "numRequested": "58",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "",
+                    "sectionComment": "",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "50",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": false,
+                    "updatedAt": "2026-04-29T21:36:28.968Z",
+                    "webURL": ""
+                  },
+                  {
+                    "units": "0",
+                    "status": "FULL",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "ICS 180"
+                        ],
+                        "days": "F",
+                        "startTime": {
+                          "hour": 11,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 11,
+                          "minute": 50
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "NO_FINAL"
+                    },
+                    "sectionNum": "A3",
+                    "instructors": [
+                      "KHATUN, A.",
+                      "ZIV, H."
+                    ],
+                    "maxCapacity": "50",
+                    "sectionCode": "36013",
+                    "sectionType": "Dis",
+                    "numRequested": "53",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "",
+                    "sectionComment": "",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "50",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": false,
+                    "updatedAt": "2026-04-29T21:36:28.968Z",
+                    "webURL": ""
+                  }
+                ],
+                "deptCode": "IN4MATX",
+                "courseTitle": "INTRO SOFTWARE ENGR",
+                "courseNumber": "43",
+                "courseId": "IN4MATX43",
+                "courseComment": "",
+                "prerequisiteLink": "https://www.reg.uci.edu/cob/prrqcgi?term=202603&dept=IN4MATX&action=view_by_term#43",
+                "updatedAt": "2026-04-29T21:36:28.968Z"
+              }
+            ],
+            "deptCode": "IN4MATX",
+            "deptName": "Informatics",
+            "deptComment": "\n\t\t    <p><b>RESTRICTIONS:</b> Most IN4MATX courses will be initially restricted to majors in the Donald Bren School of Information and Computer Sciences ONLY. Some courses will be additionally restricted to specific majors or level(s) of standing. <b>For restriction details and timeline:</b> <a href=\"http://ics.uci.edu/course-enrollment-restrictions/\">http://ics.uci.edu/course-enrollment-restrictions/</a></p>\n\t\t    <p><b>WAITLIST: </b> Students on the waitlist for an ICS course should be in communication with that course's instructor to arrange for access to course materials and submission of any assignments. Being on the waitlist or completing coursework DOES NOT guarantee a seat in the course.</p>\n\t\t    <p><b>DISCUSSIONS &amp; LABS:</b> Discussion and lab sections begin meeting AFTER the first lecture unless otherwise specified by the course instructor. Always check for messages from your instructors before the start of instruction.</p>\n\t\t    <p>Some lab sections are scheduled in laptop instructional labs ICS 364A, ICS2 162, or ICS2 170. Students enrolled in these labs are required to bring a personal laptop to class meetings.</p>\n\t\t    <p><b>B or X Restricted Courses: </b>Courses with a B or X restriction require an authorization code from the instructor to enroll.</p>\n\t\t    \n\t\t",
+            "sectionCodeRangeComments": [],
+            "courseNumberRangeComments": [
+              "\n\t\t    <p class=\"comment-heading\">In4matx course numbers 200 - 299:</p>\n\t\t    <p>IN4MATX graduate courses will initially be restricted to majors within the Donald Bren School of Information and Computer Sciences ONLY. <b>For restriction details and timeline: </b> <a href=\"http://ics.uci.edu/academics/graduate-academic-advising/course-updates/\">http://ics.uci.edu/academics/graduate-academic-advising/course-updates/</a></p>\n\t\t    <p>The Add/Drop Deadline for all IN4MATX graduate courses is <b>5:00pm, January 16, 2026.</b><i>This deadline is strictly enforced.</i></p>\n\t\t    \n\t\t",
+              "\n\t\t    <p class=\"comment-heading\">In4matx course numbers 283 - 289:</p>\n\t\t    <p>In4matx 283 - 289  are restricted to students in the MHCID program ONLY.</p>\n\t\t    \n\t\t"
+            ],
+            "updatedAt": "2026-04-29T21:36:28.968Z"
+          }
+        ],
+        "schoolName": "Donald Bren School of Information and Computer Sciences",
+        "schoolComment": "\n\t\t<p>For detailed information on ICS course restrictions, visit the ICS Course Restrictions webpage:</p>\n\t\t<p><b>Undergraduate courses:</b> <a href=\"http://ics.uci.edu/course-enrollment-restrictions/\">http://ics.uci.edu/course-enrollment-restrictions/</a></p>\n\t\t<p><b>Graduate courses:</b> <a href=\"http://ics.uci.edu/academics/graduate-academic-advising/course-updates/\">http://ics.uci.edu/academics/graduate-academic-advising/course-updates/</a></p>\n\t\t<p>It is incumbent <i>on the student</i> to check the restriction status and seating availability of a course <i>before</i> adding or attempting to change their discussion/lab section enrollment.</p>\n\t\t<p><b>COURSE PREREQUISITES ARE STRICTLY ENFORCED.</b> The School of ICS <b>WILL DROP</b> students who do not meet the required course prerequisite(s). <i>These drops may take place at any time after grades are posted until Friday of Week 2.</i> Note that meeting the prerequisites for a course does not guarantee a seat in that course.</p>\n\t\t<p><b>WAITLIST: </b> Students on the waitlist for an ICS course should be in communication with that course's instructor to arrange for access to course materials and submission of any assignments. Being on the waitlist or completing coursework DOES NOT guarantee a seat in the course.</p>\n\t\t<p><b>DEADLINES TO ADD, DROP, OR CHANGE GRADE OPTION FOR ALL SCHOOL OF ICS COURSES</b></p>\n\t\t<p><b>5:00pm on Friday of Week 1: </b> Courses with an early deadline to add/drop/change grade option are noted with a comment in the Schedule of Classes. Permission from the instructor and an authorization code will be required after Week 1 to add or drop these courses.</p>\n\t\t<p><b>5:00pm on Friday of Week 2:</b> The deadline to add/drop/change grade option in WebReg is 5:00pm on Friday, January 16, 2026 . The Bren School of ICS <i>strictly</i> adheres to and enforces this deadline for undergraduate and graduate courses.</p>\n\t\t<p><b>ADDING, DROPPING, OR CHANGING GRADE OPTION AFTER WEEK 2:</b> Students must submit an Enrollment Exception request online through StudentAccess.<i> Exception requests will only be approved for extenuating and documented circumstances outside of the student's control.</i><b> For more information on ICS policies:</b> <a href=\"http://ics.uci.edu/academics/undergraduate-academic-advising/ics-course-enrollment-policies/\">http://ics.uci.edu/academics/undergraduate-academic-advising/ics-course-enrollment-policies/</a></p>\n\t\t<p><b>GRADUATE ENROLLMENT IN UNDERGRADUATE COURSES: </b>Graduate students seeking to enroll in an ICS undergraduate level course must submit a request to ICS Undergraduate Students Affairs. Priority for seating in undergraduate courses is given first to undergraduate students. Unauthorized students found enrolled in undergraduate courses WILL BE DROPPED by ICS Student Affairs.</p>\n\t\t<p><b>UNDERGRADUATE ENROLLMENT IN GRADUATE COURSES: </b>Undergraduate students seeking to enroll in an ICS graduate level course must obtain a written permission from the instructor before submitting a request for an authorization to ICS Graduate Student Affairs. Priority for seating in graduate courses is given first to graduate students. <i>Graduate level courses taken as an undergraduate will not count toward a graduate degree program.</i></p>\n\t\t<p><b>DCE CONCURRENT ENROLLMENT:</b> Students enrolling in courses through Division of Continuing Education Programs may only request courses that show as &quot;OPEN&quot; in the Schedule of Classes. Approval of requests is contingent on seating availability and prerequisite eligibility. <b>For more information:</b> <a href=\"http://ics.uci.edu/academics/undergraduate-academic-advising/concurrent-enrollment/\">http://ics.uci.edu/academics/undergraduate-academic-advising/concurrent-enrollment/</a></p>\n\t\t\n\t    ",
+        "updatedAt": "2026-04-29T21:36:28.968Z"
+      }
+    ]
+  }
+}

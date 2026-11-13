@@ -422,6 +422,8 @@ def append_turn(
     cards: Optional[list] = None,
     followups: Optional[list] = None,
     web_fetches: Optional[list] = None,
+    grade_charts: Optional[list] = None,
+    prefilter: Optional[dict] = None,
     query_terms: Optional[list[str]] = None,
     query_term_source: Optional[str] = None,
     course_ids: Optional[list[str]] = None,
@@ -452,6 +454,10 @@ def append_turn(
         turn["followups"] = followups
     if web_fetches:
         turn["web_fetches"] = web_fetches
+    if grade_charts:
+        turn["grade_charts"] = grade_charts
+    if prefilter:
+        turn["prefilter"] = prefilter
     if query_terms:
         turn["query_terms"] = query_terms[:3]
     if query_term_source:

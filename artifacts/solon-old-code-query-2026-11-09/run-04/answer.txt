@@ -1,0 +1,19 @@
+**结论：资格尚未确认 —— Fall 2026 官方课表里没有 IN4MATX 43 这个代码，同一门课以 SWE 43 开出；你的先修状态也缺一条成绩证据。**
+
+**课程代码关系**（UCI 官方 WebSoc，2026 Fall）
+- 我用 WebSoc 查 IN4MATX 43，Fall 2026 无匹配记录（不是"数据缺失"，是官方课表本身的没有）。
+- 同一份课表里 SWE 43 的课程注释原文：*“Previously offered as INF 43, 'Intro Software Engr'. Students with prior credit for INF 43, 'Intro Software Engr' may not take SWE 43, 'Intro Software Engr'.”*
+- 别名规则把 INF 43 归一为 **IN4MATX 43**。所以：旧代码不再单列，课上在 **SWE 43**（Introduction to Software Engineering，4 学分）。
+
+**先修要求**
+- 目录先修：I&C SCI 32 或 I&C SCI H32 / 32A，最低 **D-**。
+- 你的档案里有 ICS32 完成记录，但**没有记录成绩**，所以系统只能给"未知"，不能替你判定达到 D-。这条要靠成绩单核实。
+
+**先修学分限制**
+- 那条"prior credit for INF 43 不得再修"只约束**已拿过 INF 43 学分**的人。你目前只有 ICS32，没有 INF 43 记录，所以这条限制对你不构成障碍。
+
+**其他待确认**
+- SWE 系注释写明：多数 SWE 课程初期只对 ICS 学院（Donald Bren School）专业开放，部分还叠加具体专业/年级限制。我这里没有你的专业信息，无法核对是否被 Rstr 卡住。
+- Fall 2026 的 ICS add/drop 截止是 **2026 年 10 月 9 日（Week 2 周五）**，已过；现在加这门课只能走 StudentAccess 的 Enrollment Exception。
+
+**下一步：** 你告诉我你的专业（或确认是否 ICS 学院），我再查 SWE 43 的专业限制解除时间。

@@ -252,14 +252,10 @@ async function openSettings() {
   const ta = document.getElementById('promptTextarea');
   const stored = getActivePrompt();
   ta.value = stored;
-  ta.placeholder = 'Loading backend default…';
+  ta.placeholder = 'Optional style or task preferences; server rules always apply.';
   updatePromptMeta();
   modal.classList.add('open');
   setTimeout(() => ta.focus(), 50);
-  await loadDefaultPromptFromAPI();
-  ta.placeholder = defaultSystemPrompt
-    ? '(empty — using backend default)'
-    : 'Backend default unavailable. Enter style or task preferences.';
 }
 
 function closeSettings(ev) {
@@ -269,16 +265,9 @@ function closeSettings(ev) {
 }
 
 async function loadDefaultPrompt() {
-  const ta = document.getElementById('promptTextarea');
+  const preview = document.getElementById('defaultPromptPreview');
   await loadDefaultPromptFromAPI();
-  if (!defaultSystemPrompt) {
-    ta.value = '';
-    document.getElementById('promptMeta').textContent =
-      'Default unavailable — leave empty to use whatever the backend chooses.';
-    return;
-  }
-  ta.value = defaultSystemPrompt;
-  updatePromptMeta();
+  preview.value = defaultSystemPrompt || 'Server rules are unavailable for viewing. They still apply to every answer.';
 }
 
 function clearPrompt() {

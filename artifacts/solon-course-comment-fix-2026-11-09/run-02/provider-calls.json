@@ -1,0 +1,34 @@
+[
+  {
+    "index": 1,
+    "started_at_utc": "2026-11-09T23:38:26.500043+00:00",
+    "model": "deepseek-v4-flash",
+    "stream": true,
+    "tool_message_count": 0,
+    "elapsed_seconds": 2.3490032500121742
+  },
+  {
+    "index": 2,
+    "started_at_utc": "2026-11-09T23:39:01.369160+00:00",
+    "model": "deepseek-v4-flash",
+    "stream": true,
+    "tool_message_count": 4,
+    "elapsed_seconds": 4.4986665829783306
+  },
+  {
+    "index": 3,
+    "started_at_utc": "2026-11-09T23:39:05.884097+00:00",
+    "model": "deepseek-v4-flash",
+    "stream": true,
+    "tool_message_count": 6,
+    "elapsed_seconds": 2.1759876669966616
+  },
+  {
+    "index": 4,
+    "started_at_utc": "2026-11-09T23:39:09.435913+00:00",
+    "model": "deepseek-v4-flash",
+    "stream": true,
+    "tool_message_count": 8,
+    "elapsed_seconds": 13.812590041023213
+  }
+]

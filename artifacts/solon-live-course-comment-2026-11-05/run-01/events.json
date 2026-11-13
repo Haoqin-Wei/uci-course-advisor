@@ -1,0 +1,294 @@
+[
+  {
+    "type": "response_mode",
+    "controlled_recommendation": true,
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_start",
+    "name": "get_course_info",
+    "args": {
+      "course_id": "SWE 43"
+    },
+    "label": "查询 SWE 43 课程信息",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "get_course_info",
+    "ok": true,
+    "label": "查询 SWE 43 课程信息",
+    "args": {
+      "course_id": "SWE 43"
+    },
+    "term_data_available": false,
+    "reused": false
+  },
+  {
+    "type": "tool_call_start",
+    "name": "get_course_info",
+    "args": {
+      "course_id": "IN4MATX 43"
+    },
+    "label": "查询 IN4MATX 43 课程信息",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "get_course_info",
+    "ok": false,
+    "label": "查询 IN4MATX 43 课程信息",
+    "args": {
+      "course_id": "IN4MATX 43"
+    },
+    "term_data_available": false,
+    "reused": false
+  },
+  {
+    "type": "tool_call_start",
+    "name": "get_policy",
+    "args": {},
+    "label": "列出学校政策主题",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "get_policy",
+    "ok": true,
+    "label": "列出学校政策主题",
+    "args": {},
+    "term_data_available": false,
+    "reused": false
+  },
+  {
+    "type": "tool_call_start",
+    "name": "get_sections",
+    "args": {
+      "term": "2026 Winter",
+      "course_id": "IN4MATX 43"
+    },
+    "label": "查询 IN4MATX 43 排课 · 2026年冬季",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "get_sections",
+    "ok": true,
+    "label": "查询 IN4MATX 43 排课 · 2026年冬季",
+    "args": {
+      "term": "2026 Winter",
+      "course_id": "IN4MATX 43"
+    },
+    "term_data_available": true,
+    "reused": false,
+    "source": "registrar_websoc",
+    "offering_status": "offered",
+    "authoritative": true,
+    "section_count": 7,
+    "fetch_summary": []
+  },
+  {
+    "type": "tool_call_start",
+    "name": "get_sections",
+    "args": {
+      "term": "2026 Fall",
+      "course_id": "SWE 43"
+    },
+    "label": "查询 SWE 43 排课 · 2026年秋季",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "get_sections",
+    "ok": true,
+    "label": "查询 SWE 43 排课 · 2026年秋季",
+    "args": {
+      "term": "2026 Fall",
+      "course_id": "SWE 43"
+    },
+    "term_data_available": true,
+    "reused": false,
+    "source": "registrar_websoc",
+    "offering_status": "offered",
+    "authoritative": false,
+    "section_count": 13,
+    "fetch_summary": []
+  },
+  {
+    "type": "tool_call_start",
+    "name": "get_course_offerings",
+    "args": {
+      "course_id": "IN4MATX 43"
+    },
+    "label": "查询开课与教授 · IN4MATX 43 · ",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "get_course_offerings",
+    "ok": true,
+    "label": "查询开课与教授 · IN4MATX 43 · ",
+    "args": {
+      "course_id": "IN4MATX 43"
+    },
+    "term_data_available": true,
+    "reused": false
+  },
+  {
+    "type": "tool_call_start",
+    "name": "get_course_info",
+    "args": {
+      "course_id": "IN4MATX 43"
+    },
+    "label": "查询 IN4MATX 43 课程信息",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "get_course_info",
+    "ok": false,
+    "label": "查询 IN4MATX 43 课程信息",
+    "args": {
+      "course_id": "IN4MATX 43"
+    },
+    "term_data_available": false,
+    "reused": false
+  },
+  {
+    "type": "tool_call_start",
+    "name": "get_sections",
+    "args": {
+      "term": "2025 Winter",
+      "course_id": "IN4MATX 43"
+    },
+    "label": "查询 IN4MATX 43 排课 · 2025年冬季",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "get_sections",
+    "ok": false,
+    "label": "查询 IN4MATX 43 排课 · 2025年冬季",
+    "args": {
+      "term": "2025 Winter",
+      "course_id": "IN4MATX 43"
+    },
+    "term_data_available": false,
+    "reused": false,
+    "source": null,
+    "offering_status": "unavailable",
+    "authoritative": false,
+    "section_count": 0,
+    "fetch_summary": []
+  },
+  {
+    "type": "tool_call_start",
+    "name": "web_search",
+    "args": {},
+    "label": "联网搜索",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "web_search",
+    "ok": false,
+    "label": "联网搜索",
+    "args": {},
+    "term_data_available": false,
+    "reused": false
+  },
+  {
+    "type": "tool_call_start",
+    "name": "fetch_page",
+    "args": {},
+    "label": "深读网页",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "fetch_page",
+    "ok": true,
+    "label": "深读网页",
+    "args": {},
+    "term_data_available": false,
+    "reused": false
+  },
+  {
+    "type": "tool_call_start",
+    "name": "fetch_page",
+    "args": {},
+    "label": "深读网页",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "fetch_page",
+    "ok": true,
+    "label": "深读网页",
+    "args": {},
+    "term_data_available": false,
+    "reused": false
+  },
+  {
+    "type": "tool_call_start",
+    "name": "fetch_page",
+    "args": {},
+    "label": "深读网页",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "fetch_page",
+    "ok": true,
+    "label": "深读网页",
+    "args": {},
+    "term_data_available": false,
+    "reused": false
+  },
+  {
+    "type": "tool_call_start",
+    "name": "fetch_page",
+    "args": {},
+    "label": "深读网页",
+    "response_language": "zh"
+  },
+  {
+    "type": "tool_call_done",
+    "name": "fetch_page",
+    "ok": true,
+    "label": "深读网页",
+    "args": {},
+    "term_data_available": false,
+    "reused": false
+  },
+  {
+    "type": "token",
+    "text": "本次核实尚未完成，暂未生成有完整证据的正式推荐。",
+    "controlled_recommendation": true
+  },
+  {
+    "type": "final",
+    "text": "本次核实尚未完成，暂未生成有完整证据的正式推荐。",
+    "cards": [],
+    "controlled_recommendation": true,
+    "recommendation_gate": {
+      "enabled": true,
+      "ready": true,
+      "reasons": []
+    },
+    "incomplete": true,
+    "presentation_plan": {
+      "course_scope": "any",
+      "hard_filters": {
+        "only_unmet_ge": false
+      }
+    },
+    "requested_plan": {
+      "course_scope": "any",
+      "hard_filters": {
+        "only_unmet_ge": false
+      }
+    },
+    "failure_reason": "model_unavailable"
+  }
+]

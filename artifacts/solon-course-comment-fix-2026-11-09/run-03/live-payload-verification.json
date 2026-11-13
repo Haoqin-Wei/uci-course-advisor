@@ -1,0 +1,27 @@
+{
+  "all_passed": true,
+  "cases": [
+    {
+      "course_id": "SWE43",
+      "term": "2026 Fall",
+      "raw_file": "source-http-02.json",
+      "actual_model_request": "model-call-02-request.json",
+      "all_comments_unchanged": true,
+      "all_meetings_unchanged": true,
+      "comment_fields_checked": 18,
+      "meeting_arrays_checked": 13,
+      "source": "live_anteater_websoc"
+    },
+    {
+      "course_id": "IN4MATX43",
+      "term": "2026 Winter",
+      "raw_file": "source-http-05.json",
+      "actual_model_request": "model-call-02-request.json",
+      "all_comments_unchanged": true,
+      "all_meetings_unchanged": true,
+      "comment_fields_checked": 12,
+      "meeting_arrays_checked": 7,
+      "source": "live_anteater_websoc"
+    }
+  ]
+}

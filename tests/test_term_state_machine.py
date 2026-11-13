@@ -53,13 +53,13 @@ def service(snapshot: TermStateSnapshot, now: datetime) -> TermResolutionService
 
 
 def test_cutoff_second_before_does_not_switch_and_instant_does() -> None:
-    cutoff = datetime(2026, 11, 16, 0, 0, tzinfo=LOS_ANGELES)
+    cutoff = datetime(2026, 11, 9, 0, 0, tzinfo=LOS_ANGELES)     # Week 7 Monday
     assert service(state(), cutoff - timedelta(seconds=1)).automatic_term().canonical_name == "2026 Fall"
     assert service(state(), cutoff).automatic_term().canonical_name == "2027 Winter"
 
 
 @pytest.mark.parametrize("missing", ["calendar", "term_list", "course", "section"])
-def test_publication_and_next_calendar_do_not_gate_week8_transition(missing: str) -> None:
+def test_publication_and_next_calendar_do_not_gate_week7_transition(missing: str) -> None:
     snapshot = state()
     if missing == "calendar":
         snapshot.calendar_records = snapshot.calendar_records[:1]
@@ -105,7 +105,8 @@ def test_transition_evidence_is_persisted() -> None:
     transition = store.load().transition
     assert transition["previous"] == "2026 Fall"
     assert transition["current"] == "2027 Winter"
-    assert transition["source"] == "calendar_week8"
+    assert transition["source"] == "calendar_week7"
+    assert transition["cutoff"] == "2026-11-09T00:00:00-08:00"
 
 
 def test_relative_message_uses_actual_term_after_default_advances() -> None:

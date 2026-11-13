@@ -146,12 +146,12 @@ def test_run_due_syncs_only_what_is_due_and_survives_errors(tmp_path):
 
     svc = service(TermKey(2026, "Fall"), TermKey(2027, "Winter"))
     now = datetime.now(timezone.utc)
-    results = run_due(now=now, service=svc, syncer=syncer, course_syncer=None, path=db)
+    results = run_due(now=now, service=svc, syncer=syncer, course_syncer=None, program_syncer=None, path=db)
     assert calls == ["2026_Winter", "2027_Winter"]            # Fall was synced a moment ago
     assert [r.term_id for r in results] == ["2027_Winter"]
 
     calls.clear()
-    run_due(now=now + timedelta(days=30), service=svc, syncer=syncer, course_syncer=None, path=db)
+    run_due(now=now + timedelta(days=30), service=svc, syncer=syncer, course_syncer=None, program_syncer=None, path=db)
     # Fall is past its Week 2 Friday and already holds its final timetable.
     assert calls == ["2026_Winter", "2027_Winter"]
 
@@ -166,7 +166,8 @@ def test_run_due_never_raises_and_does_not_overlap(tmp_path):
         called = []
         assert run_due(service=service(None, TermKey(2027, "Winter")),
                        syncer=lambda *a, **k: called.append(1),
-                       course_syncer=lambda **k: called.append(2), path=tmp_path / "c.db") == []
+                       course_syncer=lambda **k: called.append(2),
+                       program_syncer=lambda **k: called.append(3), path=tmp_path / "c.db") == []
         assert called == []
     finally:
         scheduler._run_lock.release()
@@ -230,7 +231,8 @@ def test_run_due_refreshes_courses_when_a_timetable_first_arrives(tmp_path):
 
     def run(days, syncer):
         clock["now"] = start + timedelta(days=days)
-        return run_due(now=clock["now"], service=svc, syncer=syncer, course_syncer=course_syncer, path=db)
+        return run_due(now=clock["now"], service=svc, syncer=syncer, course_syncer=course_syncer,
+                       program_syncer=None, path=db)
 
     run(0, idle)
     assert course_calls == [db]                                       # nothing stored yet: fetch once
@@ -245,4 +247,4 @@ def test_run_due_refreshes_courses_when_a_timetable_first_arrives(tmp_path):
         raise RuntimeError("boom")
     course_store.record_course_sync_failure("x", path=db)
     assert run_due(now=start + timedelta(days=90), service=svc, syncer=idle,
-                   course_syncer=broken, path=db) is not None         # contained
+                   course_syncer=broken, program_syncer=broken, path=db) is not None   # contained

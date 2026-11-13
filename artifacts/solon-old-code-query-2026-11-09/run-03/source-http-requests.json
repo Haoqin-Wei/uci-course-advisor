@@ -1,0 +1,73 @@
+[
+  {
+    "method": "GET",
+    "url": "https://anteaterapi.com/v2/rest/courses/SWE43",
+    "params": null,
+    "form": null,
+    "started_at_utc": "2026-11-10T00:02:32.879505+00:00",
+    "status": 200,
+    "bytes": 2177,
+    "response_file": "source-http-01.json",
+    "response_sha256": "1c57591d167e001f0c4924c3eb542753e0a4189e4ee132bf6a00f76ab0baf542"
+  },
+  {
+    "method": "GET",
+    "url": "https://anteaterapi.com/v2/rest/websoc",
+    "params": {
+      "year": "2026",
+      "quarter": "Fall",
+      "department": "SWE",
+      "courseNumber": "43"
+    },
+    "form": null,
+    "started_at_utc": "2026-11-10T00:02:33.390772+00:00",
+    "status": 200,
+    "bytes": 14823,
+    "response_file": "source-http-02.json",
+    "response_sha256": "1a21ff484312e855f9a7fd064b503b1c92b78cabf7296b8abd60bf118a2de04b"
+  },
+  {
+    "method": "GET",
+    "url": "https://www.reg.uci.edu/perl/WebSoc",
+    "params": null,
+    "form": null,
+    "started_at_utc": "2026-11-10T00:02:34.112044+00:00",
+    "status": 200,
+    "bytes": 40889,
+    "response_file": "source-http-03.html",
+    "response_sha256": "ab8aab69cdb3c4e5716d8246ab8473fbd1596b0d77335977f05e7601649fa8bd"
+  },
+  {
+    "method": "POST",
+    "url": "https://www.reg.uci.edu/perl/WebSoc",
+    "params": null,
+    "form": {
+      "Submit": "Display Web Results",
+      "YearTerm": "2026-92",
+      "ShowComments": "on",
+      "ShowFinals": "on",
+      "Breadth": "ANY",
+      "Dept": "SWE",
+      "CourseNum": "43",
+      "CourseCodes": "",
+      "InstrName": "",
+      "CourseTitle": "",
+      "ClassType": "ALL",
+      "Units": "",
+      "Days": "",
+      "StartTime": "",
+      "EndTime": "",
+      "MaxCap": "",
+      "FullCourses": "ANY",
+      "FontSize": "100",
+      "CancelledCourses": "Include",
+      "Bldg": "",
+      "Room": ""
+    },
+    "started_at_utc": "2026-11-10T00:02:34.385934+00:00",
+    "status": 200,
+    "bytes": 29261,
+    "response_file": "source-http-04.html",
+    "response_sha256": "58a957cb11ca2411ff21225f09b0e2ba7ce416bf6202c77b8764de2ed01f6deb"
+  }
+]

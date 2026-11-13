@@ -79,6 +79,9 @@ async function sendMessage(text) {
         if (epoch !== conversationEpoch) return;
         meta = event;
         if (event.response_language) aiMsg._responseLanguage = event.response_language;
+        if (event.controlled_recommendation && Array.isArray(event.cards)) {
+          replaceControlledRecommendationCards(aiMsg, event.cards);
+        }
         markUserDelivery(userMessage, true);
         applyTermPayload(event);
         // Phase 3 R3 — backend's authoritative session_id. If this
@@ -94,6 +97,10 @@ async function sendMessage(text) {
         // AI bubble so the user sees what's happening during the
         // silent stretch before the answer streams.
         startToolChip(aiMsg, event.label || event.name, event.name, event.response_language);
+      },
+      cards_proposed(event) {
+        if (epoch !== conversationEpoch || !event.controlled_recommendation) return;
+        replaceControlledRecommendationCards(aiMsg, event.cards || []);
       },
       tool_call_done(event) {
         finishToolChip(
@@ -288,7 +295,12 @@ function renderWebFetchSummary(wrap, fetches) {
   const details = document.createElement('details');
   details.className = 'tool-fetch-details';
   const summary = document.createElement('summary');
-  summary.textContent = zh ? `实际抓取 ${fetches.length} 个请求` : `${fetches.length} web ${fetches.length === 1 ? 'request' : 'requests'}`;
+  // Snapshot reads and cache hits are sources, but they are not requests.
+  const reused = fetches.filter((item) => item && (item.local || item.cached)).length;
+  const live = fetches.length - reused;
+  summary.textContent = zh
+    ? `实际抓取 ${live} 个请求${reused ? `，另有 ${reused} 个来源未重新请求` : ''}`
+    : `${live} web ${live === 1 ? 'request' : 'requests'}${reused ? `, ${reused} reused without a request` : ''}`;
   details.appendChild(summary);
 
   const list = document.createElement('div');
@@ -297,6 +309,7 @@ function renderWebFetchSummary(wrap, fetches) {
     registrar_websoc_form: 'WebSoc 查询表单',
     registrar_websoc_results: 'WebSoc 部门结果',
     registrar_websoc_course_results: 'WebSoc 课程结果',
+    catalog_store_snapshot: '本地课表快照中的院系公告',
     undergrad_restrictions: '本科限制官方页',
     graduate_restrictions: '研究生限制官方页',
     policy: '政策官方页',
@@ -306,6 +319,7 @@ function renderWebFetchSummary(wrap, fetches) {
     registrar_websoc_form: 'WebSoc query form',
     registrar_websoc_results: 'WebSoc department results',
     registrar_websoc_course_results: 'WebSoc course results',
+    catalog_store_snapshot: 'Department notices from the synced timetable',
     undergrad_restrictions: 'Official undergraduate restrictions',
     graduate_restrictions: 'Official graduate restrictions',
     policy: 'Official policy page',
@@ -359,9 +373,18 @@ function renderWebFetchSummary(wrap, fetches) {
     const role = roleLabels[fetchItem.source_role]
       || (zh ? '网页来源' : 'Web source');
     const fields = [role];
+    const readAt = fetchItem.local ? fetchItem.snapshot_synced_at : fetchItem.cached ? fetchItem.cached_at : null;
+    if (fetchItem.local || fetchItem.cached) {
+      const when = readAt ? new Date(readAt) : null;
+      const stamp = when && !Number.isNaN(when.getTime()) ? when.toLocaleString() : null;
+      const label = fetchItem.local
+        ? (zh ? '未发请求，同步于' : 'No request; synced')
+        : (zh ? '24 小时内已抓取，未重新请求；抓取于' : 'Fetched within 24 h, not requested again;');
+      fields.push(stamp ? `${label} ${stamp}` : label);
+    }
     if (fetchItem.status_code != null) fields.push(`HTTP ${fetchItem.status_code}`);
     if (fetchItem.bytes != null) fields.push(`${Number(fetchItem.bytes).toLocaleString()} B`);
-    if (fetchItem.duration_ms != null) fields.push(`${Math.round(fetchItem.duration_ms)} ms`);
+    if (fetchItem.duration_ms != null && !fetchItem.local && !fetchItem.cached) fields.push(`${Math.round(fetchItem.duration_ms)} ms`);
     if (fetchItem.depth != null) fields.push(zh ? `深度 ${fetchItem.depth}` : `Depth ${fetchItem.depth}`);
     meta.textContent = fields.join(' · ');
     row.appendChild(meta);
@@ -406,6 +429,25 @@ function appendStreamingToken(wrap, fullText) {
   });
 }
 
+function replaceControlledRecommendationCards(wrap, cards) {
+  if (!Array.isArray(cards)) return;
+  const signature = JSON.stringify(cards);
+  if (wrap._controlledCardSignature === signature) return;
+  const previous = wrap.querySelector(':scope > [data-controlled-recommendation-cards]');
+  if (previous) previous.remove();
+  wrap._controlledCardSignature = signature;
+  wrap._recommendationCount = cards.length;
+  if (cards.length) {
+    const holder = document.createElement('div');
+    holder.innerHTML = renderCardsBlock(cards);
+    if (holder.firstElementChild) {
+      holder.firstElementChild.setAttribute('data-controlled-recommendation-cards', 'true');
+      wrap.appendChild(holder.firstElementChild);
+    }
+  }
+  scrollChat();
+}
+
 function finalizeAiMessage(wrap, fullText, meta, stopped) {
   if (meta.response_language) wrap._responseLanguage = meta.response_language;
   if (meta.query_intent === 'comparison' && wrap._queryKind !== 'recommendation') {
@@ -435,11 +477,14 @@ function finalizeAiMessage(wrap, fullText, meta, stopped) {
   }
 
   // Cards
-  if (meta.cards && meta.cards.length > 0) {
+  if (meta.controlled_recommendation && Array.isArray(meta.cards)) {
+    replaceControlledRecommendationCards(wrap, meta.cards);
+  } else if (!wrap._controlledCardSignature && meta.cards && meta.cards.length > 0) {
     const block = document.createElement('div');
     block.innerHTML = renderCardsBlock(meta.cards);
     if (block.firstElementChild) wrap.appendChild(block.firstElementChild);
   }
+  renderGradeChartsForMessage(wrap, meta.grade_charts);
 
   setComposerSuggestions(!stopped && Array.isArray(meta.followups) ? meta.followups : []);
   renderScheduleGrid();
@@ -564,6 +609,7 @@ async function continueAgent(wrap, continuationId, btn) {
 
   let resumedText = '';
   let resumedMeta = null;
+  let controlledResume = false;
   let newContinuationId = null;
   let newReason = null;
 
@@ -585,7 +631,16 @@ async function continueAgent(wrap, continuationId, btn) {
       },
       meta(event) {
         resumedMeta = event;
+        if (event.controlled_recommendation) controlledResume = true;
         if (event.response_language) wrap._responseLanguage = event.response_language;
+        if (event.controlled_recommendation && Array.isArray(event.cards)) {
+          replaceControlledRecommendationCards(wrap, event.cards);
+        }
+        // Update the real message, not the synthetic text-only shell. An
+        // absent/empty chart payload leaves earlier evidence in place.
+        if (Array.isArray(event.grade_charts) && event.grade_charts.length > 0) {
+          renderGradeChartsForMessage(wrap, event.grade_charts);
+        }
         if (typeof event.final_answer === 'string') {
           resumedText = event.final_answer;
         }
@@ -594,6 +649,18 @@ async function continueAgent(wrap, continuationId, btn) {
         // Reuse the existing chip container on `wrap`. Pass the
         // real wrap, not the shell, so chips land in the right DOM.
         startToolChip(wrap, event.label || event.name, event.name, event.response_language);
+      },
+      cards_proposed(event) {
+        if (event.controlled_recommendation) {
+          controlledResume = true;
+          replaceControlledRecommendationCards(wrap, event.cards || []);
+        }
+      },
+      final(event) {
+        if (event.controlled_recommendation) {
+          controlledResume = true;
+          if (typeof event.text === 'string') resumedText = event.text;
+        }
       },
       tool_call_done(event) {
         finishToolChip(
@@ -629,6 +696,16 @@ async function continueAgent(wrap, continuationId, btn) {
     }
     resumeBody.classList.remove('streaming');
     resumeBody.innerHTML = formatMarkdown(resumedText || '');
+    if (controlledResume) {
+      const currentBody = wrap.querySelector('.msg-ai-body');
+      if (currentBody) {
+        currentBody.innerHTML = formatMarkdown(resumedText || '');
+        wrap._pendingText = resumedText || '';
+        for (const body of wrap.querySelectorAll(':scope > .msg-ai-body')) {
+          if (body !== currentBody) body.remove();
+        }
+      }
+    }
 
     // Replace the old notice. If the resumed loop ALSO hit a limit,
     // render a fresh Continue banner with the new continuation_id;

@@ -1,0 +1,75 @@
+{
+  "cases": [
+    {
+      "course_id": "SWE43",
+      "term": "2026 Fall",
+      "endpoint": "https://anteaterapi.com/v2/rest/websoc?year=2026&quarter=Fall&department=SWE&courseNumber=43",
+      "http_status": 200,
+      "source_fetched_at_utc": "2026-11-06T01:10:40Z",
+      "processed_at_utc": "2026-11-06T01:14:19.864376+00:00",
+      "raw_sha256": "f8daad903c0757d595b0887639abe5290633890af7e5eaad1a7547ee6b7076bf",
+      "source_sections": 13,
+      "result_sections": 13,
+      "source_meetings": 13,
+      "result_meetings": 13,
+      "comment_fields_checked": 18,
+      "comments_equal": true,
+      "all_meetings_deep_equal": true,
+      "cancelled_sections": [
+        "37513",
+        "37515",
+        "37512"
+      ],
+      "cancellation_equal": true,
+      "unmapped_comment_fields": [],
+      "extra_or_missing_sections": [],
+      "comment_context_count": 1,
+      "weburl_added": false,
+      "pairing_lookup_status": "available",
+      "actual_provider_model_calls": 0,
+      "capture_client_calls": 2,
+      "runtime_flags": {
+        "dynamic_prefilter_enabled": true,
+        "recommendation_ranking_enabled": true,
+        "pairing_contract_enabled": true
+      },
+      "recommendation_prefilter_active_for_this_query": false,
+      "capture_method": "fresh_public_Anteater_HTTP_response_replayed_through_actual_agent_tool_loop",
+      "tool_message_matches_next_model_request": true
+    },
+    {
+      "course_id": "IN4MATX43",
+      "term": "2026 Winter",
+      "endpoint": "https://anteaterapi.com/v2/rest/websoc?year=2026&quarter=Winter&department=IN4MATX&courseNumber=43",
+      "http_status": 200,
+      "source_fetched_at_utc": "2026-11-06T01:10:40Z",
+      "processed_at_utc": "2026-11-06T01:14:20.435267+00:00",
+      "raw_sha256": "0dcefcf63fca251b45dcc74b2425e4201f21f17c08d15f6da6b1e7bead4b0a77",
+      "source_sections": 7,
+      "result_sections": 7,
+      "source_meetings": 7,
+      "result_meetings": 7,
+      "comment_fields_checked": 12,
+      "comments_equal": true,
+      "all_meetings_deep_equal": true,
+      "cancelled_sections": [],
+      "cancellation_equal": true,
+      "unmapped_comment_fields": [],
+      "extra_or_missing_sections": [],
+      "comment_context_count": 1,
+      "weburl_added": false,
+      "pairing_lookup_status": "available",
+      "actual_provider_model_calls": 0,
+      "capture_client_calls": 2,
+      "runtime_flags": {
+        "dynamic_prefilter_enabled": true,
+        "recommendation_ranking_enabled": true,
+        "pairing_contract_enabled": true
+      },
+      "recommendation_prefilter_active_for_this_query": false,
+      "capture_method": "fresh_public_Anteater_HTTP_response_replayed_through_actual_agent_tool_loop",
+      "tool_message_matches_next_model_request": true
+    }
+  ],
+  "note": "Public API queried live. Fresh captured bytes replayed into actual Solon agent loop. Model transport intercepted; no real LLM provider request or generated answer."
+}

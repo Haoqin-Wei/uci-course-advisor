@@ -1,0 +1,3 @@
+Command: .venv/bin/python -m pytest --no-cov -q
+Final result: 1501 passed, 5 skipped, 2 deselected in 19.91s
+Includes the 8-file term-rules regression list. Skips are opt-in Chrome checks.

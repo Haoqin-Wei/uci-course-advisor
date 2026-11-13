@@ -12,6 +12,7 @@ removed. This router now handles:
 """
 
 import asyncio
+from copy import deepcopy
 import logging
 import re
 from datetime import datetime, timezone
@@ -37,6 +38,7 @@ from app.scheduling import (
     build_pending_schedule_bundle_items,
     calendar_day_names,
     normalize_section_meeting,
+    section_meetings,
     section_time_status,
     validate_schedule_bundle,
 )
@@ -161,6 +163,8 @@ def _persist_turn(
     cards: Optional[list] = None,
     followups: Optional[list] = None,
     web_fetches: Optional[list] = None,
+    grade_charts: Optional[list] = None,
+    prefilter: Optional[dict] = None,
     query_terms: Optional[list[str]] = None,
     query_term_source: Optional[str] = None,
     course_ids: Optional[list[str]] = None,
@@ -201,6 +205,8 @@ def _persist_turn(
             cards=cards,
             followups=followups,
             web_fetches=web_fetches,
+            grade_charts=grade_charts,
+            prefilter=prefilter,
         )
 
         # First-turn snippet title (cheap heuristic; Round 4 LLM auto-title
@@ -763,6 +769,20 @@ def _deterministic_single_course_fallback_reply(
     return "\n".join(lines)
 
 
+def _controlled_agent_reply(cards, language, final_event=None, *, failed=False):
+    from app.recommendations.presentation import render_recommendation_answer
+    event = final_event or {}
+    gate = event.get("recommendation_gate") or (event.get("prefilter") or {}).get("recommendation_gate")
+    return render_recommendation_answer(
+        cards, language, gate=gate,
+        incomplete=failed or bool(event.get("incomplete") or event.get("truncated")),
+        failure_reason="execution_incomplete" if failed else event.get("failure_reason"),
+        plan=event.get("presentation_plan") or (event.get("prefilter") or {}).get("applied_plan"),
+        requested_count=event.get("requested_count"),
+        requested_plan=event.get("requested_plan") or (event.get("prefilter") or {}).get("requested_plan"),
+    )
+
+
 async def _handle_agent(
     user_message: str,
     state: dict,
@@ -798,8 +818,14 @@ async def _handle_agent(
     the agent path; those land in their own follow-up phases.
     """
     from app.llm import adapter
+    from app.agent.loop import (controlled_tool_arguments, recommendation_cards_for_display,
+                                uses_controlled_recommendation_output)
 
     accumulated = ""
+    controlled_output = uses_controlled_recommendation_output(user_message, state.get("query_term_source", "default"))
+    controlled_final = None
+    controlled_failed = False
+    language = state.get("response_language") or _response_language(user_message, recent_turns)
     saw_any_event = False
     proposed_cards: list[dict] = []
     successful_tools: set[str] = set()
@@ -823,7 +849,7 @@ async def _handle_agent(
             # error, the agent never streamed anything to the client.
             if not saw_any_event:
                 saw_any_event = True
-                if t == "error":
+                if t == "error" and not controlled_output:
                     logger.warning("[agent] pre-flight error, grounded fallback: %s",
                                    event.get("message"))
                     fallback = _grounded_agent_fallback_reply(
@@ -836,10 +862,18 @@ async def _handle_agent(
                     await queue.put({"type": "token", "text": fallback})
                     return (fallback, [], [], None)
 
-            if t == "token":
-                accumulated += event.get("text", "")
-                await queue.put({"type": "token", "text": event["text"]})
+            if t == "response_mode":
+                controlled_output = controlled_output or event.get("controlled_recommendation") is True
+            elif t == "token":
+                if not controlled_output:
+                    accumulated += event.get("text", "")
+                    await queue.put({"type": "token", "text": event["text"]})
             elif t == "tool_call_start":
+                visible_args = controlled_tool_arguments(event.get("args") or {}) if controlled_output else event.get("args")
+                visible_label = event.get("label")
+                if controlled_output:
+                    from app.agent.tools import humanize_tool_call
+                    visible_label = humanize_tool_call(event.get("name"), visible_args, language)
                 observability.log_event(
                     logger,
                     logging.INFO,
@@ -851,8 +885,8 @@ async def _handle_agent(
                 await queue.put({
                     "type":  "tool_call_start",
                     "name":  event.get("name"),
-                    "label": event.get("label"),
-                    "args":  event.get("args"),
+                    "label": visible_label,
+                    "args":  visible_args,
                     **({"response_language": event["response_language"]}
                        if event.get("response_language") else {}),
                 })
@@ -915,7 +949,9 @@ async def _handle_agent(
                 # earlier proposal. Merge those in instead, deduping
                 # by course_id so the prior batch is preserved.
                 new_cards = event.get("cards") or []
-                if event.get("from_fallback") and proposed_cards:
+                if controlled_output:
+                    new_cards = recommendation_cards_for_display(new_cards, language)
+                if event.get("from_fallback") and proposed_cards and not event.get("replace"):
                     existing_ids = {c.get("course_id") for c in proposed_cards}
                     added = 0
                     for c in new_cards:
@@ -929,6 +965,9 @@ async def _handle_agent(
                     proposed_cards = new_cards
                     logger.info("[agent handler] cards_proposed: %d items",
                                 len(proposed_cards))
+                if controlled_output:
+                    await queue.put({"type": "cards_proposed", "cards": proposed_cards,
+                                     "replace": True, "controlled_recommendation": True})
             elif t == "limit_reached":
                 # Budget hit. The loop will keep streaming token/final
                 # events from its no-tools fallback after this; the
@@ -961,7 +1000,19 @@ async def _handle_agent(
                 })
             elif t == "final":
                 # Tokens were already streamed; nothing extra to forward.
+                if controlled_output or event.get("controlled_recommendation") is True:
+                    controlled_output = True
+                    controlled_final = dict(event)
+                    if "cards" in event:
+                        proposed_cards = recommendation_cards_for_display(event.get("cards"), language)
                 if execution_meta is not None:
+                    if controlled_output:
+                        execution_meta["controlled_recommendation"] = True
+                        execution_meta["incomplete"] = bool(event.get("incomplete"))
+                    if event.get("grade_charts"):
+                        execution_meta["grade_charts"] = event["grade_charts"]
+                    if event.get("prefilter"):
+                        execution_meta["prefilter"] = event["prefilter"]
                     if event.get("restriction_evidence"):
                         execution_meta["restriction_evidence"] = event[
                             "restriction_evidence"
@@ -975,16 +1026,25 @@ async def _handle_agent(
                 # already showed partial output to the user).
                 if execution_meta is not None:
                     execution_meta["error"] = True
-                await queue.put({
-                    "type": "error",
-                    "message": event.get("message", "agent error"),
-                })
+                if controlled_output:
+                    controlled_failed = True
+                else:
+                    await queue.put({
+                        "type": "error",
+                        "message": event.get("message", "agent error"),
+                    })
     except asyncio.CancelledError:
         raise
     except Exception as e:
         logger.exception("[agent handler] failed: %s", e)
         if execution_meta is not None:
             execution_meta["error"] = True
+        if controlled_output:
+            safe = _controlled_agent_reply(proposed_cards, language, controlled_final, failed=True)
+            if execution_meta is not None:
+                execution_meta.update(controlled_recommendation=True, incomplete=True)
+            await queue.put({"type": "token", "text": safe, "controlled_recommendation": True})
+            return (safe, proposed_cards, [], None)
         if not accumulated:
             fallback = _grounded_agent_fallback_reply(
                 user_message,
@@ -998,7 +1058,14 @@ async def _handle_agent(
         await queue.put({"type": "error", "message": str(e)})
         return (accumulated, proposed_cards, [], None)
 
-    if not saw_any_event:
+    if controlled_output:
+        accumulated = _controlled_agent_reply(proposed_cards, language, controlled_final,
+                                              failed=controlled_failed or controlled_final is None)
+        await queue.put({"type": "token", "text": accumulated, "controlled_recommendation": True})
+        if execution_meta is not None:
+            execution_meta["controlled_recommendation"] = True
+            execution_meta["incomplete"] = controlled_failed or controlled_final is None or bool((controlled_final or {}).get("incomplete"))
+    elif not saw_any_event:
         # Generator yielded zero events — typically LLM_ENABLED=False.
         fallback = _grounded_agent_fallback_reply(
             user_message,
@@ -1305,6 +1372,8 @@ async def _stream_chat(
                 user_id, persistent_sid, req.message, reply,
                 cards=cards, followups=followups,
                 web_fetches=agent_meta.get("web_fetches"),
+                grade_charts=agent_meta.get("grade_charts"),
+                prefilter=agent_meta.get("prefilter"),
                 query_terms=query_terms,
                 query_term_source=query_scope.source,
                 course_ids=list(query_scope.course_ids),
@@ -1363,8 +1432,15 @@ async def _stream_chat(
                     include=default_term.canonical_name,
                 ),
             }
+            if agent_meta.get("controlled_recommendation"):
+                meta_event["controlled_recommendation"] = True
+                meta_event["incomplete"] = bool(agent_meta.get("incomplete"))
             if agent_meta.get("web_fetches"):
                 meta_event["web_fetches"] = agent_meta["web_fetches"]
+            if agent_meta.get("grade_charts"):
+                meta_event["grade_charts"] = agent_meta["grade_charts"]
+            if agent_meta.get("prefilter"):
+                meta_event["prefilter"] = agent_meta["prefilter"]
             await queue.put(meta_event)
         except asyncio.CancelledError:
             logger.info("[stream] producer cancelled (client disconnected)")
@@ -1512,6 +1588,10 @@ async def _stream_continue(
     accumulated = ""
     final_text = ""
     final_event: Optional[dict] = None
+    controlled_output = False
+    controlled_cards = []
+    controlled_failed = False
+    controlled_language = "zh"
     saw_limit_again = False
     status = "ok"
     try:
@@ -1521,28 +1601,57 @@ async def _stream_continue(
             client=client, model=LLM_MODEL,
         ):
             t = event.get("type")
-            if t == "token":
-                accumulated += event.get("text", "")
-                yield sse(event)
+            if t == "response_mode":
+                controlled_output = event.get("controlled_recommendation") is True
+                controlled_language = event.get("response_language") or controlled_language
+            elif t == "token":
+                if not controlled_output:
+                    accumulated += event.get("text", "")
+                    yield sse(event)
             elif t == "final":
                 final_event = dict(event)
+                if event.get("controlled_recommendation") is True:
+                    from app.agent.loop import recommendation_cards_for_display
+                    controlled_output = True
+                    controlled_language = event.get("response_language") or controlled_language
+                    controlled_cards = recommendation_cards_for_display(event.get("cards"), controlled_language)
+            elif t == "cards_proposed" and (controlled_output or event.get("controlled_recommendation") is True):
+                from app.agent.loop import recommendation_cards_for_display
+                controlled_output = True
+                controlled_cards = recommendation_cards_for_display(event.get("cards"), controlled_language)
+                yield sse({**event, "cards": controlled_cards, "replace": True,
+                           "controlled_recommendation": True})
             elif t == "limit_reached":
                 saw_limit_again = True
                 observability.increment("sse.continue_limit_reached")
                 yield sse(event)
+            elif t == "error" and controlled_output:
+                controlled_failed = True
             elif t != "token":
                 yield sse(event)
 
-        final_text = accumulated or str((final_event or {}).get("text") or "")
+        if controlled_output:
+            final_text = _controlled_agent_reply(controlled_cards, controlled_language, final_event,
+                                                failed=controlled_failed or final_event is None)
+        else:
+            final_text = accumulated or str((final_event or {}).get("text") or "")
         if final_text:
             if not accumulated:
                 yield sse({"type": "token", "text": final_text})
             completed = dict(final_event or {})
             completed.update({"type": "final", "text": final_text})
+            if controlled_output:
+                completed.update(controlled_recommendation=True, cards=controlled_cards)
             yield sse(completed)
             yield sse({
                 "type": "meta",
                 "final_answer": final_text,
+                **({"cards": controlled_cards, "controlled_recommendation": True,
+                    "response_language": controlled_language} if controlled_output else {}),
+                **({"grade_charts": final_event["grade_charts"]}
+                   if (final_event or {}).get("grade_charts") else {}),
+                **({"prefilter": final_event["prefilter"]}
+                   if (final_event or {}).get("prefilter") else {}),
             })
 
         # Persist the resumed reply to the session log so refresh /
@@ -1555,6 +1664,11 @@ async def _stream_continue(
                     req.session_id,
                     "assistant",
                     final_text,
+                    **({"cards": controlled_cards} if controlled_output else {}),
+                    **({"grade_charts": final_event["grade_charts"]}
+                       if (final_event or {}).get("grade_charts") else {}),
+                    **({"prefilter": final_event["prefilter"]}
+                       if (final_event or {}).get("prefilter") else {}),
                 )
             except Exception as e:
                 logger.warning("[continue] append resumed turn failed: %s", e)
@@ -1570,7 +1684,20 @@ async def _stream_continue(
         logger.exception("[continue] failed: %s", e)
         status = "error"
         observability.increment("sse.continue_errors")
-        yield sse({"type": "error", "message": str(e)})
+        if controlled_output:
+            final_text = _controlled_agent_reply(controlled_cards, controlled_language, final_event, failed=True)
+            completed = {"type": "final", "text": final_text, "cards": controlled_cards,
+                         "controlled_recommendation": True, "incomplete": True}
+            yield sse({"type": "token", "text": final_text, "controlled_recommendation": True})
+            yield sse(completed)
+            yield sse({"type": "meta", "final_answer": final_text, "cards": controlled_cards,
+                       "controlled_recommendation": True, "incomplete": True})
+            try:
+                sessions_data.append_turn(user_id, req.session_id, "assistant", final_text, cards=controlled_cards)
+            except Exception:
+                logger.warning("[continue] failed to persist incomplete controlled answer")
+        else:
+            yield sse({"type": "error", "message": str(e)})
     finally:
         try:
             yield sse({"type": "done"})
@@ -1714,14 +1841,75 @@ def _schedule_lock(user_id, session_id):
     return _SCHEDULE_LOCKS[hash((user_id, session_id)) % len(_SCHEDULE_LOCKS)]
 
 
-def _schedule_lookups(user_id: str, session_id: str):
+def _schedule_pairing_key(course_id, term):
+    ref = parse_course_mention(str(course_id or ""))
+    parsed = parse_term_key(str(term or ""))
+    if not ref or parsed.kind != "single":
+        return None
+    return ref.display(), parsed.terms[0].canonical_name
+
+
+def _schedule_pairing_record(course_id, term, response=None, *, failure=None):
+    """Keep a server-source snapshot, including failed refreshes as unknown."""
+    from app.recommendations.pairing import (normalize_pairing_evidence, DISCUSSION_POLICY_ID,
+                                            DISCUSSION_POLICY_VERSION)
+    response = response if isinstance(response, dict) else {}
+    pair = normalize_pairing_evidence({"course_id": course_id, "term": term,
+                                       "pairing": response.get("pairing")})
+    if failure or (pair["version"] != 2 and (pair.get("evidence") or {}).get("status") != "verified"):
+        pair = normalize_pairing_evidence({"course_id": course_id, "term": term, "pairing": {
+            "version": 2, "per_primary": {}, "evidence": {
+                "status": "unverified", "source": "registrar_websoc", "course_id": course_id, "term": term,
+                "reason_codes": [failure or "pairing_evidence_unavailable"],
+                "policy_id": DISCUSSION_POLICY_ID, "policy_version": DISCUSSION_POLICY_VERSION,
+                "policy_source": "user_confirmed_product_policy", "user_confirmed": True,
+            },
+        }})
+    return {"version": 1, "checked_at": datetime.now(timezone.utc).isoformat(timespec="microseconds"),
+            "pairing": pair,
+            "pairing_source_proof": deepcopy(response.get("pairing_source_proof") or response.get("source_proof")),
+            "pairing_lookup_status": ("timeout" if failure == "pairing_refresh_timeout" else "unavailable") if failure
+                else response.get("pairing_lookup_status") or ("available" if response.get("pairing") else "unavailable")}
+
+
+def _store_schedule_pairing(user_id, session_id, records):
+    """Only route-owned source results enter this state; request JSON cannot."""
+    with _schedule_lock(user_id, session_id):
+        state = sessions_data.get_session_state(user_id, session_id)
+        saved = deepcopy(state.get("schedule_pairing_evidence"))
+        saved = saved if isinstance(saved, dict) else {}
+        for (course_id, term), record in records.items():
+            key = _schedule_pairing_key(course_id, term)
+            if key is None:
+                continue
+            cid, target = key
+            by_course = saved.setdefault(target, {})
+            if not isinstance(by_course, dict):
+                by_course = saved[target] = {}
+            old = by_course.get(cid)
+            generation = old.get("generation", 0) if isinstance(old, dict) else 0
+            generation = generation if isinstance(generation, int) and not isinstance(generation, bool) else 0
+            by_course[cid] = {**deepcopy(record), "generation": generation + 1}
+        sessions_data.update_session_state(user_id, session_id, {"schedule_pairing_evidence": saved})
+
+
+def _with_schedule_pairing(response, record):
+    return {**response, **{field: deepcopy(record.get(field)) for field in (
+        "pairing", "pairing_source_proof", "pairing_lookup_status")}} if record is not None else response
+
+
+def _schedule_lookups(user_id: str, session_id: str, *, allow_source_lookup=True):
     """Reuse this session's server-generated cards; memoize other lookups.
 
     Adding/removing a shown section does not need a new WebSoc request.
     Explicit refresh still fetches live data. Never accept section times
     from a mutation request or borrow cards from another user/session/term.
     """
-    from app.data.db import get_sections, get_course_info
+    from app.data.db import get_sections, get_course_info, enrich_sections_pairing
+    from app.recommendations.pairing import discussion_policy_current
+    pairing_enabled = config.dynamic_prefilter_enabled() or config.recommendation_ranking_enabled()
+    stored = sessions_data.get_session_state(user_id, session_id).get("schedule_pairing_evidence") if pairing_enabled else {}
+    stored = stored if isinstance(stored, dict) else {}
 
     def course_key(value):
         ref = parse_course_mention(str(value or ""))
@@ -1735,6 +1923,9 @@ def _schedule_lookups(user_id: str, session_id: str):
         for card in reversed(turn.get("cards") or []):
             if not isinstance(card, dict):
                 continue
+            if config.dynamic_prefilter_enabled() or config.recommendation_ranking_enabled():
+                from app.recommendations.presentation import normalize_recommendation_card
+                card = normalize_recommendation_card(card, turn.get("response_language") or "zh")
             cid = course_key(card.get("course_id"))
             parsed = parse_term_key(str(card.get("term") or ""))
             if not cid or parsed.kind != "single":
@@ -1746,20 +1937,52 @@ def _schedule_lookups(user_id: str, session_id: str):
 
     @lru_cache(maxsize=None)
     def sections(course_id, term):
-        card = cards.get((course_key(course_id), term))
+        key = _schedule_pairing_key(course_id, term) if pairing_enabled else None
+        card = cards.get(key or (course_key(course_id), term))
+        by_course = stored.get(key[1], {}) if key else {}
+        record = by_course.get(key[0]) if isinstance(by_course, dict) and key else None
+        record = record if isinstance(record, dict) and isinstance(record.get("pairing"), dict) else None
+        if record is not None and not discussion_policy_current(record.get("pairing")):
+            record = None  # Preserve old state on disk; replace after a new source lookup.
         if card and card.get("sections"):
-            return {
+            response = {
                 "found": True,
                 "source": card.get("section_source"),
+                "term": term,
                 "sections": [normalize_section_meeting(s) for s in card["sections"] if isinstance(s, dict)],
+                **{key: deepcopy(card[key]) for key in ("pairing", "selection_verification", "prefilter", "warnings",
+                                                       "requires_secondary", "required_secondary_types") if key in card},
             }
-        return get_sections(course_id, term)
+        else:
+            response = get_sections(course_id, term) if allow_source_lookup else {
+                "found": False, "source": "schedule_snapshot", "sections": [], "term": term,
+            }
+        if not pairing_enabled:
+            return response
+        if record is not None:
+            # A failed explicit refresh supersedes old verified cards/cache too.
+            return _with_schedule_pairing(response, record)
+        if discussion_policy_current(response.get("pairing")):
+            return response
+        if not allow_source_lookup:
+            return _with_schedule_pairing(response, _schedule_pairing_record(
+                course_id, term, failure="pairing_policy_source_unavailable"))
+        response = enrich_sections_pairing(course_id, term, response)
+        record = _schedule_pairing_record(course_id, term, response)
+        if key:
+            if not isinstance(stored.get(key[1]), dict):
+                stored[key[1]] = {}
+            stored[key[1]][key[0]] = record
+            _store_schedule_pairing(user_id, session_id, {key: record})
+        return _with_schedule_pairing(response, record)
 
     @lru_cache(maxsize=None)
     def course_info(course_id):
         title = titles.get(course_key(course_id))
         if title:
             return {"found": True, "course": {"title": title}}
+        if not allow_source_lookup:
+            return {"found": False}
         return get_course_info(course_id)
 
     return sections, course_info
@@ -2062,10 +2285,14 @@ def _apply_live_schedule_result(entry: dict, result: Optional[dict]) -> dict:
         "instructors",
         "status",
         "is_cancelled",
+        "cancellation_status",
         "seats_open",
+        "meetings",
+        "comments",
+        "section_comment",
     )
     snapshot = {
-        field: matched.get(field)
+        field: deepcopy(matched.get(field))
         for field in snapshot_fields
     }
     snapshot["source"] = result.get("source")
@@ -2073,7 +2300,7 @@ def _apply_live_schedule_result(entry: dict, result: Optional[dict]) -> dict:
     refreshed["materialized_section"] = snapshot
     refreshed["materialization_status"] = (
         "resolved"
-        if section_time_status(matched, matched) != "unknown"
+        if all(section_time_status(meeting, meeting) != "unknown" for meeting in section_meetings(matched))
         else "tba"
     )
     stale = bool(result.get("stale")) or result.get("source") == "last_known_live"
@@ -2115,7 +2342,7 @@ async def refresh_schedule(
 ):
     """Explicitly refresh live section state without deleting any entry."""
 
-    from app.data.db import get_live_sections
+    from app.data.db import get_live_sections, enrich_sections_pairing
 
     check_rate_limit(request, SCHEDULE_WRITE_LIMIT, user["id"])
     user_id = user["id"]
@@ -2146,10 +2373,19 @@ async def refresh_schedule(
         )
         for key in unique_keys
     }
+    pairing_enabled = config.dynamic_prefilter_enabled() or config.recommendation_ranking_enabled()
+    pairing_tasks = {
+        key: asyncio.create_task(asyncio.to_thread(
+            enrich_sections_pairing, key[0], key[1],
+            {"found": False, "sections": [], "term": key[1], "is_live": True},
+            force_refresh=True, request_timeout_s=2.5,
+        )) for key in unique_keys
+    } if pairing_enabled else {}
+    all_tasks = [*task_by_key.values(), *pairing_tasks.values()]
     done, pending = await asyncio.wait(
-        task_by_key.values(),
+        all_tasks,
         timeout=3.0,
-    ) if task_by_key else (set(), set())
+    ) if all_tasks else (set(), set())
     for task in pending:
         task.cancel()
     result_by_key: dict[tuple[str, str], Optional[dict]] = {}
@@ -2168,13 +2404,26 @@ async def refresh_schedule(
             )
             result_by_key[key] = None
 
+    pairing_by_key = {}
+    for key, task in pairing_tasks.items():
+        failure, response = None, None
+        if task not in done:
+            failure = "pairing_refresh_timeout"
+        else:
+            try:
+                response = task.result()
+            except Exception as exc:
+                logger.warning("[schedule] pairing refresh degraded for %s %s: %s", key[0], key[1], type(exc).__name__)
+                failure = "pairing_refresh_unavailable"
+        pairing_by_key[key] = _schedule_pairing_record(*key, response, failure=failure)
+
     payload = await asyncio.to_thread(
-        _finish_schedule_refresh, user_id, active_session_id, result_by_key,
+        _finish_schedule_refresh, user_id, active_session_id, result_by_key, pairing_by_key,
     )
     return {**payload, "timed_out": bool(pending)}
 
 
-def _finish_schedule_refresh(user_id, session_id, result_by_key):
+def _finish_schedule_refresh(user_id, session_id, result_by_key, pairing_by_key=None):
     with _schedule_lock(user_id, session_id):
         # The user may add/remove sections while the live requests run.
         session = get_or_create_session(session_id, user_id=user_id)
@@ -2186,12 +2435,21 @@ def _finish_schedule_refresh(user_id, session_id, result_by_key):
                 if key in result_by_key else entry
             )
         session = update_session(session_id, {"pending_schedule": refreshed_entries}, user_id=user_id)
-        cached_lookup, course_lookup = _schedule_lookups(user_id, session_id)
+        if pairing_by_key:
+            _store_schedule_pairing(user_id, session_id, pairing_by_key)
+        # All network work belongs to the concurrent deadline above. Saved
+        # per-entry snapshots can still materialize/validate selected rows.
+        cached_lookup, course_lookup = _schedule_lookups(
+            user_id, session_id, allow_source_lookup=not bool(pairing_by_key),
+        )
 
         def section_lookup(course_id, term):
             result = result_by_key.get((course_id, term))
             if result and result.get("sections"):
-                return {**result, "found": True}
+                key = _schedule_pairing_key(course_id, term)
+                record = next((record for source_key, record in (pairing_by_key or {}).items()
+                               if _schedule_pairing_key(*source_key) == key), None) if key else None
+                return _with_schedule_pairing({**result, "found": True}, record)
             return cached_lookup(course_id, term)
 
         return {
@@ -2313,34 +2571,32 @@ def _build_schedule_events(session, *, section_lookup=None, course_lookup=None):
             sec = next((s for s in sections if sid in (
                 str(s.get("section_num") or ""), str(s.get("section_code") or ""),
             )), None)
-        if sec is None or section_time_status(sec, sec) == "unknown":
+        if sec is None:
             continue
-
-        sec = normalize_section_meeting(sec)
-        start, end = sec.get("start_time"), sec.get("end_time")
-        days_str = sec.get("days")
-        if not (start and end and days_str):
-            continue  # async / TBA sections have no calendar slot
+        if sec.get("is_cancelled") is True or str(sec.get("status") or "").upper() in {"CANCELLED", "CANCELED"}:
+            continue
 
         instructors = sec.get("instructors") or []
         primary_instructor = instructors[0] if instructors else ""
 
-        for day in calendar_day_names(days_str):
-            events.append({
-                "course_id":   cid,
-                "term":        entry_term,
-                "title":       title,
-                "section_num": sec.get("section_num") or sid,    # "A" / "A1"
-                "section_code": sec.get("section_code", ""),    # "34190" — 5-digit registrar code
-                "section_type": sec.get("section_type"),         # "Lec" / "Dis" / "Lab"
-                "instructor":  primary_instructor,
-                "day":         day,
-                "start":       start,
-                "end":         end,
-                "location":    sec.get("location") or "",
-                # Keep legacy `section` key (= section_code) for callers
-                # that haven't migrated yet (the frontend grid currently
-                # reads only course_id / day / start / end / location).
-                "section":     sec.get("section_code", ""),
-            })
+        for meeting_index, meeting in enumerate(section_meetings(sec)):
+            if section_time_status(meeting, meeting) == "unknown":
+                continue  # Keep other known meetings; unknowns remain in the plan.
+            start, end = meeting.get("start_time"), meeting.get("end_time")
+            for day in calendar_day_names(meeting.get("days") or ""):
+                events.append({
+                    "course_id": cid,
+                    "term": entry_term,
+                    "title": title,
+                    "section_num": sec.get("section_num") or sid,
+                    "section_code": sec.get("section_code", ""),
+                    "section_type": sec.get("section_type"),
+                    "instructor": primary_instructor,
+                    "day": day,
+                    "start": start,
+                    "end": end,
+                    "location": meeting.get("location") or "",
+                    "meeting_index": meeting_index,
+                    "section": sec.get("section_code", ""),
+                })
     return events

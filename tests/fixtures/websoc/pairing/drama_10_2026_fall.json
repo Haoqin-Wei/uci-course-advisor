@@ -1,0 +1,34 @@
+{
+  "fixture_kind": "public_registrar_websoc_raw_post",
+  "captured_at": "2026-10-20T21:57:09.297641+00:00",
+  "request": {
+    "method": "POST",
+    "url": "https://www.reg.uci.edu/perl/WebSoc",
+    "form": {
+      "YearTerm": "2026-92",
+      "Dept": "DRAMA",
+      "CourseNum": "10",
+      "Breadth": "ANY",
+      "ClassType": "ALL",
+      "ShowComments": "on",
+      "ShowFinals": "on",
+      "CancelledCourses": "Include",
+      "Submit": "Display Web Results"
+    }
+  },
+  "response": {
+    "status_code": 200,
+    "content_type": "text/html; charset=ISO-8859-1",
+    "encoding": "ISO-8859-1",
+    "byte_count": 12820,
+    "sha256": "02f28431dd6ade14ce900231b74d520e0fe23f0a069758d7a79f8333d0c9706a"
+  },
+  "notes": [
+    "Public course information only; no account, cookies, credentials or registration operations.",
+    "Raw response preserved byte-for-byte; new policy fixture does not replace prior captures."
+  ],
+  "scope": {
+    "course_id": "DRAMA 10",
+    "term": "2026 Fall"
+  }
+}

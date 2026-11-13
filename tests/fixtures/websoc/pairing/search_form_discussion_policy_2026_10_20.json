@@ -1,0 +1,19 @@
+{
+  "fixture_kind": "public_registrar_websoc_raw_form",
+  "captured_at": "2026-10-20T21:57:09.298896+00:00",
+  "request": {
+    "method": "GET",
+    "url": "https://www.reg.uci.edu/perl/WebSoc"
+  },
+  "response": {
+    "status_code": 200,
+    "content_type": "text/html; charset=ISO-8859-1",
+    "encoding": "ISO-8859-1",
+    "byte_count": 41073,
+    "sha256": "c1f1be545dfa7491b66b9206cd8b7218d88d02a104fb2a56dec1c9e994a939e5"
+  },
+  "notes": [
+    "Public course information only; no account, cookies, credentials or registration operations.",
+    "Raw response preserved byte-for-byte; new policy fixture does not replace prior captures."
+  ]
+}

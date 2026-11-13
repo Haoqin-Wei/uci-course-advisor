@@ -40,7 +40,8 @@ def test_build_websoc_course_params_uses_course_number_and_post_contract() -> No
     assert params["YearTerm"] == "2026-92"
     assert params["Dept"] == "ECON"
     assert params["CourseNum"] == "167"
-    assert "ShowComments" not in params
+    assert params["ShowComments"] == "on"
+    assert params["CancelledCourses"] == "Include"
 
 
 def test_parse_websoc_course_offered_returns_normalized_sections() -> None:

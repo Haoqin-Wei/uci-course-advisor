@@ -8,7 +8,8 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 
 from app import observability
-from app.terms.calendar import calculate_week8_cutoff
+from app.terms.availability import catalog_availability, merged_availability
+from app.terms.calendar import calculate_default_switch_cutoff
 from app.terms.clock import Clock, SystemClock
 from app.terms.models import ResolvedTerm, TermKey, TermParseError, TermParseResult
 from app.terms.parser import parse_term_key, parse_term_text
@@ -78,7 +79,7 @@ def _cutoff(record: Optional[dict]) -> Optional[datetime]:
     start = _instruction_start(record)
     if start is None:
         return None
-    return calculate_week8_cutoff(start)
+    return calculate_default_switch_cutoff(start)
 
 
 class TermResolutionService:
@@ -169,13 +170,22 @@ class TermResolutionService:
         now = self.clock.now()
         started = [item for item in timeline if item[0] <= now.date()]
         transition_cutoff = None
+        transition_source = "calendar"
         if started:
             start, key, record = started[-1]
             # An incomplete old calendar must not advance forever or invent
             # today's quarter. Keep the last known default when coverage ends.
             if (now.date() - self._end_date(start, record)).days <= 120:
-                transition_cutoff = calculate_week8_cutoff(start)
-                current = key.next_regular() if now >= transition_cutoff else key
+                transition_cutoff = calculate_default_switch_cutoff(start)
+                upcoming = key.next_regular()
+                if now >= transition_cutoff:
+                    current, transition_source = upcoming, "calendar_week7"
+                elif self._timetable_published(upcoming):
+                    current, transition_source = upcoming, "timetable_published"
+                elif previous == upcoming:
+                    current = upcoming  # Already advanced; never fall back mid-term.
+                else:
+                    current = key
         elif timeline and previous not in self._calendar_records(state)[1]:
             current = timeline[0][1]
         if current != previous:
@@ -183,13 +193,21 @@ class TermResolutionService:
                 "previous": previous.canonical_name,
                 "current": current.canonical_name,
                 "cutoff": transition_cutoff.isoformat() if transition_cutoff else None,
-                "source": "calendar_week8",
+                "source": transition_source,
                 "changed_at": now.isoformat(timespec="seconds"),
             })
             self.store.save(state)
             observability.increment("term.automatic_transition")
-        # Publication is evidence about data, never a gate on the date default.
+        # The default moves to the next term as soon as its whole timetable is
+        # stored, and at Week 7 regardless. Publication can only bring the
+        # switch forward; a missing timetable never holds the date back.
         return self._resolved(current, state)
+
+    @staticmethod
+    def _timetable_published(key: TermKey) -> bool:
+        """A complete synced timetable for ``key`` is stored locally."""
+        record = catalog_availability().get(key.canonical_name)
+        return bool(record and record.get("available") is True and record.get("status") == "complete")
 
     def resolve_message(self, text: str) -> QueryTermResolution:
         automatic = self.automatic_term()
@@ -234,15 +252,15 @@ class TermResolutionService:
             "last_attempt_at": state.last_attempt_at,
             "last_error": state.last_error,
             "next_cutoff": (
-                automatic.week8_cutoff.isoformat()
-                if automatic.week8_cutoff
+                automatic.switch_cutoff.isoformat()
+                if automatic.switch_cutoff
                 else None
             ),
             "checked_at": automatic.checked_at.isoformat(),
             "cache_age_days": (
                 round(age.total_seconds() / 86_400, 3) if age is not None else None
             ),
-            "availability": state.availability.get(automatic.canonical_name),
+            "availability": merged_availability(state.availability).get(automatic.canonical_name),
             "transition": state.transition or None,
             "fallback": (
                 automatic.source == "code_fallback"
@@ -268,7 +286,7 @@ class TermResolutionService:
         state = self.store.load() or TermStateSnapshot()
         names = {
             name
-            for name, record in state.availability.items()
+            for name, record in merged_availability(state.availability).items()
             if isinstance(record, dict) and record.get("available") is True
         }
         names.update(state.websoc_terms)
@@ -296,15 +314,15 @@ class TermResolutionService:
         """Return whether the selector is allowed to persist ``key``.
 
         The WebSoc term list is itself the publication contract for explicit
-        user selection.  ``availability`` is a stronger, department-level
-        probe used by the automatic-term transition algorithm; most historical
-        terms are intentionally not probed.  Keeping these two concepts
+        user selection.  ``availability`` is stronger evidence — sections the
+        catalog sync actually stored — and only exists for the few terms that
+        are synced.  Keeping these two concepts
         separate prevents the UI from offering a published historical term
         that the mutation endpoint then rejects.
         """
         state = self.store.load() or TermStateSnapshot()
         name = key.canonical_name
-        availability = state.availability.get(name)
+        availability = merged_availability(state.availability).get(name)
         if isinstance(availability, dict) and availability.get("available") is True:
             return True
         if name in state.websoc_terms:
@@ -321,7 +339,7 @@ class TermResolutionService:
     ) -> ResolvedTerm:
         records, duplicates = self._calendar_records(state)
         record = None if key in duplicates else records.get(key)
-        availability_record = state.availability.get(key.canonical_name)
+        availability_record = merged_availability(state.availability).get(key.canonical_name)
         availability = availability_record or {}
         available = availability.get("available") is True
         if key == self._key_or_fallback(state.automatic_term):
@@ -334,7 +352,7 @@ class TermResolutionService:
         return ResolvedTerm.from_key(
             key,
             instruction_start=_instruction_start(record),
-            week8_cutoff=_cutoff(record),
+            switch_cutoff=_cutoff(record),
             data_available=available or force_available,
             source=source or state.source,
             status=status,

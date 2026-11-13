@@ -1,0 +1,475 @@
+{
+  "summary": {
+    "course_id": "SWE43",
+    "term": "2026 Fall",
+    "endpoint": "https://anteaterapi.com/v2/rest/websoc?year=2026&quarter=Fall&department=SWE&courseNumber=43",
+    "http_status": 200,
+    "source_fetched_at_utc": "2026-11-06T01:10:40Z",
+    "processed_at_utc": "2026-11-06T01:14:19.864376+00:00",
+    "raw_sha256": "f8daad903c0757d595b0887639abe5290633890af7e5eaad1a7547ee6b7076bf",
+    "source_sections": 13,
+    "result_sections": 13,
+    "source_meetings": 13,
+    "result_meetings": 13,
+    "comment_fields_checked": 18,
+    "comments_equal": true,
+    "all_meetings_deep_equal": true,
+    "cancelled_sections": [
+      "37513",
+      "37515",
+      "37512"
+    ],
+    "cancellation_equal": true,
+    "unmapped_comment_fields": [],
+    "extra_or_missing_sections": [],
+    "comment_context_count": 1,
+    "weburl_added": false,
+    "pairing_lookup_status": "available",
+    "actual_provider_model_calls": 0,
+    "capture_client_calls": 2,
+    "runtime_flags": {
+      "dynamic_prefilter_enabled": true,
+      "recommendation_ranking_enabled": true,
+      "pairing_contract_enabled": true
+    },
+    "recommendation_prefilter_active_for_this_query": false,
+    "capture_method": "fresh_public_Anteater_HTTP_response_replayed_through_actual_agent_tool_loop",
+    "tool_message_matches_next_model_request": true
+  },
+  "comments": [
+    {
+      "raw_path": "/data/schools/0/schoolComment",
+      "result_path": "/comment_contexts/comments_8d74511e5e170530/school/comment",
+      "equal": true,
+      "empty": false,
+      "raw_value_sha256": "9a3a539708b73044235e379ec9f2013dcd5c639fb01f73c252a973fcffaf36a3",
+      "result_value_sha256": "9a3a539708b73044235e379ec9f2013dcd5c639fb01f73c252a973fcffaf36a3"
+    },
+    {
+      "raw_path": "/data/schools/0/departments/0/deptComment",
+      "result_path": "/comment_contexts/comments_8d74511e5e170530/department/comment",
+      "equal": true,
+      "empty": false,
+      "raw_value_sha256": "863d900e3bfb13af4851cb9922579319b686c6a512e85ca4912fd7e20dece1d7",
+      "result_value_sha256": "863d900e3bfb13af4851cb9922579319b686c6a512e85ca4912fd7e20dece1d7"
+    },
+    {
+      "raw_path": "/data/schools/0/departments/0/courseNumberRangeComments",
+      "result_path": "/comment_contexts/comments_8d74511e5e170530/department/course_number_range_comments",
+      "equal": true,
+      "empty": false,
+      "raw_value_sha256": "7648439730a43b2fe4a86395e857604ca4bcfd5e72e94ec7be77cc0a490b1cdc",
+      "result_value_sha256": "7648439730a43b2fe4a86395e857604ca4bcfd5e72e94ec7be77cc0a490b1cdc"
+    },
+    {
+      "raw_path": "/data/schools/0/departments/0/sectionCodeRangeComments",
+      "result_path": "/comment_contexts/comments_8d74511e5e170530/department/section_code_range_comments",
+      "equal": true,
+      "empty": true,
+      "raw_value_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "result_value_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "raw_path": "/data/schools/0/departments/0/courses/0/courseComment",
+      "result_path": "/comment_contexts/comments_8d74511e5e170530/course/comment",
+      "equal": true,
+      "empty": false,
+      "raw_value_sha256": "9fe573f8f3e090dbffb576bb6825829e1f6d6cfdf96d529e3b680314be849ed4",
+      "result_value_sha256": "9fe573f8f3e090dbffb576bb6825829e1f6d6cfdf96d529e3b680314be849ed4"
+    },
+    {
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/0/sectionComment",
+      "result_path": "/sections/0/section_comment",
+      "equal": true,
+      "empty": true,
+      "raw_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+      "result_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+    },
+    {
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/1/sectionComment",
+      "result_path": "/sections/1/section_comment",
+      "equal": true,
+      "empty": true,
+      "raw_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+      "result_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+    },
+    {
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/2/sectionComment",
+      "result_path": "/sections/2/section_comment",
+      "equal": true,
+      "empty": true,
+      "raw_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+      "result_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+    },
+    {
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/3/sectionComment",
+      "result_path": "/sections/3/section_comment",
+      "equal": true,
+      "empty": true,
+      "raw_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+      "result_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+    },
+    {
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/4/sectionComment",
+      "result_path": "/sections/4/section_comment",
+      "equal": true,
+      "empty": true,
+      "raw_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+      "result_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+    },
+    {
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/5/sectionComment",
+      "result_path": "/sections/5/section_comment",
+      "equal": true,
+      "empty": true,
+      "raw_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+      "result_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+    },
+    {
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/6/sectionComment",
+      "result_path": "/sections/6/section_comment",
+      "equal": true,
+      "empty": true,
+      "raw_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+      "result_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+    },
+    {
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/7/sectionComment",
+      "result_path": "/sections/7/section_comment",
+      "equal": true,
+      "empty": false,
+      "raw_value_sha256": "675f8a139da17a2cfb51b3d2f25f6f11dc79061010d616b77dc123417bd7c827",
+      "result_value_sha256": "675f8a139da17a2cfb51b3d2f25f6f11dc79061010d616b77dc123417bd7c827"
+    },
+    {
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/8/sectionComment",
+      "result_path": "/sections/8/section_comment",
+      "equal": true,
+      "empty": false,
+      "raw_value_sha256": "88780d6ab923945aa67b85baf1a61eaf751880ad7fffb73b1292a050237be726",
+      "result_value_sha256": "88780d6ab923945aa67b85baf1a61eaf751880ad7fffb73b1292a050237be726"
+    },
+    {
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/9/sectionComment",
+      "result_path": "/sections/9/section_comment",
+      "equal": true,
+      "empty": true,
+      "raw_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+      "result_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+    },
+    {
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/10/sectionComment",
+      "result_path": "/sections/10/section_comment",
+      "equal": true,
+      "empty": true,
+      "raw_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+      "result_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+    },
+    {
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/11/sectionComment",
+      "result_path": "/sections/11/section_comment",
+      "equal": true,
+      "empty": true,
+      "raw_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126",
+      "result_value_sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+    },
+    {
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/12/sectionComment",
+      "result_path": "/sections/12/section_comment",
+      "equal": true,
+      "empty": false,
+      "raw_value_sha256": "5a72b7d61bf5dad13c40bb3213b366fd3459ec10c01ad43b4dc634b8029afdce",
+      "result_value_sha256": "5a72b7d61bf5dad13c40bb3213b366fd3459ec10c01ad43b4dc634b8029afdce"
+    }
+  ],
+  "meetings": [
+    {
+      "section_code": "37514",
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/0/meetings",
+      "result_path": "/sections/0/meetings",
+      "equal": true,
+      "meeting_count": 1,
+      "raw_value_sha256": "3de9423326c70d6e07b309173e4785d7bcfa34e7501e2fca22fa35968b105784",
+      "result_value_sha256": "3de9423326c70d6e07b309173e4785d7bcfa34e7501e2fca22fa35968b105784"
+    },
+    {
+      "section_code": "37504",
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/1/meetings",
+      "result_path": "/sections/1/meetings",
+      "equal": true,
+      "meeting_count": 1,
+      "raw_value_sha256": "aff5d031a0f9f4dcc295fb666584825f42be8f7567df2407cfa2450d4cfd24d9",
+      "result_value_sha256": "aff5d031a0f9f4dcc295fb666584825f42be8f7567df2407cfa2450d4cfd24d9"
+    },
+    {
+      "section_code": "37500",
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/2/meetings",
+      "result_path": "/sections/2/meetings",
+      "equal": true,
+      "meeting_count": 1,
+      "raw_value_sha256": "3b6ffd4e3bf513a230e3f1f6245bb4925338b72d092e8675dc4fc0be300c56bd",
+      "result_value_sha256": "3b6ffd4e3bf513a230e3f1f6245bb4925338b72d092e8675dc4fc0be300c56bd"
+    },
+    {
+      "section_code": "37501",
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/3/meetings",
+      "result_path": "/sections/3/meetings",
+      "equal": true,
+      "meeting_count": 1,
+      "raw_value_sha256": "b345fa89a969f4d873fdfbbfd513fa026fa1c33b293a1854b7295b7a8769babe",
+      "result_value_sha256": "b345fa89a969f4d873fdfbbfd513fa026fa1c33b293a1854b7295b7a8769babe"
+    },
+    {
+      "section_code": "37502",
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/4/meetings",
+      "result_path": "/sections/4/meetings",
+      "equal": true,
+      "meeting_count": 1,
+      "raw_value_sha256": "23feba507df3949c2740037a4e99e4f63474a70f2faa9c4c631b62883f8a3018",
+      "result_value_sha256": "23feba507df3949c2740037a4e99e4f63474a70f2faa9c4c631b62883f8a3018"
+    },
+    {
+      "section_code": "37503",
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/5/meetings",
+      "result_path": "/sections/5/meetings",
+      "equal": true,
+      "meeting_count": 1,
+      "raw_value_sha256": "e3607673a670d7dbf15a5a3551bdb29b387aa87b0ec3ae90c35c5a64f8326f60",
+      "result_value_sha256": "e3607673a670d7dbf15a5a3551bdb29b387aa87b0ec3ae90c35c5a64f8326f60"
+    },
+    {
+      "section_code": "37505",
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/6/meetings",
+      "result_path": "/sections/6/meetings",
+      "equal": true,
+      "meeting_count": 1,
+      "raw_value_sha256": "5d9bacbb50befa8a2dcfd1981634c4f05a3f9b4b59ab3c7f820dfebe086ca20f",
+      "result_value_sha256": "5d9bacbb50befa8a2dcfd1981634c4f05a3f9b4b59ab3c7f820dfebe086ca20f"
+    },
+    {
+      "section_code": "37513",
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/7/meetings",
+      "result_path": "/sections/7/meetings",
+      "equal": true,
+      "meeting_count": 1,
+      "raw_value_sha256": "3b9ffeb15c17cdba46443c0670699bbe1627314761cbf75e276a4afe73edd45e",
+      "result_value_sha256": "3b9ffeb15c17cdba46443c0670699bbe1627314761cbf75e276a4afe73edd45e"
+    },
+    {
+      "section_code": "37515",
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/8/meetings",
+      "result_path": "/sections/8/meetings",
+      "equal": true,
+      "meeting_count": 1,
+      "raw_value_sha256": "0d6524d2cc408733d88829df975d8a4b811fa0706f3912216052feed93bdb257",
+      "result_value_sha256": "0d6524d2cc408733d88829df975d8a4b811fa0706f3912216052feed93bdb257"
+    },
+    {
+      "section_code": "37506",
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/9/meetings",
+      "result_path": "/sections/9/meetings",
+      "equal": true,
+      "meeting_count": 1,
+      "raw_value_sha256": "60186aba2ce099881991d4bef48159c70f2177bdb826b4241ecc43cf769dd8e2",
+      "result_value_sha256": "60186aba2ce099881991d4bef48159c70f2177bdb826b4241ecc43cf769dd8e2"
+    },
+    {
+      "section_code": "37510",
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/10/meetings",
+      "result_path": "/sections/10/meetings",
+      "equal": true,
+      "meeting_count": 1,
+      "raw_value_sha256": "5137f58983b38d310fe01e222fe4454d7f3e98f2b09d00b33a89725a75fce070",
+      "result_value_sha256": "5137f58983b38d310fe01e222fe4454d7f3e98f2b09d00b33a89725a75fce070"
+    },
+    {
+      "section_code": "37511",
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/11/meetings",
+      "result_path": "/sections/11/meetings",
+      "equal": true,
+      "meeting_count": 1,
+      "raw_value_sha256": "16055bd07350febe5dd13e4d4a3cb279afa2ff724f0fbd63ecd455f53d90ab30",
+      "result_value_sha256": "16055bd07350febe5dd13e4d4a3cb279afa2ff724f0fbd63ecd455f53d90ab30"
+    },
+    {
+      "section_code": "37512",
+      "raw_path": "/data/schools/0/departments/0/courses/0/sections/12/meetings",
+      "result_path": "/sections/12/meetings",
+      "equal": true,
+      "meeting_count": 1,
+      "raw_value_sha256": "d8ba88720b747a1a43d528da7944cdb5a4ce6305562f9561f4e635ec664b7eda",
+      "result_value_sha256": "d8ba88720b747a1a43d528da7944cdb5a4ce6305562f9561f4e635ec664b7eda"
+    }
+  ],
+  "cancellation": [
+    {
+      "section_code": "37514",
+      "raw": false,
+      "result": false,
+      "equal": true
+    },
+    {
+      "section_code": "37504",
+      "raw": false,
+      "result": false,
+      "equal": true
+    },
+    {
+      "section_code": "37500",
+      "raw": false,
+      "result": false,
+      "equal": true
+    },
+    {
+      "section_code": "37501",
+      "raw": false,
+      "result": false,
+      "equal": true
+    },
+    {
+      "section_code": "37502",
+      "raw": false,
+      "result": false,
+      "equal": true
+    },
+    {
+      "section_code": "37503",
+      "raw": false,
+      "result": false,
+      "equal": true
+    },
+    {
+      "section_code": "37505",
+      "raw": false,
+      "result": false,
+      "equal": true
+    },
+    {
+      "section_code": "37513",
+      "raw": true,
+      "result": true,
+      "equal": true
+    },
+    {
+      "section_code": "37515",
+      "raw": true,
+      "result": true,
+      "equal": true
+    },
+    {
+      "section_code": "37506",
+      "raw": false,
+      "result": false,
+      "equal": true
+    },
+    {
+      "section_code": "37510",
+      "raw": false,
+      "result": false,
+      "equal": true
+    },
+    {
+      "section_code": "37511",
+      "raw": false,
+      "result": false,
+      "equal": true
+    },
+    {
+      "section_code": "37512",
+      "raw": true,
+      "result": true,
+      "equal": true
+    }
+  ],
+  "anteater_transport": [
+    {
+      "url": "https://anteaterapi.com/v2/rest/websoc",
+      "params": {
+        "year": "2026",
+        "quarter": "Fall",
+        "department": "SWE",
+        "courseNumber": "43"
+      },
+      "mode": "fresh_http_response_replay",
+      "raw_sha256": "f8daad903c0757d595b0887639abe5290633890af7e5eaad1a7547ee6b7076bf"
+    }
+  ],
+  "supplementary_official_requests": [
+    {
+      "method": "GET",
+      "url": "https://www.reg.uci.edu/perl/WebSoc",
+      "form": null,
+      "started_at": "2026-11-06T01:14:19.294507+00:00",
+      "status": 200,
+      "bytes": 40974,
+      "response_file": "2026-fall-swe43-official-1.html"
+    },
+    {
+      "method": "POST",
+      "url": "https://www.reg.uci.edu/perl/WebSoc",
+      "form": {
+        "Submit": "Display Web Results",
+        "YearTerm": "2026-92",
+        "ShowComments": "on",
+        "ShowFinals": "on",
+        "Breadth": "ANY",
+        "Dept": "SWE",
+        "CourseNum": "43",
+        "CourseCodes": "",
+        "InstrName": "",
+        "CourseTitle": "",
+        "ClassType": "ALL",
+        "Units": "",
+        "Days": "",
+        "StartTime": "",
+        "EndTime": "",
+        "MaxCap": "",
+        "FullCourses": "ANY",
+        "FontSize": "100",
+        "CancelledCourses": "Include",
+        "Bldg": "",
+        "Room": ""
+      },
+      "started_at": "2026-11-06T01:14:19.564909+00:00",
+      "status": 200,
+      "bytes": 30130,
+      "response_file": "2026-fall-swe43-official-2.html"
+    }
+  ],
+  "agent_events": [
+    {
+      "type": "tool_call_start",
+      "name": "get_live_sections",
+      "args": {
+        "course_id": "SWE43",
+        "term": "2026 Fall",
+        "force_refresh": true
+      },
+      "label": "Checking live WebSoc · SWE43 · 2026 Fall",
+      "response_language": "en"
+    },
+    {
+      "type": "tool_call_done",
+      "name": "get_live_sections",
+      "ok": true,
+      "label": "Checking live WebSoc · SWE43 · 2026 Fall",
+      "args": {
+        "course_id": "SWE43",
+        "term": "2026 Fall",
+        "force_refresh": true
+      },
+      "term_data_available": true,
+      "reused": false
+    },
+    {
+      "type": "token",
+      "text": "Tool payload capture complete."
+    },
+    {
+      "type": "final",
+      "text": "Tool payload capture complete.",
+      "iterations": 2,
+      "tool_calls": 1
+    }
+  ]
+}

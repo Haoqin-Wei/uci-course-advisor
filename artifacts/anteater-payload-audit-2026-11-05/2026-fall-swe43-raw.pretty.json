@@ -1,0 +1,635 @@
+{
+  "ok": true,
+  "data": {
+    "schools": [
+      {
+        "departments": [
+          {
+            "courses": [
+              {
+                "sections": [
+                  {
+                    "units": "0",
+                    "status": "OPEN",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "ALP 2600"
+                        ],
+                        "days": "W",
+                        "startTime": {
+                          "hour": 13,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 13,
+                          "minute": 50
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "NO_FINAL"
+                    },
+                    "sectionNum": "B4",
+                    "instructors": [
+                      "DODOR, E.",
+                      "MANNAN, U."
+                    ],
+                    "maxCapacity": "60",
+                    "sectionCode": "37514",
+                    "sectionType": "Dis",
+                    "numRequested": "22",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "0",
+                    "sectionComment": "",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "23",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": false,
+                    "updatedAt": "2026-11-06T01:06:18.428Z",
+                    "webURL": ""
+                  },
+                  {
+                    "units": "0",
+                    "status": "FULL",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "PCB 1200"
+                        ],
+                        "days": "F",
+                        "startTime": {
+                          "hour": 12,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 12,
+                          "minute": 50
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "NO_FINAL"
+                    },
+                    "sectionNum": "A4",
+                    "instructors": [
+                      "HAIDER, A.",
+                      "GILLESPIE, J."
+                    ],
+                    "maxCapacity": "39",
+                    "sectionCode": "37504",
+                    "sectionType": "Dis",
+                    "numRequested": "32",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "0",
+                    "sectionComment": "",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "39",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": false,
+                    "updatedAt": "2026-11-06T01:06:18.428Z",
+                    "webURL": ""
+                  },
+                  {
+                    "units": "4",
+                    "status": "OPEN",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "ALP 1300"
+                        ],
+                        "days": "TuTh",
+                        "startTime": {
+                          "hour": 18,
+                          "minute": 30
+                        },
+                        "endTime": {
+                          "hour": 19,
+                          "minute": 50
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "TBA_FINAL"
+                    },
+                    "sectionNum": "A",
+                    "instructors": [
+                      "GILLESPIE, J."
+                    ],
+                    "maxCapacity": "249",
+                    "sectionCode": "37500",
+                    "sectionType": "Lec",
+                    "numRequested": "232",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "0",
+                    "sectionComment": "",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "216",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": false,
+                    "updatedAt": "2026-11-06T01:06:18.428Z",
+                    "webURL": "https://canvas.eee.uci.edu/courses/sis_course_id:CourseSpace-Section-F26-37500/assignments/syllabus"
+                  },
+                  {
+                    "units": "0",
+                    "status": "OPEN",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "PCB 1200"
+                        ],
+                        "days": "F",
+                        "startTime": {
+                          "hour": 9,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 9,
+                          "minute": 50
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "NO_FINAL"
+                    },
+                    "sectionNum": "A1",
+                    "instructors": [
+                      "DU, H.",
+                      "GILLESPIE, J."
+                    ],
+                    "maxCapacity": "39",
+                    "sectionCode": "37501",
+                    "sectionType": "Dis",
+                    "numRequested": "18",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "0",
+                    "sectionComment": "",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "17",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": false,
+                    "updatedAt": "2026-11-06T01:06:18.428Z",
+                    "webURL": ""
+                  },
+                  {
+                    "units": "0",
+                    "status": "OPEN",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "PCB 1200"
+                        ],
+                        "days": "F",
+                        "startTime": {
+                          "hour": 10,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 10,
+                          "minute": 50
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "NO_FINAL"
+                    },
+                    "sectionNum": "A2",
+                    "instructors": [
+                      "DU, H.",
+                      "GILLESPIE, J."
+                    ],
+                    "maxCapacity": "39",
+                    "sectionCode": "37502",
+                    "sectionType": "Dis",
+                    "numRequested": "31",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "0",
+                    "sectionComment": "",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "33",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": false,
+                    "updatedAt": "2026-11-06T01:06:18.428Z",
+                    "webURL": ""
+                  },
+                  {
+                    "units": "0",
+                    "status": "OPEN",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "PCB 1200"
+                        ],
+                        "days": "F",
+                        "startTime": {
+                          "hour": 11,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 11,
+                          "minute": 50
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "NO_FINAL"
+                    },
+                    "sectionNum": "A3",
+                    "instructors": [
+                      "DU, H.",
+                      "GILLESPIE, J."
+                    ],
+                    "maxCapacity": "43",
+                    "sectionCode": "37503",
+                    "sectionType": "Dis",
+                    "numRequested": "38",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "0",
+                    "sectionComment": "",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "42",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": false,
+                    "updatedAt": "2026-11-06T01:06:18.428Z",
+                    "webURL": ""
+                  },
+                  {
+                    "units": "0",
+                    "status": "FULL",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "PCB 1200"
+                        ],
+                        "days": "F",
+                        "startTime": {
+                          "hour": 13,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 13,
+                          "minute": 50
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "NO_FINAL"
+                    },
+                    "sectionNum": "A5",
+                    "instructors": [
+                      "HAIDER, A.",
+                      "GILLESPIE, J."
+                    ],
+                    "maxCapacity": "50",
+                    "sectionCode": "37505",
+                    "sectionType": "Dis",
+                    "numRequested": "49",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "0",
+                    "sectionComment": "",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "50",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": false,
+                    "updatedAt": "2026-11-06T01:06:18.428Z",
+                    "webURL": ""
+                  },
+                  {
+                    "units": "0",
+                    "status": "FULL",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "TBA "
+                        ],
+                        "days": "W",
+                        "startTime": {
+                          "hour": 12,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 12,
+                          "minute": 50
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "NO_FINAL"
+                    },
+                    "sectionNum": "B3",
+                    "instructors": [
+                      "STAFF",
+                      "MANNAN, U."
+                    ],
+                    "maxCapacity": "0",
+                    "sectionCode": "37513",
+                    "sectionType": "Dis",
+                    "numRequested": "1",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "0",
+                    "sectionComment": "\n\t\t\t    <p>***  CANCELLED  *** Course Code 37513</p>\n\t\t\t    \n\t\t\t",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "0",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": true,
+                    "updatedAt": "2026-11-06T01:06:18.428Z",
+                    "webURL": ""
+                  },
+                  {
+                    "units": "0",
+                    "status": "FULL",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "TBA "
+                        ],
+                        "days": "W",
+                        "startTime": {
+                          "hour": 14,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 14,
+                          "minute": 50
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "NO_FINAL"
+                    },
+                    "sectionNum": "B5",
+                    "instructors": [
+                      "STAFF",
+                      "MANNAN, U."
+                    ],
+                    "maxCapacity": "0",
+                    "sectionCode": "37515",
+                    "sectionType": "Dis",
+                    "numRequested": "2",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "0",
+                    "sectionComment": "\n\t\t\t    <p>***  CANCELLED  *** Course Code 37515</p>\n\t\t\t    \n\t\t\t",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "0",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": true,
+                    "updatedAt": "2026-11-06T01:06:18.428Z",
+                    "webURL": ""
+                  },
+                  {
+                    "units": "0",
+                    "status": "OPEN",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "PCB 1200"
+                        ],
+                        "days": "F",
+                        "startTime": {
+                          "hour": 14,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 14,
+                          "minute": 50
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "NO_FINAL"
+                    },
+                    "sectionNum": "A6",
+                    "instructors": [
+                      "HAIDER, A.",
+                      "GILLESPIE, J."
+                    ],
+                    "maxCapacity": "39",
+                    "sectionCode": "37506",
+                    "sectionType": "Dis",
+                    "numRequested": "34",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "0",
+                    "sectionComment": "",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "35",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": false,
+                    "updatedAt": "2026-11-06T01:06:18.428Z",
+                    "webURL": ""
+                  },
+                  {
+                    "units": "4",
+                    "status": "OPEN",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "HSLH 100A"
+                        ],
+                        "days": "TuTh",
+                        "startTime": {
+                          "hour": 11,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 12,
+                          "minute": 20
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "SCHEDULED_FINAL",
+                      "dayOfWeek": "Tue",
+                      "month": 11,
+                      "day": 8,
+                      "startTime": {
+                        "hour": 10,
+                        "minute": 30
+                      },
+                      "endTime": {
+                        "hour": 12,
+                        "minute": 30
+                      },
+                      "bldg": [
+                        "HSLH 100A"
+                      ]
+                    },
+                    "sectionNum": "B",
+                    "instructors": [
+                      "MANNAN, U."
+                    ],
+                    "maxCapacity": "120",
+                    "sectionCode": "37510",
+                    "sectionType": "Lec",
+                    "numRequested": "53",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "0",
+                    "sectionComment": "",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "49",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": false,
+                    "updatedAt": "2026-11-06T01:06:18.428Z",
+                    "webURL": "https://canvas.eee.uci.edu/courses/sis_course_id:CourseSpace-Section-F26-37510/assignments/syllabus"
+                  },
+                  {
+                    "units": "0",
+                    "status": "OPEN",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "ALP 2500"
+                        ],
+                        "days": "W",
+                        "startTime": {
+                          "hour": 10,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 10,
+                          "minute": 50
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "NO_FINAL"
+                    },
+                    "sectionNum": "B1",
+                    "instructors": [
+                      "DODOR, E.",
+                      "MANNAN, U."
+                    ],
+                    "maxCapacity": "60",
+                    "sectionCode": "37511",
+                    "sectionType": "Dis",
+                    "numRequested": "20",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "0",
+                    "sectionComment": "",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "24",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": false,
+                    "updatedAt": "2026-11-06T01:06:18.428Z",
+                    "webURL": ""
+                  },
+                  {
+                    "units": "0",
+                    "status": "FULL",
+                    "meetings": [
+                      {
+                        "timeIsTBA": false,
+                        "bldg": [
+                          "TBA "
+                        ],
+                        "days": "W",
+                        "startTime": {
+                          "hour": 15,
+                          "minute": 0
+                        },
+                        "endTime": {
+                          "hour": 15,
+                          "minute": 50
+                        }
+                      }
+                    ],
+                    "finalExam": {
+                      "examStatus": "NO_FINAL"
+                    },
+                    "sectionNum": "B2",
+                    "instructors": [
+                      "STAFF",
+                      "MANNAN, U."
+                    ],
+                    "maxCapacity": "0",
+                    "sectionCode": "37512",
+                    "sectionType": "Dis",
+                    "numRequested": "0",
+                    "restrictions": "A",
+                    "numOnWaitlist": "",
+                    "numWaitlistCap": "0",
+                    "sectionComment": "\n\t\t\t    <p>***  CANCELLED  *** Course Code 37512</p>\n\t\t\t    \n\t\t\t",
+                    "numNewOnlyReserved": "",
+                    "numCurrentlyEnrolled": {
+                      "totalEnrolled": "0",
+                      "sectionEnrolled": ""
+                    },
+                    "isCancelled": true,
+                    "updatedAt": "2026-11-06T01:06:18.428Z",
+                    "webURL": ""
+                  }
+                ],
+                "deptCode": "SWE",
+                "courseTitle": "INTRO SOFTWARE ENGR",
+                "courseNumber": "43",
+                "courseId": "SWE43",
+                "courseComment": "\n\t\t\t<p>Previously offered as INF 43, &quot;Intro Software Engr&quot;. Students with prior credit for INF 43, &quot;Intro Software Engr&quot; may not take SWE 43, &quot;Intro Software Engr&quot;.</p>\n\t\t\t\n\t\t    ",
+                "prerequisiteLink": "https://www.reg.uci.edu/cob/prrqcgi?term=202692&dept=SWE&action=view_by_term#43",
+                "updatedAt": "2026-11-06T01:06:18.428Z"
+              }
+            ],
+            "deptCode": "SWE",
+            "deptName": "Software Engineering",
+            "deptComment": "\n\t\t    <p><b>RESTRICTIONS:</b> Most SWE courses will be initially restricted to majors in the Donald Bren School of Information and Computer Sciences ONLY. Some courses will be additionally restricted to specific majors or level(s) of standing. <b>For restriction details and timeline: </b> <a href=\"http://ics.uci.edu/course-enrollment-restrictions/\">http://ics.uci.edu/course-enrollment-restrictions/</a></p>\n\t\t    <p><b>WAITLIST:</b> Students on the waitlist for an ICS course should be in communication with that course's instructor to arrange for access to course materials and submission of any assignments while on the waitlist. Being on the waitlist or completing coursework DOES NOT guarantee a seat in that course.</p>\n\t\t    <p><b>DISCUSSIONS &amp; LABS:</b> Discussion and lab sections begin meeting AFTER the first lecture unless otherwise specified by the course instructor. Always check for messages from your instructors before the start of instruction.</p>\n\t\t    <p>Some lab sections are scheduled in laptop instructional labs ICS 364A, ICS2 162, or ICS2 170. Students enrolled in these labs are required to bring a personal laptop to class meetings.</p>\n\t\t    <p><b>B or X Restricted Courses: </b>Courses with a B or X restriction require an authorization code from the instructor to enroll.</p>\n\t\t    \n\t\t",
+            "sectionCodeRangeComments": [],
+            "courseNumberRangeComments": [
+              "\n\t\t    <p class=\"comment-heading\">SWE course numbers 200 - 299:</p>\n\t\t    <p>SWE graduate courses will initially be restricted to majors in the Donald Bren School of Information and Computer Sciences ONLY. <b>For restriction details and timeline:</b> <a href=\"http://ics.uci.edu/academics/graduate-academic-advising/course-updates/\">http://ics.uci.edu/academics/graduate-academic-advising/course-updates/</a></p>\n\t\t    <p>The Add/Drop Deadline for all SWE graduate courses is <b>5:00pm, Friday, October 9, 2026 .</b> <i> This deadline is strictly enforced.</i></p>\n\t\t    \n\t\t",
+              "\n\t\t    <p class=\"comment-heading\">SWE course numbers 240 - 277:</p>\n\t\t    <p>SWE 240P-277P are restricted to students in the MSWE Program ONLY.</p>\n\t\t    \n\t\t"
+            ],
+            "updatedAt": "2026-11-06T01:06:18.428Z"
+          }
+        ],
+        "schoolName": "Donald Bren School of Information and Computer Sciences",
+        "schoolComment": "\n\t\t<p>For ICS course updates, visit the ICS Enrollment Restrictions webpage:</p>\n\t\t<p><b>Undergraduate courses:</b> <a href=\"http://ics.uci.edu/course-enrollment-restrictions/\">http://ics.uci.edu/course-enrollment-restrictions/</a></p>\n\t\t<p><b>Graduate courses:</b> <a href=\"http://ics.uci.edu/academics/graduate-academic-advising/course-updates/\">http://ics.uci.edu/academics/graduate-academic-advising/course-updates/</a></p>\n\t\t<p>It is incumbent <i>on the student</i> to check the restriction status and seating availability of a course <i>before</i> adding or attempting to add or change their discussion/lab section enrollment.</p>\n\t\t<p><b>COURSE PREREQUISITES ARE STRICTLY ENFORCED. </b> The School of ICS <b>WILL DROP</b> students who do not meet the required course prerequisite(s). <i>These drops may take place at any time after grades are posted until Friday of Week 2.</i> Note that meeting the prerequisites for a course does not guarantee a seat in that course.</p>\n\t\t<p><b>WAITLIST: </b> Students on the waitlist for an ICS course should be in communication with that course's instructor to arrange for access to course materials and submission of any assignments while on the waitlist. Being on the waitlist or completing coursework DOES NOT guarantee a seat in the course.</p>\n\t\t<p><b>DEADLINES TO ADD, DROP, OR CHANGE  GRADE OPTION FOR ALL SCHOOL OF ICS COURSES</b></p>\n\t\t<p><b>5:00pm on Friday of Week 1: </b> Courses with an early deadline to add/drop/change grade option are noted with a comment in the Schedule of Classes. Permission from the instructor and an authorization code will be required after Week 1 to add or drop these courses.</p>\n\t\t<p><b>5:00pm on Friday of Week 2:</b> The deadline to add/drop/change grade option in WebReg is 5:00pm on Friday, October 9, 2026.  The Bren School of ICS <i>strictly</i> adheres to and enforces this deadline for undergraduate and graduate courses.</p>\n\t\t<p><b>ADDING, DROPPING, OR CHANGING GRADE OPTION AFTER WEEK 2:</b> Students must submit an Enrollment Exception request online through StudentAccess. <i> Exception requests will only be approved for extenuating and documented circumstances outside of the student's control.</i><b> For more information on ICS policies: </b> <a href=\"http://ics.uci.edu/academics/undergraduate-programs/majors-minors/undergraduate-student-policies/\">http://ics.uci.edu/academics/undergraduate-programs/majors-minors/undergraduate-student-policies/</a></p>\n\t\t<p><b>GRADUATE ENROLLMENT IN UNDERGRADUATE COURSES: </b>Graduate students seeking to enroll in an ICS undergraduate level course must submit a request to ICS Undergraduate Students Affairs. Priority for seating in undergraduate courses is given first to undergraduate students. Unauthorized students found enrolled in undergraduate courses WILL BE DROPPED by ICS Student Affairs.</p>\n\t\t<p><b>UNDERGRADUATE ENROLLMENT IN GRADUATE COURSES: </b>Undergraduate students seeking to enroll in an ICS graduate level course must obtain a written permission from the instructor before submitting a request for an authorization to ICS Graduate Student Affairs. Priority for seating in graduate courses is given first to graduate students. <i>Graduate level courses taken as an undergraduate will not count toward a graduate degree program.</i></p>\n\t\t<p><b>DCE CONCURRENT ENROLLMENT:</b> Only courses that show as &quot;OPEN&quot; in the Schedule of Classes may be requested. Approval of requests is contingent on seating availability and prerequisite eligibility. For more information: <a href=\"http://ics.uci.edu/academics/undergraduate-academic-advising/concurrent-enrollment/\">http://ics.uci.edu/academics/undergraduate-academic-advising/concurrent-enrollment/</a></p>\n\t\t\n\t    ",
+        "updatedAt": "2026-11-06T01:06:18.428Z"
+      }
+    ]
+  }
+}
