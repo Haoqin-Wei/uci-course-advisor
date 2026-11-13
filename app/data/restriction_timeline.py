@@ -153,6 +153,57 @@ class RestrictionEvidenceBundle:
         }
 
 
+# Phrasings that ask who may enroll and when that changes. One list serves
+# the workflow router (which sends such questions to the restriction tool) and
+# the term resolver (which must not mistake "when does it open to other
+# majors" for "in which quarters is it usually offered").
+_NON_MAJOR = r"(?:外|非本?|其他|别的)专业"
+RESTRICTION_QUESTION_PATTERNS: tuple[str, ...] = (
+    r"\bmajor restriction[s]?\b",
+    r"\bNew Only Restriction[s]?\b",
+    r"\bNORS\b",
+    r"\bnon[- ]?major\b",
+    r"\benrollment restriction[s]?\b",
+    r"\bdepartment restriction[s]?\b",
+    r"\bschool restriction[s]?\b",
+    r"\bauthorization code[s]?\b",
+    r"\b[ABX][ -]?restriction[s]?\b",
+    r"\badd/drop/change\b",
+    r"\badd\b.*\bdrop\b.*\bchange\b",
+    r"专业限制",
+    r"选课限制",
+    r"课程限制",
+    r"院系限制",
+    r"major.*限制",
+    r"限制.*解除",
+    r"解除.*限制",
+    r"限制.*什么时候",
+    r"什么时候.*解除",
+    r"不是.*major",
+    r"非.*major",
+    r"外专业.*能选",
+    r"什么时候.*能选",
+    r"加课.*截止",
+    r"退课.*截止",
+    r"改.*grade",
+    # Opening to students outside the major, without the word "restriction".
+    rf"对.{{0,10}}(?:专业|全校|外系|外院|所有学生).{{0,6}}开放",
+    rf"{_NON_MAJOR}.{{0,12}}(?:开放|能选|可以选|能不能|可不可以|选课)",
+    rf"什么时候.{{0,12}}{_NON_MAJOR}",
+    r"\bopen(?:s|ed)?\s+(?:up\s+)?to\s+(?:non[- ]?majors?|all\s+majors|other\s+majors|all\s+students)\b",
+    r"\bnon[- ]?majors?\b.{0,30}\b(?:enroll|register|add|take)\b",
+    r"\brestrictions?\b.{0,30}\b(?:lifted|removed|dropped)\b",
+    r"\b(?:lift|remove)[sd]?\b.{0,30}\brestrictions?\b",
+)
+_RESTRICTION_QUESTION_RE = tuple(re.compile(pattern, re.IGNORECASE) for pattern in RESTRICTION_QUESTION_PATTERNS)
+
+
+def is_enrollment_restriction_question(text: str) -> bool:
+    """True when the message asks about who may enroll or when a limit changes."""
+    value = text or ""
+    return any(pattern.search(value) for pattern in _RESTRICTION_QUESTION_RE)
+
+
 def classify_restriction_type(
     text: str,
     *,
@@ -163,7 +214,8 @@ def classify_restriction_type(
     value = text or ""
     if re.search(r"\b(?:new only|nors?|new only restriction)s?\b|新生(?:预留|限制)", value, re.I):
         return RestrictionType.NEW_ONLY
-    if re.search(r"专业限制|院系限制|学校限制|\b(?:school|major|department) restrictions?\b", value, re.I):
+    if re.search(r"专业限制|院系限制|学校限制|\b(?:school|major|department) restrictions?\b|"
+                 rf"{_NON_MAJOR}|\bnon[- ]?majors?\b|\b(?:all|other)\s+majors\b", value, re.I):
         return RestrictionType.SCHOOL_MAJOR
     if re.search(r"年级限制|upper[- ]division|class[- ]level|standing", value, re.I):
         return RestrictionType.CLASS_LEVEL
@@ -615,6 +667,10 @@ def _find_conflicts(
         for event in comparable
         if event.effective_at
     }
+    # "December 18" and "December 18 at noon" agree; the first is only less
+    # precise. Different days, or different times on one day, still conflict.
+    timed_days = {value[:10] for value in dates if not is_date_only(value)}
+    dates = {value for value in dates if not (is_date_only(value) and value in timed_days)}
     if len(dates) <= 1:
         return []
     return [
@@ -774,6 +830,8 @@ def _action_label(action: str) -> str:
 def _format_effective_at(value: Optional[str]) -> str:
     if not value:
         return "未公布"
+    if is_date_only(value):
+        return f"{value}（来源未注明具体时间）"
     try:
         parsed = datetime.fromisoformat(value)
     except ValueError:
@@ -826,6 +884,10 @@ class _MainContentParser(HTMLParser):
         self._stack: list[dict[str, Any]] = []
         self._ignored_depth = 0
         self._main_depth = 0
+        # Table rows are numbered so a paragraph can be tied back to the row
+        # it sits in: the row's own block is only emitted after its paragraphs.
+        self._row_count = 0
+        self._open_rows: list[int] = []
 
     def handle_starttag(
         self,
@@ -841,12 +903,16 @@ class _MainContentParser(HTMLParser):
             return
         if tag in {"main", "article"}:
             self._main_depth += 1
+        if tag == "tr":
+            self._row_count += 1
+            self._open_rows.append(self._row_count)
         if tag in _BLOCK_TAGS:
             self._stack.append(
                 {
                     "tag": tag,
                     "parts": [],
                     "in_main": self._main_depth > 0,
+                    "row": self._open_rows[-1] if self._open_rows else None,
                 }
             )
 
@@ -874,8 +940,11 @@ class _MainContentParser(HTMLParser):
                         "tag": block["tag"],
                         "text": text,
                         "in_main": block["in_main"],
+                        "row": block["row"],
                     }
                 )
+        if tag == "tr" and self._open_rows:
+            self._open_rows.pop()
         if tag in {"main", "article"} and self._main_depth:
             self._main_depth -= 1
 
@@ -953,13 +1022,33 @@ def parse_restriction_timeline(
     current_date: Optional[tuple[int, int, int]] = None
     current_time: Optional[tuple[int, int]] = None
     current_department = department
+    # Which department's section of the page an entry sits under. Entries above
+    # the first department section (school-wide notes) keep ``None``; they are
+    # still attributed to the queried department, as before.
+    current_section: Optional[str] = None
     active_event: Optional[dict[str, Any]] = None
+    # "12:00pm: WebReg reopens ..." often opens a table row whose following
+    # paragraphs hold the actual restriction change. The row's block comes
+    # after those paragraphs, so its opening time is looked up beforehand.
+    row_times = {
+        block["row"]: time_value
+        for block in blocks
+        if block.get("tag") == "tr" and block.get("row") is not None
+        and (time_value := _leading_time(block["text"])) is not None
+    }
+    current_row: Optional[int] = None
 
     for index, block in enumerate(blocks):
         text = block["text"].strip()
+        row = block.get("row")
+        if row is not None and row != current_row:
+            current_row = row
+            if row in row_times:
+                current_time = row_times[row]
         section = _SECTION.search(text)
         if section:
             current_department = _canonical_section_department(section.group(1))
+            current_section = current_department
             current_date = None
             current_time = None
             active_event = None
@@ -973,10 +1062,12 @@ def parse_restriction_timeline(
             active_event = None
             continue
 
-        time_match = _TIME.search(text)
-        if time_match and _looks_like_time_line(text):
-            current_time = _parse_time_match(time_match)
-            if not _action_type(text):
+        # A time that opens a block applies to what follows it, whether it
+        # stands alone ("12:00pm:") or leads a sentence ("12:00pm: WebReg ...").
+        leading_time = _leading_time(text)
+        if leading_time is not None:
+            current_time = leading_time
+            if _looks_like_time_line(text) and not _action_type(text):
                 continue
 
         if active_event is not None and block.get("tag") == "li":
@@ -1017,6 +1108,7 @@ def parse_restriction_timeline(
                 "source_position": {
                     "block_index": block.get("index", index),
                     "tag": block.get("tag"),
+                    "section": current_section,
                 },
                 "statement": text,
             }
@@ -1097,7 +1189,12 @@ def _iso_los_angeles(
 ) -> Optional[str]:
     if date_value is None:
         return None
-    hour, minute = time_value or (0, 0)
+    if time_value is None:
+        # The source gave a day but no time. Say exactly that: a made-up
+        # 00:00 reads as "opens at midnight" and can be twelve hours wrong.
+        year, month, day = date_value
+        return f"{year:04d}-{month:02d}-{day:02d}"
+    hour, minute = time_value
     value = datetime(
         *date_value,
         hour,
@@ -1105,6 +1202,21 @@ def _iso_los_angeles(
         tzinfo=ZoneInfo("America/Los_Angeles"),
     )
     return value.isoformat()
+
+
+_LEADING_TIME = re.compile(r"^\s*(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)(?![A-Za-z])", re.I)
+_DATE_ONLY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _leading_time(text: str) -> Optional[tuple[int, int]]:
+    """The clock time a block opens with, if it opens with one."""
+    match = _LEADING_TIME.match(text or "")
+    return _parse_time_match(match) if match else None
+
+
+def is_date_only(value: Optional[str]) -> bool:
+    """Whether an ``effective_at`` names a day without a time."""
+    return bool(value) and bool(_DATE_ONLY.match(str(value)))
 
 
 def _looks_like_time_line(text: str) -> bool:
