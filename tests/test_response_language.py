@@ -14,8 +14,20 @@ from tests.fakes.llm import ScriptedLLMClient, text_response, tool_call, tool_re
 
 @pytest.mark.parametrize(("message", "previous", "expected"), [
     ("Recommend courses", "推荐课程", "en"),
-    ("yes", "推荐课程", "en"),
-    ("ok", "推荐课程", "en"),
+    ("yes", "推荐课程", "zh"),
+    ("ok", "推荐课程", "zh"),
+    ("ok", "Recommend courses", "en"),
+    ("ICS", "推荐课程", "zh"),
+    ("econ", "推荐课程", "zh"),
+    ("COMPSCI", "推荐课程", "zh"),
+    ("stats 67", "推荐课程", "zh"),
+    ("Fall 2026", "推荐课程", "zh"),
+    ("ICS, winter 2027", "推荐课程", "zh"),
+    ("ICS", "Recommend courses", "en"),
+    ("what about ICS", "推荐课程", "en"),
+    ("ICS please", "推荐课程", "en"),
+    ("yes please recommend", "推荐课程", "en"),
+    ("go on", "推荐课程", "en"),
     ("继续", "Recommend courses", "zh"),
     ("帮我查 ICS33", "Recommend courses", "zh"),
     ("ICS33", "推荐课程", "zh"),
@@ -73,7 +85,7 @@ def test_custom_prompt_and_memory_cannot_remove_reply_language(message, language
         assert any(extension in m["content"] for m in messages if m["role"] == "user")
 
 
-@pytest.mark.parametrize(("message", "language"), [("yes", "en"), ("继续", "zh"), ("CS161", "zh")])
+@pytest.mark.parametrize(("message", "language"), [("go on", "en"), ("yes", "zh"), ("继续", "zh"), ("CS161", "zh")])
 def test_agent_uses_same_language_for_system_context_and_progress(monkeypatch, message, language):
     seen = {}
 

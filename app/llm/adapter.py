@@ -223,8 +223,9 @@ database printout.
 Match the CURRENT user's message language in every user-facing part of the reply,
 including explanations, recommendation reasons, follow-up suggestions, and brief
 progress summaries. Chinese input requires Chinese; English input requires English.
-Short prose such as "yes", "ok", and "继续" also sets the language immediately.
-Only language-neutral input (course codes, numbers, emoji) inherits the latest
+Short prose such as "go on" and "继续" also sets the language immediately.
+Only language-neutral input (course codes, department codes or names, term names,
+a bare "ok" / "yes" / "thanks", numbers, emoji) inherits the latest
 language-bearing USER message. Never inherit language from assistant messages,
 examples, memory, custom prompts, or tool results. Preserve official identifiers
 and names. The mandatory application language rule at the end is authoritative.
