@@ -92,18 +92,21 @@ async function sendMessage(text) {
           currentSessionId = event.session_id;
         }
       },
+      stage(event) {
+        if (epoch !== conversationEpoch) return;
+        activityStage(aiMsg, event);
+      },
       tool_call_start(event) {
-        // Agent loop dispatched a tool — show a status chip in the
-        // AI bubble so the user sees what's happening during the
-        // silent stretch before the answer streams.
-        startToolChip(aiMsg, event.label || event.name, event.name, event.response_language);
+        // Agent loop dispatched a tool — the thinking line says what it
+        // is doing during the silent stretch before the answer streams.
+        activityToolStart(aiMsg, event.label || event.name, event.name, event.response_language);
       },
       cards_proposed(event) {
         if (epoch !== conversationEpoch || !event.controlled_recommendation) return;
         replaceControlledRecommendationCards(aiMsg, event.cards || []);
       },
       tool_call_done(event) {
-        finishToolChip(
+        activityToolDone(
           aiMsg,
           event.ok !== false,
           event.fetch_summary || [],
@@ -197,214 +200,19 @@ function startAiMessage(language = currentResponseLanguage) {
   const wrap = document.createElement('div');
   wrap.className = 'msg msg-ai';
   wrap._responseLanguage = language;
-  // Initial state: shimmer "Thinking" until first token arrives.
+  // Initial state: the thinking line (activity.js) says what Solon is
+  // doing; the body stays empty until the first token arrives.
   wrap.innerHTML = `<div class="msg-ai-label">${solonIcon('sparkles')}Solon</div>`
-                 + `<div class="msg-ai-body thinking" aria-label="${language === 'zh' ? 'Solon 正在思考' : 'Solon is thinking'}"><span class="tdot"></span><span class="tdot"></span><span class="tdot"></span></div>`;
+                 + `<div class="msg-ai-body thinking" aria-label="${language === 'zh' ? 'Solon 正在思考' : 'Solon is thinking'}"></div>`;
   document.getElementById('chatScroll').appendChild(wrap);
+  startActivity(wrap);
   scrollChat();
   // Per-message render scheduler — collapses bursts of tokens into one
   // markdown render per animation frame (~16ms).
   wrap._pendingFrame = null;
   wrap._pendingText  = '';
   wrap._gotFirstToken = false;
-  // Pending agent tool-call chips: FIFO of {el} as start events arrive,
-  // popped as done events arrive. Sequential because loop.py dispatches
-  // tools one at a time per assistant message.
-  wrap._toolChipQueue = [];
-  wrap._webFetchRendered = false;
   return wrap;
-}
-
-function startToolChip(wrap, label, toolName, language) {
-  if (language) wrap._responseLanguage = language;
-  // Lazy-create the chips container above the body. We don't want it
-  // on every AI message — only when the agent actually uses tools.
-  let container = wrap.querySelector(':scope > .tool-calls');
-  if (!container) {
-    container = document.createElement('div');
-    container.className = 'tool-calls';
-    const body = wrap.querySelector('.msg-ai-body');
-    wrap.insertBefore(container, body);
-  }
-  const chip = document.createElement('div');
-  chip.className = 'tool-chip is-active';
-  if (toolName) {
-    chip.dataset.toolName = toolName;
-    if (toolName === 'web_search') chip.classList.add('tool-chip-web-search');
-    if (toolName === 'get_live_sections') chip.classList.add('tool-chip-live-websoc');
-    if (toolName === 'get_department_restrictions') {
-      chip.classList.add('tool-chip-websoc-comments');
-    }
-  }
-  chip.innerHTML = '<span class="tool-dot"></span><span class="tool-label"></span>';
-  chip.querySelector('.tool-label').textContent = label || (wrap._responseLanguage === 'zh' ? '调用工具' : 'Running tool');
-  container.appendChild(chip);
-  wrap._toolChipQueue.push(chip);
-  scrollChat();
-}
-
-function finishToolChip(wrap, ok, fetchSummary, resultMeta = {}) {
-  const zh = wrap._responseLanguage === 'zh';
-  const chip = (wrap._toolChipQueue || []).shift();
-  if (chip) {
-    chip.classList.remove('is-active');
-    chip.classList.add(ok ? 'is-done' : 'is-error');
-    if (chip.dataset.toolName === 'get_sections') {
-      const label = chip.querySelector('.tool-label');
-      const count = Number(resultMeta.section_count || 0);
-      if (count > 0) {
-        chip.classList.add('is-sections-found');
-        if (label) label.textContent += zh ? ` · 找到 ${count} 个教学班` : ` · ${count} sections found`;
-      } else if (
-        resultMeta.offering_status === 'not_offered'
-        && resultMeta.authoritative === true
-      ) {
-        chip.classList.add('is-official-no-match');
-        if (label) label.textContent += zh ? ' · 官方无匹配' : ' · No official match';
-      } else if (resultMeta.offering_status === 'not_offered') {
-        chip.classList.add('is-no-match');
-        if (label) label.textContent += zh ? ' · 未找到教学班' : ' · No sections found';
-      } else if (resultMeta.offering_status === 'unavailable') {
-        chip.classList.remove('is-done');
-        chip.classList.add('is-unavailable');
-        if (label) label.textContent += zh ? ' · 数据不可用' : ' · Data unavailable';
-      }
-    }
-  }
-  if (Array.isArray(fetchSummary) && fetchSummary.length > 0) {
-    renderWebFetchSummary(wrap, fetchSummary);
-    wrap._webFetchRendered = true;
-  }
-}
-
-function renderWebFetchSummary(wrap, fetches) {
-  if (!wrap || !Array.isArray(fetches) || fetches.length === 0) return;
-  const zh = wrap._responseLanguage === 'zh';
-
-  let container = wrap.querySelector(':scope > .tool-calls');
-  if (!container) {
-    container = document.createElement('div');
-    container.className = 'tool-calls';
-    const body = wrap.querySelector('.msg-ai-body');
-    wrap.insertBefore(container, body);
-  }
-
-  const previous = container.querySelector(':scope > .tool-fetch-details');
-  if (previous) previous.remove();
-
-  const details = document.createElement('details');
-  details.className = 'tool-fetch-details';
-  const summary = document.createElement('summary');
-  // Snapshot reads and cache hits are sources, but they are not requests.
-  const reused = fetches.filter((item) => item && (item.local || item.cached)).length;
-  const live = fetches.length - reused;
-  summary.textContent = zh
-    ? `实际抓取 ${live} 个请求${reused ? `，另有 ${reused} 个来源未重新请求` : ''}`
-    : `${live} web ${live === 1 ? 'request' : 'requests'}${reused ? `, ${reused} reused without a request` : ''}`;
-  details.appendChild(summary);
-
-  const list = document.createElement('div');
-  list.className = 'tool-fetch-list';
-  const roleLabels = zh ? {
-    registrar_websoc_form: 'WebSoc 查询表单',
-    registrar_websoc_results: 'WebSoc 部门结果',
-    registrar_websoc_course_results: 'WebSoc 课程结果',
-    catalog_store_snapshot: '本地课表快照中的院系公告',
-    undergrad_restrictions: '本科限制官方页',
-    graduate_restrictions: '研究生限制官方页',
-    policy: '政策官方页',
-    restriction_spreadsheet: '课程限制表',
-    official_link: '官方链接',
-  } : {
-    registrar_websoc_form: 'WebSoc query form',
-    registrar_websoc_results: 'WebSoc department results',
-    registrar_websoc_course_results: 'WebSoc course results',
-    catalog_store_snapshot: 'Department notices from the synced timetable',
-    undergrad_restrictions: 'Official undergraduate restrictions',
-    graduate_restrictions: 'Official graduate restrictions',
-    policy: 'Official policy page',
-    restriction_spreadsheet: 'Course restrictions spreadsheet',
-    official_link: 'Official link',
-  };
-
-  for (const fetchItem of fetches) {
-    if (!fetchItem || typeof fetchItem !== 'object') continue;
-    const row = document.createElement('div');
-    row.className = `tool-fetch-row ${fetchItem.ok === false ? 'is-error' : 'is-ok'}`;
-
-    const header = document.createElement('div');
-    header.className = 'tool-fetch-row-main';
-    const status = document.createElement('span');
-    status.className = 'tool-fetch-status';
-    status.textContent = fetchItem.ok === false ? (zh ? '失败' : 'Failed') : (zh ? '成功' : 'Succeeded');
-    header.appendChild(status);
-
-    const method = document.createElement('span');
-    method.className = 'tool-fetch-method';
-    method.textContent = String(fetchItem.method || 'GET').toUpperCase();
-    header.appendChild(method);
-
-    const url = String(fetchItem.final_url || fetchItem.url || '');
-    const host = String(fetchItem.host || url || (zh ? '未知地址' : 'Unknown address'));
-    if (/^https?:\/\//i.test(url)) {
-      const link = document.createElement('a');
-      link.href = url;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = host;
-      link.title = url;
-      header.appendChild(link);
-    } else {
-      const address = document.createElement('span');
-      address.textContent = host;
-      header.appendChild(address);
-    }
-
-    if (fetchItem.provides_evidence) {
-      const evidence = document.createElement('span');
-      evidence.className = 'tool-fetch-evidence';
-      evidence.textContent = zh ? '用于最终事实' : 'Used as evidence';
-      header.appendChild(evidence);
-    }
-    row.appendChild(header);
-
-    const meta = document.createElement('div');
-    meta.className = 'tool-fetch-meta';
-    const role = roleLabels[fetchItem.source_role]
-      || (zh ? '网页来源' : 'Web source');
-    const fields = [role];
-    const readAt = fetchItem.local ? fetchItem.snapshot_synced_at : fetchItem.cached ? fetchItem.cached_at : null;
-    if (fetchItem.local || fetchItem.cached) {
-      const when = readAt ? new Date(readAt) : null;
-      const stamp = when && !Number.isNaN(when.getTime()) ? when.toLocaleString() : null;
-      const label = fetchItem.local
-        ? (zh ? '未发请求，同步于' : 'No request; synced')
-        : (zh ? '24 小时内已抓取，未重新请求；抓取于' : 'Fetched within 24 h, not requested again;');
-      fields.push(stamp ? `${label} ${stamp}` : label);
-    }
-    if (fetchItem.status_code != null) fields.push(`HTTP ${fetchItem.status_code}`);
-    if (fetchItem.bytes != null) fields.push(`${Number(fetchItem.bytes).toLocaleString()} B`);
-    if (fetchItem.duration_ms != null && !fetchItem.local && !fetchItem.cached) fields.push(`${Math.round(fetchItem.duration_ms)} ms`);
-    if (fetchItem.depth != null) fields.push(zh ? `深度 ${fetchItem.depth}` : `Depth ${fetchItem.depth}`);
-    meta.textContent = fields.join(' · ');
-    row.appendChild(meta);
-
-    if (fetchItem.parent_url) {
-      const parent = document.createElement('div');
-      parent.className = 'tool-fetch-parent';
-      parent.textContent = zh ? `来自：${fetchItem.parent_url}` : `From: ${fetchItem.parent_url}`;
-      row.appendChild(parent);
-    }
-    if (fetchItem.error) {
-      const error = document.createElement('div');
-      error.className = 'tool-fetch-error';
-      error.textContent = zh ? '抓取失败，未能读取此来源。' : 'Request failed; this source could not be read.';
-      row.appendChild(error);
-    }
-    list.appendChild(row);
-  }
-  details.appendChild(list);
-  container.appendChild(details);
 }
 
 function appendStreamingToken(wrap, fullText) {
@@ -417,6 +225,8 @@ function appendStreamingToken(wrap, fullText) {
     body.textContent = '';
     wrap._gotFirstToken = true;
   }
+  // Answer text is arriving: "Reading ..." becomes "Thought for Ns".
+  if (wrap._activity) activityAnswerStarted(wrap);
   wrap._pendingText = fullText;
   if (wrap._pendingFrame) return;  // already scheduled this frame
   wrap._pendingFrame = requestAnimationFrame(() => {
@@ -468,13 +278,9 @@ function finalizeAiMessage(wrap, fullText, meta, stopped) {
   body.innerHTML = formatMarkdown(fullText || '');
 
   renderQueryTermBadge(wrap, meta);
-
-  if (!wrap._webFetchRendered
-      && Array.isArray(meta.web_fetches)
-      && meta.web_fetches.length > 0) {
-    renderWebFetchSummary(wrap, meta.web_fetches);
-    wrap._webFetchRendered = true;
-  }
+  // The server's record of the turn (meta.activity) is what gets stored,
+  // so the settled line matches what a reload will show.
+  finishActivity(wrap, meta.activity, stopped);
 
   // Cards
   if (meta.controlled_recommendation && Array.isArray(meta.cards)) {
@@ -603,7 +409,6 @@ async function continueAgent(wrap, continuationId, btn) {
     _pendingFrame: null,
     _pendingText:  '',
     _gotFirstToken: true,  // skip the thinking shimmer — we're mid-message
-    _toolChipQueue: [],
     querySelector: (sel) => sel === '.msg-ai-body' ? resumeBody : null,
   };
 
@@ -627,6 +432,7 @@ async function continueAgent(wrap, continuationId, btn) {
     await consumeSSE(res, {
       token(event) {
         resumedText += event.text;
+        if (wrap._activity) activityAnswerStarted(wrap);
         appendStreamingToken(resumeShell, resumedText);
       },
       meta(event) {
@@ -646,9 +452,9 @@ async function continueAgent(wrap, continuationId, btn) {
         }
       },
       tool_call_start(event) {
-        // Reuse the existing chip container on `wrap`. Pass the
-        // real wrap, not the shell, so chips land in the right DOM.
-        startToolChip(wrap, event.label || event.name, event.name, event.response_language);
+        // The resumed steps join the same thinking line on `wrap` (the
+        // real message, not the text-only shell) and its clock runs on.
+        activityToolStart(wrap, event.label || event.name, event.name, event.response_language);
       },
       cards_proposed(event) {
         if (event.controlled_recommendation) {
@@ -663,7 +469,7 @@ async function continueAgent(wrap, continuationId, btn) {
         }
       },
       tool_call_done(event) {
-        finishToolChip(
+        activityToolDone(
           wrap,
           event.ok !== false,
           event.fetch_summary || [],
@@ -696,6 +502,9 @@ async function continueAgent(wrap, continuationId, btn) {
     }
     resumeBody.classList.remove('streaming');
     resumeBody.innerHTML = formatMarkdown(resumedText || '');
+    // Keep the steps gathered live: the resumed stream's own record only
+    // covers the part after Continue.
+    if (wrap._activity) finishActivity(wrap, null, false);
     if (controlledResume) {
       const currentBody = wrap.querySelector('.msg-ai-body');
       if (currentBody) {

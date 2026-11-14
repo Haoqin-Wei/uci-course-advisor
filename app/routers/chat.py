@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app import config, observability
+from app.activity import ActivityRecorder, ObservedQueue, merge_sources
 from app.response_language import response_language as _response_language
 from app.response_language import display_term
 from app.auth.deps import current_user_optional
@@ -165,6 +166,7 @@ def _persist_turn(
     web_fetches: Optional[list] = None,
     grade_charts: Optional[list] = None,
     prefilter: Optional[dict] = None,
+    activity: Optional[dict] = None,
     query_terms: Optional[list[str]] = None,
     query_term_source: Optional[str] = None,
     course_ids: Optional[list[str]] = None,
@@ -207,6 +209,7 @@ def _persist_turn(
             web_fetches=web_fetches,
             grade_charts=grade_charts,
             prefilter=prefilter,
+            activity=activity,
         )
 
         # First-turn snippet title (cheap heuristic; Round 4 LLM auto-title
@@ -902,7 +905,12 @@ async def _handle_agent(
                             "verified_facts"
                         ]
                     if event.get("fetch_summary") is not None:
-                        execution_meta["web_fetches"] = event["fetch_summary"]
+                        # Every tool call's sources count, not only the last
+                        # call's: a page fetched by the first call and reused
+                        # by the second was still requested this turn.
+                        execution_meta["web_fetches"] = merge_sources(
+                            execution_meta.get("web_fetches"), event["fetch_summary"],
+                        )
                 if ok and event.get("name"):
                     successful_tools.add(event["name"])
                     call_record = {
@@ -1127,6 +1135,8 @@ async def _stream_chat(
 
     trace_token = observability.set_trace_id(trace_id or observability.get_trace_id())
     stream_started_at = observability.now()
+    # What this turn does before it answers; shown as the thinking line.
+    activity = ActivityRecorder()
     first_token_ms: Optional[float] = None
     output_parts: list[str] = []
     tool_failures = 0
@@ -1284,6 +1294,13 @@ async def _stream_chat(
                 else default_term.canonical_name
             )
             response_language = _response_language(req.message, recent_turns)
+            activity.note_terms(query_terms, query_scope.source)
+            await queue.put({
+                "type": "stage",
+                "stage": "term_resolved",
+                "query_terms": query_terms,
+                "response_language": response_language,
+            })
 
             if req.term:
                 observability.log_event(
@@ -1341,13 +1358,14 @@ async def _stream_chat(
                     if config.allow_custom_system_prompt()
                     else None
                 ),
-                queue=queue,
+                queue=ObservedQueue(queue, activity),
                 recent_turns=recent_turns,
                 decisions=decisions,
                 summary=summary,
                 execution_meta=agent_meta,
             )
             reply, cards, followups, _reserved = agent_result
+            turn_activity = activity.snapshot()
             tool_terms = _tool_terms_from_agent_meta(agent_meta)
 
             observability.log_event(
@@ -1374,6 +1392,7 @@ async def _stream_chat(
                 web_fetches=agent_meta.get("web_fetches"),
                 grade_charts=agent_meta.get("grade_charts"),
                 prefilter=agent_meta.get("prefilter"),
+                activity=turn_activity,
                 query_terms=query_terms,
                 query_term_source=query_scope.source,
                 course_ids=list(query_scope.course_ids),
@@ -1441,6 +1460,7 @@ async def _stream_chat(
                 meta_event["grade_charts"] = agent_meta["grade_charts"]
             if agent_meta.get("prefilter"):
                 meta_event["prefilter"] = agent_meta["prefilter"]
+            meta_event["activity"] = turn_activity
             await queue.put(meta_event)
         except asyncio.CancelledError:
             logger.info("[stream] producer cancelled (client disconnected)")
@@ -1555,10 +1575,12 @@ async def _stream_continue(
 
     trace_token = observability.set_trace_id(trace_id or observability.get_trace_id())
     stream_started_at = observability.now()
+    activity = ActivityRecorder()
     first_token_ms: Optional[float] = None
 
     def sse(event: dict) -> str:
         nonlocal first_token_ms
+        activity.observe(event)
         if event.get("type") == "token" and first_token_ms is None:
             first_token_ms = observability.elapsed_ms(stream_started_at)
             observability.observe_ms("sse.continue_first_token_ms", first_token_ms)
@@ -1646,6 +1668,7 @@ async def _stream_continue(
             yield sse({
                 "type": "meta",
                 "final_answer": final_text,
+                "activity": activity.snapshot(),
                 **({"cards": controlled_cards, "controlled_recommendation": True,
                     "response_language": controlled_language} if controlled_output else {}),
                 **({"grade_charts": final_event["grade_charts"]}
@@ -1664,6 +1687,7 @@ async def _stream_continue(
                     req.session_id,
                     "assistant",
                     final_text,
+                    activity=activity.snapshot(),
                     **({"cards": controlled_cards} if controlled_output else {}),
                     **({"grade_charts": final_event["grade_charts"]}
                        if (final_event or {}).get("grade_charts") else {}),

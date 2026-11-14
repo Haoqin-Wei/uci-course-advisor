@@ -238,9 +238,18 @@ def build_restriction_evidence_bundle(
 ) -> RestrictionEvidenceBundle:
     """Merge fetched facts and run the required-field evidence gate."""
 
+    from app.data.restriction_notices import read_notice_restrictions
+
     linked = linked_result or {}
     events = _events_from_linked_pages(linked.get("pages") or [])
-    events.extend(_events_from_legacy_fields(websoc_result, query))
+    # Dates the school or department wrote into the WebSoc notices themselves.
+    notice_events, _statements = read_notice_restrictions(websoc_result, query)
+    events.extend(notice_events)
+    dated_kinds = {event.restriction_type for event in notice_events}
+    events.extend(
+        event for event in _events_from_legacy_fields(websoc_result, query)
+        if event.restriction_type not in dated_kinds
+    )
     events = _deduplicate_events(events)
 
     target_events = _target_events(events, query)
@@ -274,8 +283,16 @@ def build_restriction_evidence_bundle(
 
 def build_verified_restriction_facts(
     bundle: RestrictionEvidenceBundle,
+    notice_statements: Optional[list[dict[str, Any]]] = None,
 ) -> dict[str, Any]:
-    """Render immutable core facts before any LLM explanation."""
+    """Render immutable core facts before any LLM explanation.
+
+    ``notice_statements`` are the restriction sentences of the WebSoc notices,
+    word for word. They are quoted when no date could be verified, and next to
+    a date that was read from one of them, so the reader sees the notice's own
+    wording ("some courses", "AFTER the fee deadline").
+    """
+    from app.data.restriction_notices import is_notice_event
 
     primary = bundle.primary_event
     related = [
@@ -298,6 +315,12 @@ def build_verified_restriction_facts(
                 " 缺少："
                 + "、".join(bundle.missing_required_fields)
                 + "。"
+            )
+        quoted = _quote_notice_statements(notice_statements, bundle.query.restriction_type)
+        if quoted:
+            summary = (
+                f"WebSoc 公告没有给出可核实的"
+                f"{_restriction_label(bundle.query.restriction_type)}具体时间，公告原文如下。"
             )
     else:
         summary = (
@@ -322,6 +345,28 @@ def build_verified_restriction_facts(
             )
 
     lines = [summary]
+    if primary is None:
+        lines.extend(_quote_notice_statements(notice_statements, bundle.query.restriction_type))
+    elif is_notice_event(primary) and primary.statement:
+        where = "系公告" if (primary.source_position or {}).get("block_type") == "department" else "学院公告"
+        same_kind = [
+            event for event in bundle.events
+            if is_notice_event(event) and event.restriction_type == primary.restriction_type
+        ]
+        if len({event.effective_at for event in same_kind}) > 1 and bundle.evidence_status != EvidenceStatus.CONFLICTING:
+            # One notice, several dates for different groups ("upper-division
+            # until ..., lower-division until ..."): none of them is "the" answer.
+            lines[0] = (
+                f"**直接答案：**{bundle.query.department} 的 WebSoc {where}对"
+                f"{_restriction_label(primary.restriction_type)}写了 {len(same_kind)} 个时间，"
+                "适用范围不同，以原文为准："
+            )
+            lines.extend(
+                f"- {_format_effective_at(event.effective_at)}：“{event.statement}”"
+                for event in sorted(same_kind, key=lambda item: str(item.effective_at))
+            )
+        else:
+            lines.append(f"**WebSoc {where}原文：**“{primary.statement}”")
     related_facts = []
     for event in related:
         if not event.effective_at:
@@ -361,7 +406,9 @@ def build_verified_restriction_facts(
             for item in exceptions
         )
         lines.append(f"**例外：**{rendered}。")
-    elif primary is not None:
+    elif primary is not None and not is_notice_event(primary):
+        # A notice sentence is quoted in full above; it has no exception list
+        # that could have been checked.
         lines.append("**例外：**已检查该事件后的例外列表，未发现列出的例外。")
 
     if source_urls:
@@ -388,6 +435,24 @@ def build_verified_restriction_facts(
         "source_urls": source_urls,
         "summary_markdown": "\n\n".join(lines),
     }
+
+
+def _quote_notice_statements(
+    statements: Optional[list[dict[str, Any]]],
+    restriction_type: RestrictionType,
+) -> list[str]:
+    """The notice's own sentences about the kind of restriction asked for."""
+    wanted = (
+        {RestrictionType.SCHOOL_MAJOR.value, RestrictionType.NEW_ONLY.value}
+        if restriction_type == RestrictionType.AMBIGUOUS
+        else {restriction_type.value}
+    )
+    lines = []
+    for statement in statements or []:
+        if statement.get("restriction_type") in wanted and statement.get("text"):
+            where = "系公告" if statement.get("scope") == "department" else "学院公告"
+            lines.append(f"**WebSoc {where}原文：**“{statement['text']}”")
+    return lines
 
 
 def compact_linked_restriction_result(
@@ -651,11 +716,14 @@ def _find_conflicts(
 ) -> list[dict[str, Any]]:
     if primary is None:
         return []
+    from app.data.restriction_notices import same_notice_block
+
     comparable = [
         event
         for event in events
         if event.action == primary.action
         and event.course_scope == primary.course_scope
+        and (event.event_id == primary.event_id or not same_notice_block(event, primary))
         and (
             not primary.audience
             or not event.audience
@@ -869,8 +937,11 @@ _BLOCK_TAGS = {
 }
 _DATE_LINE = re.compile(r"^\s*(\d{1,2})/(\d{1,2})/(\d{4})\s*$")
 _TIME = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b", re.I)
+# A department section title is the whole block ("GDIM courses"). Sentences in
+# a table that merely begin that way ("GDIM courses will be opened to ...")
+# are entries, not titles.
 _SECTION = re.compile(
-    r"^(COMPSCI|CSE|GDIM|I&C SCI|IN4MATX|STATS|SWE)\s+courses\b",
+    r"^\s*(COMPSCI|CSE|GDIM|I&C SCI|IN4MATX|STATS|SWE)\s+courses\s*:?\s*$",
     re.I,
 )
 

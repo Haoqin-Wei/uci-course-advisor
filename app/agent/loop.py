@@ -288,6 +288,48 @@ def _idempotent_tool_key(name: str, args: dict) -> Optional[str]:
     return f"{name}:{json.dumps(args or {}, sort_keys=True, default=str, separators=(',', ':'))}"
 
 
+_FAILURE_KEY_IGNORED_ARGS = frozenset({"restriction_type", "follow_links", "reason", "max_results"})
+
+
+# Failures that the same arguments will reproduce within one turn. Other
+# errors (a prefilter asking for a step first, a timeout) may pass on retry.
+_FAILURES_NOT_WORTH_REPEATING = frozenset({
+    "department_not_in_term",
+    "websoc_comments_missing",
+    "websoc_department_unavailable",
+    "provider_network_error",
+})
+
+
+def _failed_call_key(name: str, args: dict) -> str:
+    """Identity of a lookup for "this already failed in this turn".
+
+    Arguments that only change how a result is read (the restriction kind,
+    the stated reason for a search) are left out: the same department that
+    had no notices a moment ago has none under another restriction_type.
+    """
+    kept = {k: v for k, v in (args or {}).items()
+            if k not in _FAILURE_KEY_IGNORED_ARGS and v not in (None, "", [])}
+    return f"{name}:{json.dumps(kept, sort_keys=True, default=str, separators=(',', ':'))}"
+
+
+def _repeated_failure_result(previous: dict) -> dict:
+    return {
+        "ok": False,
+        "error_code": "repeated_failed_call",
+        "message": (
+            "This exact lookup already failed in this turn and was not run again. "
+            "Change the arguments (for a department, use a code from term_departments) "
+            "or answer with what is verified."
+        ),
+        "previous_error": previous,
+    }
+
+
+def _failure_summary(result: dict) -> dict:
+    return {key: result[key] for key in ("error_code", "error", "message") if result.get(key)}
+
+
 def _record_definitive_course_offering(
     context: dict,
     name: str,
@@ -811,6 +853,7 @@ def _compact_workflow_record(record: dict) -> dict:
             "restriction_query",
             "source_url",
             "verified_facts",
+            "notice_statements",
             "fetch_summary",
         )
         if result.get(key) is not None
@@ -1074,6 +1117,7 @@ async def _run_loop(
     forced_results: dict[str, dict] = {}
     idempotent_results: dict[str, dict] = {}
     restriction_dedupe = restriction_payload.RestrictionPayloadDeduper()
+    failed_calls: dict[str, dict] = {}
     primary_result_records: list[dict] = []
     for primary_call in primary_plan.get("calls") or []:
         tool_name = primary_call["tool"]
@@ -1467,7 +1511,14 @@ async def _run_loop(
                 if not term_error
                 else None
             )
-            if term_error:
+            failed_key = _failed_call_key(tc["name"], args)
+            if failed_key in failed_calls:
+                result = _repeated_failure_result(failed_calls[failed_key])
+                observability.log_event(
+                    logger, logging.INFO, "repeated_failed_call_blocked",
+                    tool=tc["name"], args=_summarize_tool_args(args),
+                )
+            elif term_error:
                 result = {"error": f"invalid term for {tc['name']}: {term_error}"}
             elif stop_reason:
                 result = {
@@ -1549,8 +1600,12 @@ async def _run_loop(
                 args,
                 result,
             )
-            if cache_key is not None and not term_error:
+            if result.get("error_code") == "repeated_failed_call":
+                pass
+            elif cache_key is not None and not term_error:
                 idempotent_results[cache_key] = result
+            if term_error or result.get("error_code") in _FAILURES_NOT_WORTH_REPEATING:
+                failed_calls.setdefault(failed_key, _failure_summary(result))
             model_result = result
             if tc["name"] == restriction_payload.TOOL_NAME:
                 # The model gets the asked department's part of the official
@@ -1565,6 +1620,17 @@ async def _run_loop(
                         model_chars=len(json.dumps(model_result, default=str)),
                         **trimmed,
                     )
+                if (result.get("evidence_bundle") or {}).get("evidence_status") == "verified":
+                    # A verified date is the answer. Without this the model kept
+                    # checking neighbouring departments and ran out of rounds.
+                    model_result = {
+                        **model_result,
+                        "next_step": (
+                            "The restriction evidence for this department is verified. "
+                            "Answer now from evidence_bundle and verified_facts; make no "
+                            "further lookups unless the user asked about something else."
+                        ),
+                    }
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc["id"],

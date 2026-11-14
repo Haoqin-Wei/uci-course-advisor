@@ -275,19 +275,19 @@ def test_stream_chat_returns_grounded_fallback_when_agent_errors_before_streamin
         )
     )
 
-    assert [event["type"] for event in events] == ["token", "meta", "done"]
-    assert "I can’t reach the agent right now" in events[0]["text"]
-    assert "LLM call failed: offline" not in events[0]["text"]
+    assert [event["type"] for event in events] == ["stage", "token", "meta", "done"]
+    assert "I can’t reach the agent right now" in events[1]["text"]
+    assert "LLM call failed: offline" not in events[1]["text"]
     session_state = sessions_data.get_session_state(
         "demo_001",
-        events[1]["session_id"],
+        events[2]["session_id"],
     )
     assert session_state["term"] is None
-    assert "session_state" not in events[1]
-    assert "intent" not in events[1]
-    assert events[1]["cards"] == []
-    assert events[1]["response_language"] == "en"
-    assert set(events[1]) == {
+    assert "session_state" not in events[2]
+    assert "intent" not in events[2]
+    assert events[2]["cards"] == []
+    assert events[2]["response_language"] == "en"
+    assert set(events[2]) == {
         "type",
         "session_id",
         "cards",
@@ -304,6 +304,7 @@ def test_stream_chat_returns_grounded_fallback_when_agent_errors_before_streamin
         "current_term",
         "default_term_changed",
         "available_terms",
+        "activity",
     }
     assert "error" not in {event["type"] for event in events}
 

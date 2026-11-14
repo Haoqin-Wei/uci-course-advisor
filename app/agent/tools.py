@@ -43,6 +43,7 @@ from app.data.restriction_timeline import (
     build_verified_restriction_facts,
     compact_linked_restriction_result,
 )
+from app.data.restriction_notices import read_notice_restrictions
 from app.terms import parse_term_key
 from app.scheduling import (
     resolve_pending_schedule_sections,
@@ -1306,6 +1307,11 @@ def _tool_get_department_restrictions(
         if ref:
             resolved_department = ref.department
             resolved_from_course = ref.display()
+    if resolved_department:
+        # WebSoc only knows registrar codes. "ECONOMICS" or "Art History" is
+        # the same department as ECON or ART HIS; without this the lookup
+        # failed and the model had to guess the code and call again.
+        resolved_department = websoc_workflow.registrar_department_code(term, resolved_department)
 
     if not resolved_department:
         return {
@@ -1389,8 +1395,12 @@ def _tool_get_department_restrictions(
             websoc_result=result,
             linked_result=linked_result,
         )
+        # The notices' own restriction sentences, word for word: quoted when
+        # no date can be verified, and beside a date read from one of them.
+        _notice_events, notice_statements = read_notice_restrictions(result, query)
+        result["notice_statements"] = notice_statements
         result["evidence_bundle"] = bundle.to_dict()
-        result["verified_facts"] = build_verified_restriction_facts(bundle)
+        result["verified_facts"] = build_verified_restriction_facts(bundle, notice_statements)
         result["fetch_summary"] = _restriction_fetch_summary(
             result,
             linked_result,
@@ -2610,7 +2620,7 @@ def enforce_query_term_scope(
                 return resolved, "only Fall, Winter and Spring are supported"
             canonical = parsed.terms[0].canonical_name
             if canonical not in allowed:
-                return resolved, f"{canonical} is outside the allowed query-term scope"
+                return resolved, f"{canonical} is outside the allowed query-term scope; allowed terms: {', '.join(allowed) or 'none'}"
             if canonical not in canonical_terms:
                 canonical_terms.append(canonical)
         resolved["terms"] = canonical_terms
@@ -2641,7 +2651,7 @@ def enforce_query_term_scope(
                 model_term=model_canonical,
                 allowed_query_terms=allowed,
             )
-            return resolved, f"{model_canonical} is outside the allowed query-term scope"
+            return resolved, f"{model_canonical} is outside the allowed query-term scope; allowed terms: {', '.join(allowed) or 'none'}"
         resolved["term"] = model_canonical
         return resolved, None
 
@@ -2667,7 +2677,7 @@ def enforce_query_term_scope(
             model_term=executed,
             allowed_query_terms=allowed,
         )
-        return resolved, f"{executed} is outside the allowed query-term scope"
+        return resolved, f"{executed} is outside the allowed query-term scope; allowed terms: {', '.join(allowed) or 'none'}"
     resolved["term"] = executed
     return resolved, None
 
@@ -2675,6 +2685,45 @@ def enforce_query_term_scope(
 def resolve_tool_arguments(name: str, args: dict, *, context: dict) -> tuple[dict, str | None]:
     """Compatibility entry point for the single authoritative term guard."""
     return enforce_query_term_scope(name, args, context=context)
+
+_DEPARTMENT_ARGUMENT_TOOLS = {"get_department_restrictions", "search_courses"}
+_COURSE_ARGUMENT_TOOLS = {"get_sections", "get_live_sections", "get_course_offerings"}
+
+
+def _department_not_in_term(name: str, args: dict, context: dict) -> Optional[dict]:
+    """Refuse a lookup whose department code the queried term does not have.
+
+    Without this the call went out anyway and came back as "no notices" or
+    "0 courses", which reads like an answer; the model then tried the same
+    retired code on tool after tool. The refusal carries the term's roster so
+    the next call can be right.
+    """
+    from app.catalog import term_departments
+
+    args = args or {}
+    department = None
+    if name in _DEPARTMENT_ARGUMENT_TOOLS:
+        department = args.get("department")
+    if not department and name in _COURSE_ARGUMENT_TOOLS | {"get_department_restrictions"}:
+        ref = parse_course_mention(str(args.get("course_id") or ""))
+        department = ref.department if ref else None
+    if not department:
+        return None
+    terms = args.get("terms") if name == "get_course_offerings" else [args.get("term") or context.get("term")]
+    terms = [str(term) for term in terms or [] if term]
+    if not terms:
+        return None
+    refusals = []
+    for term in terms:
+        code = websoc_workflow.registrar_department_code(term, str(department))
+        refusal = term_departments.unknown_department(term, code)
+        if refusal is None:
+            # One term that has (or cannot rule out) the department is enough:
+            # history lookups legitimately span terms with different codes.
+            return None
+        refusals.append(refusal)
+    return refusals[0]
+
 
 def dispatch(name: str, args: dict, *, context: dict):
     """Run a tool by name.
@@ -2710,6 +2759,19 @@ def dispatch(name: str, args: dict, *, context: dict):
             error=term_error,
         )
         return {"error": f"invalid term for {name}: {term_error}"}
+    unknown = _department_not_in_term(name, args, context)
+    if unknown:
+        observability.increment("agent.tool_failures", tool=name)
+        observability.log_event(
+            logger,
+            logging.WARNING,
+            "agent_tool_failure",
+            tool=name,
+            reason=unknown["error_code"],
+            department=unknown["department"],
+            term=unknown["term"],
+        )
+        return unknown
     try:
         args, prefilter_error = prefilter.guard_call(name, args, context)
         if prefilter_error:

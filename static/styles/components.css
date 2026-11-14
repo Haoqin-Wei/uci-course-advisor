@@ -1629,208 +1629,154 @@ tr.cc-sg-row .cc-sg-add-hover.added {
   color: var(--text-primary);
 }
 
-/* ── Agent tool-call status chips ──────────────────── */
+/* ── Thinking line and steps ───────────────────────── */
 /*
-   While the agent is mid-loop (calling get_sections, check_conflict,
-   etc.), each tool dispatch gets a chip here so the user knows what's
-   happening during the silent stretch before the final answer streams.
-   Active chip pulses; done chip greys out; errored chip turns red.
+   One line above the answer says what Solon is doing right now, with a
+   light sweeping across the words and a running clock. When the answer
+   starts it settles into "Thought for 14s · ..." and can be clicked to
+   open the steps in place: plain text rows, no icons. A row that has
+   sources opens further. Drawn by static/js/activity.js.
 */
-.tool-calls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin: var(--space-2) 0 var(--space-3) 0;
+.thinking-block {
+  margin: 0 0 var(--space-3) 0;
 }
-.tool-chip {
+.thinking-line {
   display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: var(--weight-medium);
-  border: 1px solid var(--border-default);
-  background: var(--bg-panel);
-  color: var(--text-secondary);
-  transition: opacity 180ms ease, color 180ms ease;
-}
-.tool-chip .tool-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-tertiary);
-  flex-shrink: 0;
-}
-.tool-chip.is-active {
-  border-color: var(--warning);
-  color: var(--warning);
-  background: rgba(217, 119, 6, 0.08);
-}
-.tool-chip.is-active .tool-dot {
-  background: var(--warning);
-  animation: tool-chip-pulse 1.2s ease-in-out infinite;
-}
-.tool-chip-web-search {
-  border-color: rgba(37, 99, 235, 0.35);
-  background: rgba(37, 99, 235, 0.08);
-}
-.tool-chip-web-search.is-active {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: rgba(37, 99, 235, 0.10);
-}
-.tool-chip-web-search.is-active .tool-dot {
-  background: var(--accent);
-}
-.tool-chip-live-websoc {
-  border-color: rgba(5, 150, 105, 0.35);
-  background: rgba(5, 150, 105, 0.08);
-}
-.tool-chip-live-websoc.is-active {
-  border-color: var(--success);
-  color: var(--success);
-  background: rgba(5, 150, 105, 0.10);
-}
-.tool-chip-live-websoc.is-active .tool-dot {
-  background: var(--success);
-}
-.tool-chip-websoc-comments {
-  border-color: rgba(124, 58, 237, 0.32);
-  background: rgba(124, 58, 237, 0.08);
-}
-.tool-chip-websoc-comments.is-active {
-  border-color: var(--accent-strong);
-  color: var(--accent-strong);
-  background: rgba(124, 58, 237, 0.10);
-}
-.tool-chip-websoc-comments.is-active .tool-dot {
-  background: var(--accent-strong);
-}
-.tool-chip.is-done {
-  opacity: 0.65;
-}
-.tool-chip.is-done .tool-dot {
-  background: var(--success);
-}
-.tool-chip.is-error {
-  border-color: var(--danger);
-  color: var(--danger);
-  background: rgba(220, 38, 38, 0.08);
-  opacity: 1;
-}
-.tool-chip.is-error .tool-dot {
-  background: var(--danger);
-  animation: none;
-}
-
-.tool-chip.is-sections-found,
-.tool-chip.is-official-no-match {
-  border-color: rgba(5, 150, 105, 0.35);
-  color: var(--success);
-  background: rgba(5, 150, 105, 0.08);
-  opacity: 1;
-}
-
-.tool-chip.is-sections-found .tool-dot,
-.tool-chip.is-official-no-match .tool-dot {
-  background: var(--success);
-}
-
-.tool-chip.is-no-match,
-.tool-chip.is-unavailable {
-  border-color: rgba(217, 119, 6, 0.4);
-  color: var(--warning);
-  background: rgba(217, 119, 6, 0.08);
-  opacity: 1;
-}
-
-.tool-chip.is-no-match .tool-dot,
-.tool-chip.is-unavailable .tool-dot {
-  background: var(--warning);
-  animation: none;
-}
-.tool-fetch-details {
-  flex-basis: 100%;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-panel);
-  color: var(--text-secondary);
-  overflow: hidden;
-}
-.tool-fetch-details > summary {
-  cursor: pointer;
-  padding: 8px 10px;
-  font-size: 12px;
-  font-weight: var(--weight-medium);
-  user-select: none;
-}
-.tool-fetch-details[open] > summary {
-  border-bottom: 1px solid var(--border-default);
-}
-.tool-fetch-list {
-  display: grid;
-}
-.tool-fetch-row {
-  min-width: 0;
-  padding: 9px 10px;
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: 12px;
-}
-.tool-fetch-row:last-child {
-  border-bottom: 0;
-}
-.tool-fetch-row-main {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 7px;
-}
-.tool-fetch-row-main a {
-  min-width: 0;
-  color: var(--accent);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.tool-fetch-status,
-.tool-fetch-method,
-.tool-fetch-evidence {
-  flex-shrink: 0;
-  padding: 1px 6px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: var(--weight-semibold);
-}
-.tool-fetch-status {
-  color: var(--success);
-  background: rgba(5, 150, 105, 0.10);
-}
-.tool-fetch-row.is-error .tool-fetch-status {
-  color: var(--danger);
-  background: rgba(220, 38, 38, 0.10);
-}
-.tool-fetch-method {
-  color: var(--text-secondary);
-  background: var(--bg-panel-2);
-}
-.tool-fetch-evidence {
-  color: var(--accent-strong);
-  background: rgba(124, 58, 237, 0.10);
-}
-.tool-fetch-meta,
-.tool-fetch-parent,
-.tool-fetch-error {
-  margin-top: 4px;
+  align-items: baseline;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--text-tertiary);
+  text-align: left;
+  cursor: pointer;
+}
+.thinking-line:hover {
+  color: var(--text-secondary);
+}
+.thinking-line:focus-visible,
+button.thinking-step-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.thinking-text {
+  min-width: 0;
   overflow-wrap: anywhere;
 }
-.tool-fetch-error {
+.thinking-time {
+  flex-shrink: 0;
+  white-space: pre;
+}
+.thinking-chevron {
+  flex-shrink: 0;
+  display: inline-block;
+  margin-left: 6px;
+  line-height: 1;
+  transition: transform 160ms ease;
+}
+[aria-expanded="true"] > .thinking-chevron {
+  transform: rotate(90deg);
+}
+/* Working: the same sweep of light the old "Thinking" word used. */
+.thinking-line.is-live .thinking-text {
+  background: linear-gradient(
+    90deg,
+    var(--text-disabled) 0%,
+    var(--text-disabled) 35%,
+    var(--text-primary) 50%,
+    var(--text-disabled) 65%,
+    var(--text-disabled) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: shimmer 1.6s linear infinite;
+}
+.thinking-steps {
+  margin-top: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+.thinking-step + .thinking-step {
+  border-top: 1px solid var(--border-default);
+}
+.thinking-step-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  width: 100%;
+  padding: 9px 14px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  text-align: left;
+}
+button.thinking-step-head {
+  cursor: pointer;
+}
+button.thinking-step-head:hover {
+  background: var(--bg-hover);
+}
+.thinking-step-lead {
+  color: var(--text-tertiary);
+}
+.thinking-step-rest {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.thinking-step.is-running .thinking-step-lead {
+  color: var(--text-disabled);
+}
+.thinking-step.is-failed .thinking-step-lead,
+.thinking-step.is-interrupted .thinking-step-lead {
   color: var(--danger);
 }
-@keyframes tool-chip-pulse {
-  0%, 100% { opacity: 1;   transform: scale(1); }
-  50%      { opacity: 0.4; transform: scale(0.85); }
+.thinking-step-detail {
+  padding: 0 14px 10px 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-tertiary);
+}
+.thinking-source {
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+}
+.thinking-source-name {
+  margin-right: 8px;
+  color: var(--text-secondary);
+}
+a.thinking-source-name {
+  color: var(--accent);
+  text-decoration: none;
+}
+a.thinking-source-name:hover {
+  text-decoration: underline;
+}
+.thinking-source.is-error .thinking-source-name {
+  color: var(--danger);
+}
+@media (prefers-reduced-motion: reduce) {
+  .thinking-line.is-live .thinking-text {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+    color: var(--text-tertiary);
+  }
+  .thinking-chevron {
+    transition: none;
+  }
 }
 
 /* ── Limit-reached banner + Continue button ────────── */

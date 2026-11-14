@@ -121,8 +121,10 @@ def test_recommendation_cards_in_sse_meta_are_persisted_and_restored(
     )
     meta = _meta_event(events)
 
-    assert [event["type"] for event in events] == ["token", "meta", "done"]
-    assert events[0]["text"] == "Here are two offline recommendation cards."
+    # "stage" tells the page the term is settled, before any answer text.
+    assert [event["type"] for event in events] == ["stage", "token", "meta", "done"]
+    assert events[0]["stage"] == "term_resolved"
+    assert events[1]["text"] == "Here are two offline recommendation cards."
     assert meta["session_id"] == session_id
     assert [card["course_id"] for card in meta["cards"]] == [
         "COMPSCI161",

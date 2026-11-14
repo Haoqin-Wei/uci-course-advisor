@@ -142,3 +142,47 @@ def test_agent_prompt_forbids_adding_a_time_to_a_bare_date() -> None:
     from app.llm.adapter import AGENT_SYSTEM_PROMPT
 
     assert "date without a time" in " ".join(AGENT_SYSTEM_PROMPT.split())
+
+
+# --- Section titles (2026-11-12) -------------------------------------------
+# "GDIM courses will be opened to ..." begins like the title "GDIM courses".
+# Read as a title, the sentence vanished and wiped the date of its row.
+
+def test_only_a_whole_title_starts_a_department_section() -> None:
+    events = _parse(
+        "<main><article><button>GDIM courses</button><table>"
+        "<tr><td>12/4/2026</td></tr>"
+        "<tr><td><strong>9:00am:</strong><p></p>"
+        "<p>GDIM courses will be opened to the School of ICS only:</p>"
+        "<p><strong>12:00pm:</strong></p>"
+        "<p>Repeat restriction removed from all School of ICS courses.</p></td></tr>"
+        "</table></article>"
+        "<article><button> SWE courses </button><table>"
+        "<tr><td>12/18/2026</td></tr>"
+        "<tr><td><p>School/Major restrictions are removed from most School of ICS courses:</p>"
+        "<ul><li>SWE courses are open to all campus majors.</li></ul></td></tr>"
+        "</table></article></main>"
+    )
+
+    assert events and all(event.effective_at for event in events)             # no row lost its date
+    repeat = next(event for event in events if event.statement.startswith("Repeat restriction removed"))
+    assert (repeat.department, repeat.effective_at) == ("GDIM", "2026-12-04T12:00:00-08:00")
+    lifted = next(event for event in events if event.source_position["tag"] == "p"
+                  and event.statement.startswith("School/Major restrictions are removed"))
+    assert (lifted.department, lifted.source_position["section"]) == ("SWE", "SWE")
+    assert [item["text"] for item in lifted.exceptions] == ["SWE courses are open to all campus majors."]
+    assert {event.source_position["section"] for event in events} == {"GDIM", "SWE"}
+
+
+def test_real_page_has_seven_sections_and_no_undated_table_entries() -> None:
+    events = _parse(PAGE)
+
+    in_tables = [event for event in events if event.source_position["section"]]
+    assert {event.source_position["section"] for event in in_tables} == {
+        "COMPSCI", "CSE", "GDIM", "I&C SCI", "IN4MATX", "STATS", "SWE"}
+    assert not [event.statement for event in in_tables if not event.effective_at]
+    # Opening rows that begin with the department's own name are entries again.
+    opening = {event.department: event.effective_at for event in in_tables
+               if event.statement.startswith(("COMPSCI courses are open", "CSE courses are restricted",
+                                              "GDIM courses will be open to"))}
+    assert opening == {"COMPSCI": "2026-11-16", "CSE": "2026-11-16", "GDIM": "2026-11-16"}

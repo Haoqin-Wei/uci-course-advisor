@@ -238,6 +238,7 @@ async function loadSession(sessionId) {
             followups:  t.followups,
           validation: t.validation,
           web_fetches: t.web_fetches,
+          activity: t.activity,
           ...pendingQueryMeta,
         });
         pendingQueryMeta = null;
@@ -263,7 +264,7 @@ async function loadSession(sessionId) {
  * structure built by finalizeAiMessage so an opened session looks
  * identical to the live one — cards, followup chips, and the
  * `extras` is the parsed-back JSONL extras dict ({cards, followups,
- * web_fetches, grade_charts}); each field is optional and falsy values are skipped
+ * web_fetches, activity, grade_charts}); each field is optional and falsy values are skipped
  * (legacy turns persisted before Round 4 won't have them).
  */
 function appendAssistantStatic(text, extras) {
@@ -279,9 +280,9 @@ function appendAssistantStatic(text, extras) {
   wrap.querySelector('.msg-ai-body').innerHTML = formatMarkdown(text || '');
   document.getElementById('chatScroll').appendChild(wrap);
 
-  if (extras.web_fetches && extras.web_fetches.length > 0) {
-    renderWebFetchSummary(wrap, extras.web_fetches);
-  }
+  // The settled thinking line. Turns saved before steps were recorded
+  // only have their sources; those are shown as a single step.
+  renderStoredActivity(wrap, extras.activity, extras.web_fetches);
 
   if (Array.isArray(extras.cards) && extras.cards.some(card => card?.presentation?.version === 1)) {
     replaceControlledRecommendationCards(wrap, extras.cards);

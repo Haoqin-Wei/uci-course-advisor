@@ -632,6 +632,55 @@ def get_department_scope(term_id: str, department: str, *, path: Optional[Path] 
     return json.loads(row[0]) if row else None
 
 
+def department_roster(term_id: str, *, path: Optional[Path] = None) -> dict[str, str]:
+    """Registrar code → official department name for one stored term. Read-only.
+
+    ``{"ECON": "Economics", "ART HIS": "Art History", ...}``. Empty when the
+    term is not stored. Codes change between years (Psychology was PSYCH,
+    then PSCI, then PSY), so the roster is always read per term.
+    """
+    term = _term(term_id)
+    conn = _read_only(path)
+    if conn is None:
+        return {}
+    try:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT sections.department, scopes.scope_json
+            FROM sections JOIN comment_scopes AS scopes
+              ON scopes.term_id = sections.term_id AND scopes.scope_hash = sections.comment_scope
+            WHERE sections.term_id = ?
+            ORDER BY sections.department
+            """,
+            (term.term_id,),
+        ).fetchall()
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+    roster: dict[str, str] = {}
+    for code, scope_json in rows:
+        try:
+            name = (json.loads(scope_json).get("department") or {}).get("name")
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if name and code:
+            roster.setdefault(code, " ".join(str(name).split()))
+    return roster
+
+
+def department_names(term_id: str, *, path: Optional[Path] = None) -> dict[str, str]:
+    """Official department names of one stored term → registrar code. Read-only.
+
+    ``{"economics": "ECON", "art history": "ART HIS", ...}``; names are
+    lower-cased. Empty when the term is not stored.
+    """
+    names: dict[str, str] = {}
+    for code, name in department_roster(term_id, path=path).items():
+        names.setdefault(name.lower(), code)
+    return names
+
+
 def stored_departments(*, path: Optional[Path] = None) -> list[str]:
     """Registrar department codes present in any stored term. Read-only."""
     conn = _read_only(path)

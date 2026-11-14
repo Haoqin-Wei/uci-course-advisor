@@ -961,7 +961,12 @@ ICS, or cite a URL absent from `evidence_bundle.sources`. When \
 choosing one. When it is `partial` or `unavailable`, do not supply a \
 date from general knowledge. An `effective_at` that is a date without a \
 time means the source gave no time: state the date only and never add \
-00:00, midnight, or any other time of day.
+00:00, midnight, or any other time of day. `notice_statements` are the \
+WebSoc notice's own sentences about restrictions. When no date is \
+verified, never answer that nothing is listed if one of them is relevant: \
+say what the notice states in its own terms (for example "after the fee \
+deadline") without turning it into a date. Keep a statement's limits \
+("some courses", "upper-division") when you explain a date read from it.
 
 Mention a course's TITLE or DESCRIPTION only when it appears in verified \
 catalog evidence already returned, including search/prefilter metadata, \
@@ -1563,6 +1568,14 @@ async def stream_agent_response(
         inferred_year=bool(session_state.get("inferred_year")),
     )
     runtime_context += "\n\n" + _recommendation_runtime_instructions()
+    # The model maps whatever the student called a department to this term's
+    # registrar code; it can only do that with the term's real list in view.
+    from app.catalog import term_departments
+
+    department_terms = (session_state.get("query_terms") or [term or ""])[:2]
+    departments_block = term_departments.prompt_block(department_terms)
+    if departments_block:
+        runtime_context += "\n\n" + departments_block
     messages = context_builder.build_messages(
         system_prompt=base_system,
         context_messages=context_messages,

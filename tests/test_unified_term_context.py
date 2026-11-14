@@ -228,7 +228,9 @@ def test_known_unavailable_term_reaches_agent_for_tool_or_context_handling(
     meta = _meta(events)
 
     assert captured["term"] == "2027 Winter"
-    assert events[0]["text"] == "当前数据暂未发布。"
+    assert events[0] == {"type": "stage", "stage": "term_resolved",
+                         "query_terms": ["2027 Winter"], "response_language": "en"}
+    assert events[1]["text"] == "当前数据暂未发布。"
     assert meta["default_term"] == "2025 Spring"
     assert meta["query_terms"] == ["2027 Winter"]
     persisted = sessions_data.get_session_meta("demo_001", meta["session_id"])
@@ -378,7 +380,8 @@ def test_missing_year_reaches_agent_with_inferred_term(monkeypatch):
         _collect_events(ChatRequest(message="show Fall courses", session_id=""))
     )
 
-    assert events[0]["text"] == "按 2025 Fall 查询。"
+    assert events[0]["type"] == "stage"
+    assert events[1]["text"] == "按 2025 Fall 查询。"
     assert captured["term"] == "2025 Fall"
     assert captured["recent_turns"] == []
     assert _meta(events)["default_term"] == "2025 Spring"

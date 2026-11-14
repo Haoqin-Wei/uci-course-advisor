@@ -137,20 +137,22 @@ def test_key_browser_regression_flows_are_wired() -> None:
     assert "View details" in transcript
 
     assert "/api/chat/stream" in chat
-    assert "function startToolChip(" in chat
-    assert "function renderWebFetchSummary(" in chat
+    # Tool progress is one thinking line with steps (activity.js), not chips.
+    activity = (STATIC / "js" / "activity.js").read_text(encoding="utf-8")
+    assert "function startToolChip(" not in chat and "tool-chip" not in chat
+    assert "function renderWebFetchSummary(" not in chat
+    assert "activityToolStart(aiMsg, event.label || event.name, event.name, event.response_language)" in chat
     assert "event.fetch_summary || []" in chat
-    assert "实际抓取 ${live} 个请求" in chat
+    assert "activityStage(aiMsg, event)" in chat
+    assert "finishActivity(wrap, meta.activity, stopped)" in chat
     # Snapshot reads and 24-hour cache hits are listed as sources, not counted as requests.
-    assert "const live = fetches.length - reused" in chat and "catalog_store_snapshot" in chat
-    assert "用于最终事实" in chat
-    assert "tool-chip-web-search" in chat
-    assert "is-official-no-match" in chat
-    assert "官方无匹配" in chat
-    assert "数据不可用" in chat
+    assert "!source.local && !source.cached" in activity and "catalog_store_snapshot" in activity
+    assert "抓取了 ${n} 个网页" in activity
+    assert "用于最终事实" in activity
+    assert "官方无匹配" in activity
+    assert "数据不可用" in activity
     assert "event.offering_status" not in chat
-    assert "resultMeta.offering_status" in chat
-    assert 'event.label || event.name, event.name' in chat
+    assert "step.offering_status" in activity
     assert "function renderContinueBanner(" in chat
     assert "/api/chat/continue" in chat
     assert '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>' in chat
@@ -167,9 +169,6 @@ def test_key_browser_regression_flows_are_wired() -> None:
     assert "course_provenance" in cards
     assert "sectionSources" in cards
     assert "section?.source" in cards
-
-    assert "tool-chip-live-websoc" in chat
-    assert "tool-chip-websoc-comments" in chat
 
     assert "/api/schedule/add" in schedule
     assert "/api/schedule/refresh" in schedule
@@ -210,9 +209,9 @@ def test_live_and_restored_messages_share_structured_renderers() -> None:
 
     assert "renderCardsBlock(meta.cards)" in chat
     assert "formatMarkdown(fullText || '')" in chat
-    assert "meta.web_fetches" in chat
-    assert "web_fetches: t.web_fetches" in sessions
-    assert "renderWebFetchSummary(wrap, extras.web_fetches)" in sessions
+    assert "meta.activity" in chat
+    assert "web_fetches: t.web_fetches" in sessions and "activity: t.activity" in sessions
+    assert "renderStoredActivity(wrap, extras.activity, extras.web_fetches)" in sessions
     assert "meta.final_answer" in chat
     assert "sendFollowup(" in chat
 

@@ -424,6 +424,7 @@ def append_turn(
     web_fetches: Optional[list] = None,
     grade_charts: Optional[list] = None,
     prefilter: Optional[dict] = None,
+    activity: Optional[dict] = None,
     query_terms: Optional[list[str]] = None,
     query_term_source: Optional[str] = None,
     course_ids: Optional[list[str]] = None,
@@ -458,6 +459,10 @@ def append_turn(
         turn["grade_charts"] = grade_charts
     if prefilter:
         turn["prefilter"] = prefilter
+    if activity and (activity.get("steps") or activity.get("thinking_ms")):
+        # What the turn did before answering, so a reopened conversation can
+        # show the same "Thought for Ns" line and steps as the live one.
+        turn["activity"] = activity
     if query_terms:
         turn["query_terms"] = query_terms[:3]
     if query_term_source:

@@ -132,6 +132,33 @@ def build_websoc_course_params(
     return params
 
 
+def registrar_department_code(term: str, department: str) -> str:
+    """The registrar's code for a department, in the term being asked about.
+
+    Tried in order: a code the term has, the department's official name in
+    that term ("Art History", "psychology"), then a known alias. The term's
+    own names come before the alias table because
+    the table can hold a code the registrar has since retired (psychology →
+    PSYCH, while Winter 2027 lists Psychology as PSY). Anything else is
+    returned as it came, upper-cased, so the caller can report it as not in
+    the term instead of guessing.
+    """
+    from app.catalog import store
+    from app.catalog.departments import resolve_department
+
+    given = " ".join(str(department or "").split())
+    code = given.upper()
+    if not given:
+        return code
+    parsed_term = Term.parse(term or "")
+    names = store.department_names(parsed_term.term_id) if parsed_term else {}
+    if code in names.values():
+        return code
+    if given.lower() in names:
+        return names[given.lower()]
+    return resolve_department(given) or code
+
+
 def build_websoc_department_url(term: str, department: str) -> str:
     build_websoc_department_params(term, department)
     return WEBSOC_URL
