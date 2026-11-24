@@ -186,7 +186,21 @@ def controlled_recommendation_result(context, *, incomplete=False, failure_reaso
     incomplete = bool(incomplete or not cards or (gate.get("enabled") and not gate.get("ready"))
                       or (ge_intent
                           and any((card.get("ge_evidence") or {}).get("is_ge") is not True for card in cards)))
-    text = render_recommendation_answer(cards, context.get("response_language") or "zh",
+    from app.agent import profile_followup
+    # The recommendation comes first; a question about the record follows only a complete one.
+    complete = bool(cards) and not incomplete and not failure_reason
+    follow_up = profile_followup.closing_note(context, ask=complete)
+    if complete and context.get("_plan_review"):
+        # A request for "next term's courses" was read as a term plan; say how to ask for the other kind.
+        zh = str(context.get("response_language") or "zh").startswith("zh")
+        hint = ("这是按毕业进度排的学期计划。如果你想要的是按给分或教授评分挑出来的一批课，直接告诉我。" if zh else
+                "This is a term plan built from your degree progress. If you wanted a list picked by grades "
+                "or professor ratings instead, just say so.")
+        follow_up = "\n\n".join(part for part in (hint, follow_up) if part)
+    from app.recommendations.presentation import plan_review_text
+    lead = plan_review_text(context.get("_plan_review"), context.get("response_language") or "zh")
+    text = render_recommendation_answer(cards, context.get("response_language") or "zh", follow_up=follow_up,
+                                        lead=lead,
                                         gate=gate, incomplete=incomplete, failure_reason=failure_reason,
                                         plan=plan, requested_count=state.get("requested_count"),
                                         requested_plan=state.get("requested_plan"))
@@ -197,6 +211,8 @@ def controlled_recommendation_result(context, *, incomplete=False, failure_reaso
             "recommendation_gate": gate, "incomplete": bool(incomplete),
             "presentation_plan": intent(plan), "requested_plan": intent(requested_plan),
             **({"requested_count": state["requested_count"]} if state.get("requested_count") is not None else {}),
+            **({"follow_up": follow_up} if follow_up else {}),
+            **({"lead": lead} if lead else {}),
             **({"failure_reason": failure_reason} if failure_reason else {})}
 
 

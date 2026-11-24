@@ -128,6 +128,7 @@ function renderProfile(data) {
       <button class="primary-button profile-import-button" type="button" data-transcript-button onclick="triggerTranscriptPicker('profile')" ${transcriptImportBusy ? 'disabled' : ''}>${importDate ? 'Import Updated Transcript…' : 'Import Transcript…'}</button>
     </section>
     <div class="transcript-import-status" id="profileTranscriptStatus" hidden aria-live="polite"></div>
+    ${profileDetailsSection(academic, p)}
     <p class="profile-source-note">User-provided and not verified by UCI. Solon is not an official degree audit.</p>
     <section class="profile-completed" aria-labelledby="profileCompletedTitle">
       <div class="profile-courses-toolbar">
@@ -158,6 +159,100 @@ function renderProfile(data) {
   input.addEventListener('input', () => { profileSearch = input.value; renderProfileCourses(); });
   resetProfilePrivacy();
   renderProfileCourses();
+}
+
+/* Details a transcript cannot show. The student states them here; Solon uses
+   them for prerequisites, GE progress and enrollment restrictions. */
+const PROFILE_GE_CATEGORIES = [
+  ['IA', 'Ia Lower-division writing'], ['IB', 'Ib Upper-division writing'], ['II', 'II Science & technology'],
+  ['III', 'III Social & behavioral'], ['IV', 'IV Arts & humanities'], ['VA', 'Va Quantitative literacy'],
+  ['VB', 'Vb Formal reasoning'], ['VI', 'VI Language other than English'], ['VII', 'VII Multicultural studies'],
+  ['VIII', 'VIII International/global'],
+];
+let profileAcademicDetails = null;
+
+function profileExamCreditText(credit) {
+  const courses = Array.isArray(credit.credited_courses) ? credit.credited_courses : [];
+  const direct = Object.keys(credit.ge_direct || {});
+  if (!credit.matched) return 'Not matched to the UCI chart; units only';
+  const parts = [];
+  if (courses.length) parts.push(`counts as ${courses.join(' / ')}`);
+  if (direct.length) parts.push(`GE ${direct.join(', ')}`);
+  return parts.length ? parts.join('; ') : (credit.note || 'elective units only');
+}
+
+function profileDetailsSection(academic, profile) {
+  const details = academic.details || {};
+  profileAcademicDetails = {...details, target_major: academic.target_major || profile.major || ''};
+  const exams = Array.isArray(academic.exam_credits) ? academic.exam_credits : [];
+  const transfers = Array.isArray(academic.transfer_credits) ? academic.transfer_credits : [];
+  const list = values => (Array.isArray(values) && values.length ? values.map(escHTML).join(', ') : '—');
+  const majorSource = details.official_major_source === 'transcript'
+    ? `from your transcript${details.official_major_as_of ? ` printed ${escHTML(_formatProfileDate(details.official_major_as_of))}` : ''}`
+    : details.official_major_source === 'student' ? 'entered by you' : 'not set';
+  return `<section class="profile-details" aria-labelledby="profileDetailsTitle">
+      <div class="profile-details-head"><div><h2 id="profileDetailsTitle">Academic details</h2>
+        <p>Used for prerequisites, GE progress and enrollment restrictions. A transcript does not show these.</p></div>
+        <button class="quiet-button" type="button" onclick="openProfileDetailsEditor()">Edit details</button></div>
+      <dl class="profile-details-list">
+        <div><dt>Major on record</dt><dd>${escHTML(details.official_major || '—')}<span>${majorSource}; decides which restricted courses you can enroll in</span></dd></div>
+        <div><dt>Target major</dt><dd>${escHTML(profileAcademicDetails.target_major || '—')}<span>decides your degree path</span></dd></div>
+        <div><dt>In progress${details.in_progress_term ? ` · ${escHTML(displayTerm(details.in_progress_term))}` : ''}</dt><dd>${list(details.in_progress_courses)}<span>count as met prerequisites and are not recommended again</span></dd></div>
+        <div><dt>GE marked complete</dt><dd>${list(details.ge_confirmed)}<span>for categories met outside coursework, such as language</span></dd></div>
+        <div><dt>Exam credit</dt><dd>${exams.length ? exams.map(credit => `${escHTML(credit.exam_type)} ${escHTML(credit.subject)} (${escHTML(credit.score)}): ${escHTML(profileExamCreditText(credit))}`).join('<br>') : '—'}<span>from the UC Irvine AP credit chart</span></dd></div>
+        <div><dt>Transfer credit</dt><dd>${transfers.length ? transfers.map(row => `${escHTML(row.institution_name || 'Transfer')} · ${escHTML(row.units)} units`).join('<br>') : '—'}<span>counts as: ${list(details.transfer_courses)}</span></dd></div>
+      </dl>
+      <form class="profile-details-form" id="profileDetailsForm" hidden onsubmit="saveProfileDetails(event)"></form>
+    </section>`;
+}
+
+function openProfileDetailsEditor() {
+  const form = document.getElementById('profileDetailsForm');
+  const details = profileAcademicDetails || {};
+  const confirmed = new Set(details.ge_confirmed || []);
+  form.innerHTML = `
+    <label>Major on record<input name="official_major" maxlength="120" value="${escAttr(details.official_major || '')}" placeholder="As shown in StudentAccess, e.g. Computer Science and Engineering"></label>
+    <label>In-progress term<input name="in_progress_term" maxlength="24" value="${escAttr(details.in_progress_term || '')}" placeholder="2026 Fall"></label>
+    <label>Courses in progress<input name="in_progress_courses" value="${escAttr((details.in_progress_courses || []).join(', '))}" placeholder="SWE 43, UNI STU 10"></label>
+    <label>Transfer credit counts as<input name="transfer_courses" value="${escAttr((details.transfer_courses || []).join(', '))}" placeholder="UCI course IDs, comma separated"></label>
+    <fieldset><legend>GE categories already complete</legend>
+      ${PROFILE_GE_CATEGORIES.map(([code, label]) => `<label class="profile-details-check"><input type="checkbox" name="ge_confirmed" value="${code}" ${confirmed.has(code) ? 'checked' : ''}>${escHTML(label)}</label>`).join('')}
+    </fieldset>
+    <p class="profile-details-status" id="profileDetailsStatus" aria-live="polite"></p>
+    <div class="profile-details-actions"><button class="primary-button" type="submit">Save details</button>
+      <button class="quiet-button" type="button" onclick="document.getElementById('profileDetailsForm').hidden = true">Cancel</button></div>`;
+  form.hidden = false;
+  form.querySelector('input').focus();
+}
+
+async function saveProfileDetails(event) {
+  event.preventDefault();
+  const form = event.target;
+  const status = document.getElementById('profileDetailsStatus');
+  const split = value => String(value || '').split(/[,;\n]/).map(item => item.trim()).filter(Boolean);
+  const payload = {
+    official_major: form.official_major.value.trim(),
+    in_progress_term: form.in_progress_term.value.trim(),
+    in_progress_courses: split(form.in_progress_courses.value),
+    transfer_courses: split(form.transfer_courses.value),
+    ge_confirmed: [...form.querySelectorAll('input[name="ge_confirmed"]:checked')].map(input => input.value),
+  };
+  status.textContent = 'Saving…';
+  try {
+    const response = await fetch(`${API}/api/academic/details`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const rejected = (await response.json()).details?.rejected || [];
+    if (rejected.length) {
+      status.textContent = `Saved. Not recognized and left out: ${rejected.join(', ')}`;
+      setTimeout(loadProfile, 2500);
+    } else {
+      loadProfile();
+    }
+  } catch (error) {
+    status.textContent = 'Your details could not be saved. Please try again.';
+  }
 }
 
 function profileEnrollmentCard(label, courses, canPlan) {

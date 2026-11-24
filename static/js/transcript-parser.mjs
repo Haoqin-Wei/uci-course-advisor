@@ -5,9 +5,12 @@
  * are never included.
  */
 
-export const TRANSCRIPT_PARSER_VERSION = 'uci-current-v3';
+export const TRANSCRIPT_PARSER_VERSION = 'uci-current-v4';
 
-const TERM_RE = /^(\d{4})\s+(Fall|Winter|Spring)\s+Quarter$|^(\d{4})\s+(First|Second|Ten-Week)\s+Summer\s+Session$/i;
+// The ten-week session prints as "2026 Special / 10-Week Summer Session"; without it
+// that term's courses were filed under the session printed before it.
+const TERM_RE = /^(\d{4})\s+(Fall|Winter|Spring)\s+Quarter$|^(\d{4})\s+(First|Second|Ten-Week|Special\s*\/\s*10-Week)\s+Summer\s+Session$/i;
+const EXAM_LINE_RE = /^(AP|IB|A[ -]?LEVEL)\s+.+\(Score\s+[0-9.]+,\s*Units\s+[0-9.]+\)/i;
 const GRADE_RE = '(?:A\\+|A-|A|B\\+|B-|B|C\\+|C-|C|D\\+|D-|D|F|NP|P|W|I|IP|NR|S|U)';
 const COURSE_RE = new RegExp(
   '^\\s*(.+?)\\s{2,}([A-Z][A-Z0-9&/]*(?:\\s+[A-Z][A-Z0-9&/]*)?)\\s{2,}' +
@@ -44,6 +47,22 @@ function parsePrintedAt(lines) {
       Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), 0, 0,
     );
     if (!Number.isNaN(value.getTime())) return value.toISOString();
+  }
+  return null;
+}
+
+// The line under the student's name is the major on record with the Registrar
+// ("UNDECLARED (UNAFFILIATED)", "COMPUTER SCI & ENGR (...)"). Enrollment
+// restrictions follow this major. The name line itself is never returned.
+function parseDeclaredMajor(lines) {
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!/^.+,\s*.+\(\d{6,10}\)\s*$/.test(lines[index].trim())) continue;
+    for (let next = index + 1; next < Math.min(lines.length, index + 4); next += 1) {
+      const candidate = lines[next].trim();
+      if (!candidate) continue;
+      if (/\d{4,}|@|transcript/i.test(candidate) || candidate.length > 120) return null;
+      return /^[A-Z][A-Z0-9 &,.\/()'-]+$/.test(candidate) ? candidate.replace(/\s+/g, ' ') : null;
+    }
   }
   return null;
 }
@@ -108,9 +127,20 @@ function parseTransferCredits(lines) {
     }
     const summary = line.match(/^Units Transferred\s+([0-9.]+)$/i);
     if (!summary) continue;
-    const hasDetailedNeighbor = lines.slice(Math.max(0, index - 3), index)
-      .some(candidate => /\(Units\s+[0-9.]+\)\s+\d+\s+Terms?\s+to/i.test(candidate));
-    if (!hasDetailedNeighbor) {
+    // "Units Transferred" totals the block printed right above it. Under an
+    // institution line it repeats that line; under AP/IB lines it is the
+    // exam subtotal, which was once stored as a second, nameless transfer.
+    const block = [];
+    for (let back = index - 1; back >= 0 && block.length < 8; back -= 1) {
+      const candidate = lines[back].trim();
+      if (!candidate) continue;
+      if (TERM_RE.test(candidate) || /^Units Transferred/i.test(candidate)
+          || /^(?:Term|Cumulative) Totals/i.test(candidate)) break;
+      block.push(candidate);
+    }
+    const hasDetailedNeighbor = block.some(candidate => /\(Units\s+[0-9.]+\)\s+\d+\s+Terms?\s+to/i.test(candidate));
+    const isExamSubtotal = block.some(candidate => EXAM_LINE_RE.test(candidate));
+    if (!hasDetailedNeighbor && !isExamSubtotal) {
       output.push({
         institution_name: null,
         units: Number(summary[1]),
@@ -236,6 +266,7 @@ export function parseUciTranscriptLines(inputLines) {
   return {
     parser_version: TRANSCRIPT_PARSER_VERSION,
     printed_at: parsePrintedAt(lines),
+    declared_major: parseDeclaredMajor(lines),
     courses,
     exam_credits: parseExamCredits(lines),
     transfer_credits: parseTransferCredits(lines),

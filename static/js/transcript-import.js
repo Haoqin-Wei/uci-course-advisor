@@ -117,7 +117,7 @@ async function extractTranscriptPayload(file) {
     await import('/static/vendor/pdfjs/compat.mjs');
     const [pdfjs, parser] = await Promise.all([
       import('/static/vendor/pdfjs/pdf.min.mjs'),
-      import('/static/js/transcript-parser.mjs'),
+      import('/static/js/transcript-parser.mjs?v=uci-current-v4'),
     ]);
     pdfjs.GlobalWorkerOptions.workerSrc = '/static/vendor/pdfjs/worker-entry.mjs';
     loadingTask = pdfjs.getDocument({data: bytes, isEvalSupported: false});

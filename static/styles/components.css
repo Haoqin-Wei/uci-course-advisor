@@ -1305,8 +1305,10 @@ body.schedule-open .msg-ai { max-width: 680px; }
 .cc-source-uci_catalog,
 .cc-source-uci_websoc,
 .cc-source-anteater_courses,
+.cc-source-anteater_ge,
 .cc-source-anteater_programs { background: var(--success-soft); color: var(--success); }
 .cc-source-official_web { background: var(--accent-soft);        color: var(--accent); }
+.cc-ge-differs { background: var(--warning-soft); color: var(--warning); }
 .cc-source-live_anteater_websoc { background: var(--success-soft); color: var(--success); }
 .cc-source-websoc_comments,
 .cc-source-official_department_link { background: var(--accent-soft); color: var(--accent); }

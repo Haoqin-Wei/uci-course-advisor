@@ -130,4 +130,35 @@ class CatalogStoreLoader(UCIRelationalLoader):
                 if course.title is None and course.ref in titles else course
                 for course in courses
             ]
-        return courses, sections
+        return self._with_anteater_ge(courses), sections
+
+    def _with_anteater_ge(self, courses: list[CourseRecord]) -> list[CourseRecord]:
+        """GE labels of the synced Anteater catalogue are the course's GE status.
+
+        A catalogue course without a label is a verified non-GE course. A course
+        known only from a timetable row has no catalogue entry and stays unknown.
+        """
+        if course_source.course_rows_token(self._db_path) is None:
+            return courses  # CSV rows: labels of unknown edition, left unverified.
+        from app.catalog import course_store
+        from app.catalog.ge import parse_ge_categories
+        from app.data.ge_evidence import anteater_provenance, anteater_sync_time
+
+        synced_at = anteater_sync_time(course_store.get_course_snapshot(path=self._db_path))
+        if not synced_at:
+            return courses
+        rows_by_ref, _ = self._course_index()
+        marked = []
+        for course in courses:
+            row = rows_by_ref.get(course.ref)
+            if row is None:
+                marked.append(course)
+                continue
+            parsed = parse_ge_categories(row.get("ge_list"))
+            marked.append(dataclasses.replace(
+                course,
+                ge_categories=tuple(sorted(parsed["categories"])),
+                ge_categories_verified=True,
+                ge_provenance=anteater_provenance(synced_at, unrecognized=parsed["unrecognized"]),
+            ))
+        return marked

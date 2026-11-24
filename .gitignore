@@ -31,4 +31,9 @@ data/auth.secret
 data/catalog.db
 data/catalog.db-shm
 data/catalog.db-wal
+# Left behind when a database file is replaced while a mounted tool still has it open
+data/.fuse_hidden*
 data/professor/summaries/
+
+# Local Claude settings
+.claude/

@@ -63,6 +63,8 @@ class TranscriptSummaryInput(AcademicModel):
 class TranscriptImportRequest(AcademicModel):
     parser_version: str = Field(min_length=1, max_length=32)
     printed_at: Optional[datetime] = None
+    # The major printed under the student's name; enrollment restrictions follow it.
+    declared_major: Optional[str] = Field(default=None, max_length=120)
     courses: list[TranscriptCourseInput] = Field(default_factory=list, max_length=400)
     exam_credits: list[ExamCreditInput] = Field(default_factory=list, max_length=50)
     transfer_credits: list[TransferCreditInput] = Field(default_factory=list, max_length=50)
@@ -73,3 +75,17 @@ class TranscriptImportRequest(AcademicModel):
     summary: TranscriptSummaryInput = Field(default_factory=TranscriptSummaryInput)
     skipped_count: int = Field(default=0, ge=0, le=1000)
     client_request_id: Optional[str] = Field(default=None, min_length=8, max_length=64)
+
+
+class AcademicDetailsUpdate(AcademicModel):
+    """What a transcript cannot tell: the student states these.
+
+    A field left out is not changed; an empty string or list clears it.
+    """
+    official_major: Optional[str] = Field(default=None, max_length=120)
+    in_progress_term: Optional[str] = Field(default=None, max_length=24)
+    in_progress_courses: Optional[list[str]] = Field(default=None, max_length=12)
+    ge_confirmed: Optional[list[str]] = Field(default=None, max_length=12)
+    # Categories the student says are still open, for the ones no transcript can show (VI).
+    ge_not_met: Optional[list[str]] = Field(default=None, max_length=12)
+    transfer_courses: Optional[list[str]] = Field(default=None, max_length=40)

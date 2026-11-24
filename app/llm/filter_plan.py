@@ -7,11 +7,14 @@ import json
 import logging
 import time
 
-from app.recommendations.filter_plan import empty_filter_plan, trusted_ge_audit, validate_filter_plan
+from app.recommendations.filter_plan import (empty_filter_plan, states_no_condition, trusted_ge_audit,
+                                              validate_filter_plan)
 
 
 logger = logging.getLogger(__name__)
 PARSER_TIMEOUT_SECONDS = 12.0
+PARSER_ATTEMPTS = 2
+_RETRYABLE = frozenset({"model_timeout", "model_invalid_json", "model_invalid_schema", "model_error"})
 FILTER_PLAN_PROMPT = """Parse the CURRENT user request into a bounded course recommendation Filter Plan.
 Return ONE JSON object. Omit unchanged/default fields; do not repeat this schema.
 Supported fields and defaults:
@@ -101,44 +104,59 @@ async def parse_filter_plan(user_message: str, conversational_context: object = 
     started = time.perf_counter()
     calls = 0
     failure = None
-    try:
-        if not isinstance(user_message, str):
-            failure = "invalid_user_message"
-        elif not adapter.LLM_ENABLED:
-            failure = "model_disabled"
-        else:
-            audit = trusted_ge_audit(profile)
-            data = {
-                "current_user_message": user_message,
-                "conversational_context": _bounded_context(conversational_context),
-                "ge_audit_summary": {"verified": audit is not None,
-                                     "unmet_categories": audit["unmet_categories"] if audit else None},
-            }
-            content = json.dumps(data, ensure_ascii=False)
-            calls = 1
-            from app import config
-            timeout = max(0.05, min(config.float_env("FILTER_PLAN_TIMEOUT_SECONDS", PARSER_TIMEOUT_SECONDS), 20.0))
-            raw = await asyncio.wait_for(
-                adapter._call_llm(FILTER_PLAN_PROMPT, content, json_mode=True),
-                timeout=timeout,
-            )
-            try:
-                decoded = _decode_json(raw)
-            except (ValueError, TypeError):
-                failure = "model_invalid_json"
+    result = None
+    # One retry: a timeout or a malformed reply is usually a one-off.
+    for _ in range(PARSER_ATTEMPTS):
+        failure = None
+        try:
+            if not isinstance(user_message, str):
+                failure = "invalid_user_message"
+            elif not adapter.LLM_ENABLED:
+                failure = "model_disabled"
             else:
-                result = validate_filter_plan(decoded, user_message, profile)
-                if result["status"] == "fallback":
-                    failure = "model_invalid_schema"
-    except asyncio.TimeoutError:
-        failure = "model_timeout"
-    except Exception:
-        failure = "model_error"
+                audit = trusted_ge_audit(profile)
+                data = {
+                    "current_user_message": user_message,
+                    "conversational_context": _bounded_context(conversational_context),
+                    "ge_audit_summary": {"verified": audit is not None,
+                                         "unmet_categories": audit["unmet_categories"] if audit else None},
+                }
+                content = json.dumps(data, ensure_ascii=False)
+                calls += 1
+                from app import config
+                timeout = max(0.05, min(config.float_env("FILTER_PLAN_TIMEOUT_SECONDS", PARSER_TIMEOUT_SECONDS), 20.0))
+                raw = await asyncio.wait_for(
+                    adapter._call_llm(FILTER_PLAN_PROMPT, content, json_mode=True),
+                    timeout=timeout,
+                )
+                try:
+                    decoded = _decode_json(raw)
+                except (ValueError, TypeError):
+                    failure = "model_invalid_json"
+                else:
+                    result = validate_filter_plan(decoded, user_message, profile)
+                    if result["status"] == "fallback":
+                        failure = "model_invalid_schema"
+        except asyncio.TimeoutError:
+            failure = "model_timeout"
+        except Exception:
+            failure = "model_error"
+        if failure not in _RETRYABLE:
+            break
 
+    recovered = None
+    if failure in _RETRYABLE and states_no_condition(user_message):
+        # The parser never answered, but the sentence carries no time, day,
+        # GE or must/cannot wording: there was no rule for it to find. Go on
+        # with the defaults instead of asking the student to restate
+        # conditions they never gave.
+        result = {"plan": empty_filter_plan(), "status": "validated", "issues": []}
+        recovered, failure = failure, None
     if failure is not None:
         result = {"plan": empty_filter_plan(), "status": "fallback", "issues": [failure]}
     result["metrics"] = {"parse_elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
-                         "llm_calls": calls, "failure_reason": failure}
-    logger.info("Filter plan status=%s parse_elapsed_ms=%.1f llm_calls=%d failure_reason=%s",
-                result["status"], result["metrics"]["parse_elapsed_ms"], calls, failure)
+                         "llm_calls": calls, "failure_reason": failure,
+                         **({"recovered_from": recovered} if recovered else {})}
+    logger.info("Filter plan status=%s parse_elapsed_ms=%.1f llm_calls=%d failure_reason=%s recovered_from=%s",
+                result["status"], result["metrics"]["parse_elapsed_ms"], calls, failure, recovered)
     return result

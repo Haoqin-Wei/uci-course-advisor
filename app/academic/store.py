@@ -7,6 +7,7 @@ PostgreSQL service without changing the API contract.
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 import uuid
@@ -49,9 +50,30 @@ def _conn():
     conn.execute("PRAGMA journal_mode = WAL")
     try:
         _init_schema(conn)
+        conn.execute(_DETAILS_SCHEMA)
+        _add_missing_columns(conn)
         yield conn
     finally:
         conn.close()
+
+
+_ADDED_COLUMNS = {
+    # The major on record with the Registrar, as printed on the transcript.
+    "student_academic_profiles": (("declared_major", "TEXT"), ("declared_major_as_of", "TEXT")),
+    # What an exam credit counts for at UCI, from the campus AP chart.
+    "exam_credits": (("credit_exam", "TEXT"), ("credited_courses_json", "TEXT"),
+                     ("ge_courses_json", "TEXT"), ("ge_direct_json", "TEXT"), ("credit_note", "TEXT")),
+    # Which gaps the student was already asked about, or chose not to answer.
+    "student_academic_details": (("prompts_json", "TEXT"), ("ge_not_met_json", "TEXT")),
+}
+
+
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    for table, columns in _ADDED_COLUMNS.items():
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for name, kind in columns:
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
 
 
 def _init_schema(conn: sqlite3.Connection) -> None:
@@ -503,15 +525,18 @@ def _upsert_profile(
     imported_at: str,
 ) -> None:
     summary = body.summary
+    declared_major = " ".join((body.declared_major or "").split()).upper() or None
     conn.execute(
         """
         INSERT INTO student_academic_profiles (
-            user_id, official_uc_gpa, gpa_as_of, gpa_imported_at,
+            user_id, declared_major, declared_major_as_of, official_uc_gpa, gpa_as_of, gpa_imported_at,
             grade_units_attempted, total_units_passed, units_completed, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user_id,
+            declared_major,
+            source_time if declared_major else None,
             summary.official_uc_gpa,
             source_time if summary.official_uc_gpa is not None else None,
             imported_at if summary.official_uc_gpa is not None else None,
@@ -533,17 +558,28 @@ def _upsert_exam_credits(
     for item in body.exam_credits:
         if item.confidence < 0.80:
             continue
-        equivalent = _canonical_course_id(item.uci_equivalent_course or "")
+        # The transcript never says what an exam counts for; the campus chart does.
+        from app.data.uci_general.ap_credit import resolve
+
+        credit = resolve(item.exam_type, item.subject, item.score)
+        equivalent = (credit["credited"][0] if credit["credited"]
+                      else _canonical_course_id(item.uci_equivalent_course or ""))
         conn.execute(
             """
             INSERT INTO exam_credits (
                 id, user_id, exam_type, subject, score, units, exam_date,
-                uci_equivalent_course, source_printed_at, first_seen_at, last_seen_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                uci_equivalent_course, credit_exam, credited_courses_json, ge_courses_json,
+                ge_direct_json, credit_note, source_printed_at, first_seen_at, last_seen_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, exam_type, subject, exam_date) DO UPDATE SET
                 score = excluded.score,
                 units = excluded.units,
                 uci_equivalent_course = excluded.uci_equivalent_course,
+                credit_exam = excluded.credit_exam,
+                credited_courses_json = excluded.credited_courses_json,
+                ge_courses_json = excluded.ge_courses_json,
+                ge_direct_json = excluded.ge_direct_json,
+                credit_note = excluded.credit_note,
                 source_printed_at = excluded.source_printed_at,
                 last_seen_at = excluded.last_seen_at
             """,
@@ -556,6 +592,11 @@ def _upsert_exam_credits(
                 item.units,
                 item.exam_date,
                 equivalent,
+                credit["exam"] if credit["matched"] else None,
+                json.dumps(credit["credited"]),
+                json.dumps(credit["ge_courses"]),
+                json.dumps(credit["ge_direct"]),
+                credit["note"],
                 source_time,
                 imported_at,
                 imported_at,
@@ -648,7 +689,8 @@ def get_academic_profile(
             (user_id,),
         ).fetchall()
         profile = conn.execute(
-            """SELECT official_uc_gpa, gpa_as_of, units_completed, total_units_passed
+            """SELECT official_uc_gpa, gpa_as_of, units_completed, total_units_passed,
+                      declared_major, declared_major_as_of
                FROM student_academic_profiles WHERE user_id = ?""",
             (user_id,),
         ).fetchone()
@@ -688,6 +730,8 @@ def get_academic_profile(
         "last_import": dict(latest) if latest else None,
         "gpa_as_of": profile["gpa_as_of"] if profile else None,
         "gpa_available": bool(profile and profile["official_uc_gpa"] is not None),
+        "declared_major": profile["declared_major"] if profile else None,
+        "declared_major_as_of": profile["declared_major_as_of"] if profile else None,
         "units_completed": profile["units_completed"] if profile else None,
         "total_units_passed": profile["total_units_passed"] if profile else None,
     }
@@ -718,6 +762,211 @@ def get_ai_academic_context(user_id: str) -> dict:
     }
 
 
+def get_exam_credits(user_id: str) -> list[dict]:
+    """Exam credits with what each counts for; ``matched`` is False when the chart has no entry."""
+    with _conn() as conn:
+        rows = conn.execute(
+            """SELECT exam_type, subject, score, units, exam_date, credit_exam, credited_courses_json,
+                      ge_courses_json, ge_direct_json, credit_note
+               FROM exam_credits WHERE user_id = ? ORDER BY exam_date, subject""", (user_id,)).fetchall()
+
+    def loads(value, default):
+        try:
+            return json.loads(value) if value else default
+        except ValueError:
+            return default
+
+    return [{"exam_type": row["exam_type"], "subject": row["subject"], "score": row["score"],
+             "units": row["units"], "exam_date": row["exam_date"],
+             "matched": bool(row["credit_exam"]), "exam": row["credit_exam"],
+             "credited_courses": loads(row["credited_courses_json"], []),
+             "ge_courses": loads(row["ge_courses_json"], []),
+             "ge_direct": loads(row["ge_direct_json"], {}), "note": row["credit_note"]} for row in rows]
+
+
+def count_exam_credits(user_id: str) -> int:
+    """How many AP/IB/A-level exam credits the transcript listed for this student."""
+    with _conn() as conn:
+        row = conn.execute("SELECT COUNT(*) FROM exam_credits WHERE user_id = ?", (user_id,)).fetchone()
+    return int(row[0]) if row else 0
+
+
+# ── Details the student states (a transcript cannot show them) ──
+
+_DETAILS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS student_academic_details (
+    user_id TEXT PRIMARY KEY,
+    official_major TEXT,
+    official_major_set_at TEXT,
+    in_progress_term TEXT,
+    in_progress_courses_json TEXT NOT NULL DEFAULT '[]',
+    ge_confirmed_json TEXT NOT NULL DEFAULT '[]',
+    transfer_courses_json TEXT NOT NULL DEFAULT '[]',
+    prompts_json TEXT,
+    ge_not_met_json TEXT,
+    updated_at TEXT NOT NULL
+)
+"""
+
+
+def _course_list(values) -> tuple[list[str], list[str]]:
+    """Canonical course IDs, and the entries that are not course IDs."""
+    kept: list[str] = []
+    rejected: list[str] = []
+    for raw in values or []:
+        course = _canonical_course_id(str(raw))
+        if course is None:
+            rejected.append(str(raw).strip())
+        elif course not in kept:
+            kept.append(course)
+    return kept, rejected
+
+
+def update_academic_details(user_id: str, body) -> dict:
+    """Merge the stated details. Returns the stored details plus ``rejected`` entries."""
+    from app.catalog.ge import normalize_ge_category
+    from app.catalog.term import Term
+
+    changes = body.model_dump(exclude_unset=True)
+    rejected: list[str] = []
+    now = _now_iso()
+    with _conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO student_academic_details (user_id, updated_at) VALUES (?, ?)", (user_id, now))
+        if "official_major" in changes:
+            major = " ".join((changes["official_major"] or "").split()).upper() or None
+            conn.execute(
+                "UPDATE student_academic_details SET official_major = ?, official_major_set_at = ? WHERE user_id = ?",
+                (major, now if major else None, user_id))
+        if "in_progress_term" in changes:
+            term = Term.parse(changes["in_progress_term"] or "")
+            if changes["in_progress_term"] and term is None:
+                rejected.append(changes["in_progress_term"])
+            else:
+                conn.execute("UPDATE student_academic_details SET in_progress_term = ? WHERE user_id = ?",
+                             (term.term_id.replace("_", " ") if term else None, user_id))
+        for field, column in (("in_progress_courses", "in_progress_courses_json"),
+                              ("transfer_courses", "transfer_courses_json")):
+            if field in changes:
+                kept, bad = _course_list(changes[field])
+                rejected.extend(bad)
+                conn.execute(f"UPDATE student_academic_details SET {column} = ? WHERE user_id = ?",
+                             (json.dumps(kept), user_id))
+        # A category is either confirmed or stated as still open: the later statement wins.
+        stated: dict[str, list[str]] = {}
+        for field in ("ge_confirmed", "ge_not_met"):
+            if field in changes:
+                stated[field] = []
+                for raw in changes[field] or []:
+                    label = normalize_ge_category(str(raw))
+                    if label is None:
+                        rejected.append(str(raw))
+                    elif label not in stated[field]:
+                        stated[field].append(label)
+        if stated:
+            row = conn.execute("SELECT ge_confirmed_json, ge_not_met_json FROM student_academic_details "
+                               "WHERE user_id = ?", (user_id,)).fetchone()
+            current = {"ge_confirmed": _json_list(row["ge_confirmed_json"]),
+                       "ge_not_met": _json_list(row["ge_not_met_json"])}
+            for field, other in (("ge_confirmed", "ge_not_met"), ("ge_not_met", "ge_confirmed")):
+                if field in stated:
+                    current[field] = stated[field]
+                    if other not in stated:
+                        current[other] = [label for label in current[other] if label not in stated[field]]
+            conn.execute("UPDATE student_academic_details SET ge_confirmed_json = ?, ge_not_met_json = ? "
+                         "WHERE user_id = ?",
+                         (json.dumps(current["ge_confirmed"]), json.dumps(current["ge_not_met"]), user_id))
+        conn.execute("UPDATE student_academic_details SET updated_at = ? WHERE user_id = ?", (now, user_id))
+        conn.commit()
+    return {**get_academic_details(user_id), "rejected": rejected}
+
+
+def _json_list(value) -> list:
+    try:
+        data = json.loads(value) if value else []
+    except ValueError:
+        data = []
+    return data if isinstance(data, list) else []
+
+
+def get_academic_details(user_id: str) -> dict:
+    """Stated details merged with the transcript's major on record.
+
+    ``official_major`` decides enrollment restrictions. The newer of the
+    student's own entry and the transcript's printed major is used: a
+    transcript printed before a change of major must not undo the entry, and
+    a later transcript replaces it.
+    """
+    loads = _json_list
+    with _conn() as conn:
+        row = conn.execute("SELECT * FROM student_academic_details WHERE user_id = ?", (user_id,)).fetchone()
+        printed = conn.execute(
+            "SELECT declared_major, declared_major_as_of FROM student_academic_profiles WHERE user_id = ?",
+            (user_id,)).fetchone()
+    stated = (row["official_major"], row["official_major_set_at"]) if row else (None, None)
+    transcript = (printed["declared_major"], printed["declared_major_as_of"]) if printed else (None, None)
+    if stated[0] and (not transcript[0] or (stated[1] or "") >= (transcript[1] or "")):
+        major, source, as_of = stated[0], "student", stated[1]
+    elif transcript[0]:
+        major, source, as_of = transcript[0], "transcript", transcript[1]
+    else:
+        major, source, as_of = None, None, None
+    return {
+        "official_major": major, "official_major_source": source, "official_major_as_of": as_of,
+        "transcript_major": transcript[0], "transcript_major_as_of": transcript[1],
+        "in_progress_term": row["in_progress_term"] if row else None,
+        "in_progress_courses": loads(row["in_progress_courses_json"]) if row else [],
+        "ge_confirmed": loads(row["ge_confirmed_json"]) if row else [],
+        "ge_not_met": loads(row["ge_not_met_json"]) if row else [],
+        "transfer_courses": loads(row["transfer_courses_json"]) if row else [],
+        "prompts": _prompts(row["prompts_json"]) if row else {},
+    }
+
+
+# Gaps a conversation may ask about. Each is asked once; "declined" means the
+# student chose not to answer, so no page or agent should ask again.
+DETAIL_PROMPTS = ("in_progress", "official_major", "ge_language", "transfer_courses")
+
+
+def _prompts(value) -> dict:
+    try:
+        data = json.loads(value) if value else {}
+    except ValueError:
+        data = {}
+    return {key: dict(entry) for key, entry in data.items()
+            if key in DETAIL_PROMPTS and isinstance(entry, dict)} if isinstance(data, dict) else {}
+
+
+def mark_detail_prompt(user_id: str, item: str, *, term: str | None = None, declined: bool = False) -> dict:
+    """Record that ``item`` was asked (for ``term``), or that the student declined to answer it."""
+    if item not in DETAIL_PROMPTS:
+        raise ValueError(f"unknown detail prompt: {item}")
+    now = _now_iso()
+    with _conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO student_academic_details (user_id, updated_at) VALUES (?, ?)", (user_id, now))
+        row = conn.execute(
+            "SELECT prompts_json FROM student_academic_details WHERE user_id = ?", (user_id,)).fetchone()
+        prompts = _prompts(row["prompts_json"])
+        entry = prompts.get(item, {})
+        prompts[item] = {"asked_at": entry.get("asked_at") or now, "term": term or entry.get("term"),
+                         "declined": bool(declined or entry.get("declined")),
+                         **({"declined_at": entry.get("declined_at") or now}
+                            if declined or entry.get("declined") else {})}
+        conn.execute("UPDATE student_academic_details SET prompts_json = ? WHERE user_id = ?",
+                     (json.dumps(prompts), user_id))
+        conn.commit()
+    return prompts
+
+
+def get_transfer_credits(user_id: str) -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT institution_name, units, terms_through FROM transfer_credits WHERE user_id = ? ORDER BY terms_through",
+            (user_id,)).fetchall()
+    return [dict(row) for row in rows]
+
+
 def delete_user_data(user_id: str) -> None:
     with _conn() as conn:
         for table in (
@@ -727,6 +976,7 @@ def delete_user_data(user_id: str) -> None:
             "transfer_credits",
             "university_requirements",
             "transcript_imports",
+            "student_academic_details",
         ):
             conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
         conn.commit()

@@ -97,9 +97,39 @@ async def initialize(context, messages):
     context["_ranking_profile"] = profile
     if not recommendation_gate(context)["ready"]:
         return
+    await _in_thread(_build_pools, context)
+
+
+def _build_pools(context):
     for term in context.get("allowed_query_terms") or [context.get("term")]:
         if term:
-            await _in_thread(search_candidates, context, term)
+            search_candidates(context, term)
+    # No stated preference means "what moves my degree forward": the server
+    # derives that shortlist from the filtered pool it just built.
+    from app.agent import graduation
+    path_term = (context.get("allowed_query_terms") or [context.get("term")])[0]
+    if path_term and len(context.get("allowed_query_terms") or [path_term]) == 1:
+        context["_prefilter_state"]["graduation_path"] = graduation.build(context, path_term)
+
+
+def refresh_profile(context):
+    """Rebuild what this turn derived from the student's record after the record changed.
+
+    Returns False when the turn has no prefilter state to rebuild.
+    """
+    if not active(context):
+        return False
+    state = context["_prefilter_state"]
+    found = db.get_student_profile(context.get("user_id", ""))
+    profile = (found.get("profile") if found.get("found") else {}) or {}
+    state["profile"] = profile
+    context["_ranking_profile"] = profile
+    for key in ("pools", "candidates", "excluded"):
+        state[key].clear()
+    state.pop("graduation_path", None)
+    if recommendation_gate(context)["ready"]:
+        _build_pools(context)
+    return True
 
 
 async def _in_thread(fn, *args, **kwargs):
@@ -107,19 +137,42 @@ async def _in_thread(fn, *args, **kwargs):
     return await asyncio.to_thread(fn, *args, **kwargs)
 
 
+def _concurrent_courses(tree):
+    """Courses a prerequisite tree allows to be taken in the same term."""
+    if isinstance(tree, list):
+        return [course for child in tree for course in _concurrent_courses(child)]
+    if not isinstance(tree, dict):
+        return []
+    found = [course for key in ("AND", "OR") for course in _concurrent_courses(tree.get(key))]
+    if tree.get("coreq") is True and isinstance(tree.get("courseId"), str):
+        found.append(tree["courseId"])
+    return found
+
+
 def _metadata_candidate(course, sections, context, term, *, offering=None):
     state = context["_prefilter_state"]
     profile = state["profile"]
-    complete = (profile.get("academic_record_complete") is True
-                and profile.get("academic_record_verified") is True)
+    recorded = profile.get("completed_course_attempts", profile.get("completed_courses", [])) or []
+    # The student's recorded courses are what they have taken (their decision):
+    # a prerequisite absent from a non-empty record is not met, and the course
+    # is excluded. With no record at all nothing is known, so nothing is
+    # excluded; otherwise every course with a prerequisite would disappear.
+    complete = bool(recorded) or (profile.get("academic_record_complete") is True
+                                  and profile.get("academic_record_verified") is True)
     result = evaluate_prerequisite_tree(
         course.get("prerequisite_tree"),
-        completed_courses=profile.get("completed_course_attempts", profile.get("completed_courses", [])) or [],
-        in_progress_courses=profile.get("selected_courses") or [],
+        completed_courses=recorded,
+        # "PHYSICS 7D (coreq allowed)" can be taken in the same term, so it is
+        # not a missing prerequisite. Only coreq leaves accept these entries.
+        # Courses the student says they are taking this term count: without a
+        # minimum grade the prerequisite is met, with one it stays unknown
+        # until the grade exists. Schedule drafts (selected_courses) are plans,
+        # not enrollment, and are not passed here.
+        in_progress_courses=[*(profile.get("in_progress_courses") or []),
+                             *_concurrent_courses(course.get("prerequisite_tree"))],
         flat_prerequisites=course.get("prerequisites") or [],
         prerequisite_text=course.get("prerequisite_text"),
-        # Enrollment drafts are not evidence that a prerequisite has passed.
-        allow_in_progress=False,
+        allow_in_progress=True,
     )
     source = course.get("provenance") or {}
     proxy = source.get("is_historical_proxy") is True
@@ -130,6 +183,10 @@ def _metadata_candidate(course, sections, context, term, *, offering=None):
            "ge_labels_verified": bool((not proxy or annual_ge) and course.get("ge_labels_verified") is True),
            "prerequisite_status": result.status,
            "prerequisite_authoritative": complete,
+           "prerequisite_missing": list(result.missing[:4]),
+           # Being taken right now: nothing to recommend, whatever the request.
+           "in_progress_now": course_key(course.get("course_id")) in {
+               course_key(value) for value in profile.get("in_progress_courses") or []},
            "offering_status": "unavailable" if proxy else "offered" if sections else "unavailable",
            "authoritative": False}
     if offering:
@@ -441,7 +498,15 @@ def guard_call(name, args, context):
         return args, {"ok": False, "found": False, "error": "recommendation conditions remain unresolved",
                       "recommendation_gate": gate, "prefilter": summary(context)}
     term = args.get("term") or context.get("term")
+    from app.agent import graduation
+    if name == "search_courses" and graduation.tray(context):
+        # The tray is the candidate set: a department listing costs tens of
+        # thousands of tokens and offers courses the degree path already weighed.
+        return args, {"ok": False, "found": False, "error_code": "tray_is_the_candidate_set",
+                      "error": "A degree-path tray was built for this request; search_courses is disabled this "
+                               "turn. Pick from the tray and call propose_recommendation."}
     if name == "propose_recommendation":
+        args = graduation.review_proposal(context, args, term)
         kept, excluded = filter_items(context, args.get("items"), term)
         hard = context["_prefilter_state"]["plan"].get("hard_filters") or {}
         if hard.get("excluded_weekdays") or hard.get("earliest_start_is_hard"):
@@ -625,6 +690,50 @@ def summary(context):
             "detail_query_attempts": state["detail_query_attempts"], "parse_metrics": state["parse_metrics"]}
 
 
+MODEL_LISTED_EXCLUSIONS = 40
+_EXCLUSION_FIELDS_FOR_MODEL = ("id", "term", "reasons", "missing_prerequisites", "ge_contribution")
+
+
+def _exclusions_for_model(rows):
+    """Excluded courses as the model needs them: which, and why.
+
+    Each stored record also carries every section of the course as audit
+    evidence. With a few hundred prerequisite exclusions that copy alone was
+    millions of characters in one tool result and overflowed the model's
+    context, so the evidence stays server-side.
+    """
+    rows = list(rows or [])
+    listed = [{key: row[key] for key in _EXCLUSION_FIELDS_FOR_MODEL if row.get(key)}
+              for row in rows[:MODEL_LISTED_EXCLUSIONS]]
+    return {"excluded_count": len(rows),
+            "exclusion_reason_counts": dict(Counter(reason for row in rows for reason in row.get("reasons") or [])),
+            "excluded": listed,
+            **({"excluded_not_listed": len(rows) - len(listed)} if len(rows) > len(listed) else {})}
+
+
+def model_summary(context):
+    """`summary` for a tool result: counts and reasons, not the full audit lists."""
+    full = summary(context)
+    if full is None:
+        return None
+    compact = {key: value for key, value in full.items() if key not in {"excluded", "needs_verification"}}
+    return {**compact, "needs_verification_count": len(full["needs_verification"]),
+            **_exclusions_for_model(full["excluded"])}
+
+
+def model_pool_view(pool):
+    """A search result for the model, with exclusions reduced the same way."""
+    report = pool.get("prefilter") if isinstance(pool, dict) else None
+    if not isinstance(report, dict) or not isinstance(report.get("excluded"), list):
+        return pool
+    verification = report.get("needs_verification") or []
+    slim = {key: value for key, value in report.items() if key not in {"excluded", "needs_verification"}}
+    return {**pool, "prefilter": {
+        **slim, **_exclusions_for_model(report["excluded"]),
+        "needs_verification_count": len(verification),
+        "needs_verification": verification[:MODEL_LISTED_EXCLUSIONS]}}
+
+
 def instruction_messages(context):
     if not active(context):
         return []
@@ -659,4 +768,10 @@ def instruction_messages(context):
         "combinations as satisfying that condition. secondary_pairing_unknown cannot certify a complete "
         "combination and must never be explained as pure lecture/no discussion. A component hidden by "
         "filtering may still be required. Soft preferences do not eliminate candidates."
-    )}, untrusted_context_message("dynamic prefilter results", json.dumps(data, ensure_ascii=False))]
+    )}, untrusted_context_message("dynamic prefilter results", json.dumps(data, ensure_ascii=False)),
+        *_graduation_messages(context)]
+
+
+def _graduation_messages(context):
+    from app.agent import graduation
+    return graduation.instruction_messages(context)

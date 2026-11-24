@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 import re
 from app.catalog.ge import normalize_ge_category
 from typing import Literal
@@ -63,6 +64,9 @@ _GLOBAL_TIME_SCOPE = re.compile(r"所有(?:课|课程|天)|全部(?:课|课程|�
 _TIME_EXCEPTION = re.compile(r"除了|除外|除非|例外|\b(?:except|unless)\b", re.I)
 _LOCAL_TIME_SCOPE = re.compile(r"这门课|那门课|该课程|这节课|那节课|工作日|周末|"
                                r"\b(?:this course|that course|this class|that class|weekdays?|weekends?)\b", re.I)
+
+
+logger = logging.getLogger(__name__)
 
 
 class _StrictModel(BaseModel):
@@ -259,6 +263,13 @@ def _weekday_off_requested(clause: str, day: str) -> bool:
     )
 
 
+def _schema_errors(error: Exception) -> list[str]:
+    """Where the schema broke, never what the text was."""
+    if isinstance(error, ValidationError):
+        return [".".join(str(part) for part in item["loc"]) + ":" + item["type"] for item in error.errors()[:8]]
+    return [type(error).__name__]
+
+
 def validate_filter_plan(raw: object, user_message: str, profile: object = None) -> dict:
     """Validate model output without trusting inferred hard rules or GE credit."""
     if not isinstance(user_message, str):
@@ -266,7 +277,8 @@ def validate_filter_plan(raw: object, user_message: str, profile: object = None)
     try:
         candidate = raw.model_dump(mode="json") if isinstance(raw, FilterPlan) else raw
         plan = FilterPlan.model_validate(candidate).model_dump(mode="json")
-    except (ValidationError, TypeError, ValueError):
+    except (ValidationError, TypeError, ValueError) as error:
+        logger.info("filter plan schema rejected at %s", _schema_errors(error))
         return {"plan": empty_filter_plan(), "status": "fallback", "issues": ["invalid_schema"]}
 
     requested_plan = copy.deepcopy(plan)
@@ -329,6 +341,27 @@ def validate_filter_plan(raw: object, user_message: str, profile: object = None)
         result["requested_plan"] = requested_plan
         result["unresolved_constraints"] = ["ge_audit_unverified"]
     return result
+
+
+_CONDITION_WORDS = re.compile(
+    r"\bGE\b|通识|早八|早课|早上|上午|下午|晚上|中午|之前|以前|之后|以后|"
+    r"\b(?:morning|afternoon|evening|early|late|before|after|a\.?m\.?|p\.?m\.?)\b", re.I)
+
+
+def states_no_condition(message: object) -> bool:
+    """True when the message cannot be carrying a rule a failed parse would lose.
+
+    Used only after the parser failed. Any digit, clock time, weekday, part
+    of the day, GE mention or "must / cannot / only" wording counts as a
+    possible condition, so the error is on the side of stopping to ask.
+    """
+    if not isinstance(message, str) or not message.strip():
+        return False
+    if _TIME.search(message) or _BAN.search(message) or _MUST.search(message) or _CONDITION_WORDS.search(message):
+        return False
+    if any(re.search(pattern, message, re.I) for pattern in _DAY_PATTERNS.values()):
+        return False
+    return not unresolved_requested_constraints(empty_filter_plan(), message)
 
 
 def unresolved_requested_constraints(plan: dict, message: str, profile: object = None) -> list[str]:

@@ -123,3 +123,22 @@
   .profile-transcript p { font-size: 11px; }
   .student-profile-danger { align-items: flex-start; flex-direction: column; gap: 14px; }
 }
+
+/* Academic details: facts the student states because a transcript cannot show them. */
+.profile-details { margin-top: 18px; padding: 16px 18px; border-radius: 14px; background: #f5f5f7; }
+.profile-details-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.profile-details-head h2 { font-size: 15px; font-weight: 600; }
+.profile-details-head p { margin-top: 2px; font-size: 12px; color: var(--text-secondary, #6e6e73); }
+.profile-details-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px 24px; margin-top: 14px; }
+.profile-details-list dt { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-secondary, #6e6e73); }
+.profile-details-list dd { margin: 3px 0 0; font-size: 13px; }
+.profile-details-list dd span { display: block; margin-top: 2px; font-size: 11px; color: var(--text-secondary, #6e6e73); }
+.profile-details-form { display: grid; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(0, 0, 0, .08); }
+.profile-details-form[hidden] { display: none; }
+.profile-details-form label { display: grid; gap: 4px; font-size: 12px; font-weight: 550; }
+.profile-details-form input:not([type="checkbox"]) { min-height: 32px; padding: 6px 10px; border: 1px solid rgba(0, 0, 0, .14); border-radius: 8px; font: inherit; font-weight: 400; background: #fff; }
+.profile-details-form fieldset { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 6px 16px; padding: 0; border: 0; }
+.profile-details-form legend { margin-bottom: 6px; font-size: 12px; font-weight: 550; }
+.profile-details-form .profile-details-check { display: flex; align-items: center; gap: 6px; font-weight: 400; }
+.profile-details-status { min-height: 16px; font-size: 12px; color: var(--text-secondary, #6e6e73); }
+.profile-details-actions { display: flex; gap: 8px; }

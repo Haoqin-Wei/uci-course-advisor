@@ -16,7 +16,7 @@ from app.catalog.normalization import normalize_instructor, parse_course_mention
 from app.recommendations.features import build_candidate_features
 from app.recommendations.filter_plan import normalize_ge_category, trusted_ge_audit
 from app.terms import parse_term_key
-from app.data.ge_evidence import verified_ge_provenance
+from app.data.ge_evidence import ANTEATER_SOURCE, verified_ge_provenance
 from app.scheduling.service import section_meetings
 
 
@@ -111,7 +111,42 @@ def normalize_ge_evidence(card):
                     "source": audit["source"]}
     return {"version": PRESENTATION_VERSION, "status": "verified" if verified else "unknown",
             "categories": labels, "source": deepcopy(dict(provenance)) if source_known else None,
-            "is_ge": bool(labels) if verified else None, "personal_contribution": personal}
+            "is_ge": bool(labels) if verified else None, "personal_contribution": personal,
+            "official_check": _official_check(provenance) if verified else None}
+
+
+def _official_check(provenance):
+    """The cross-check against the official GE list, reduced to displayable facts."""
+    check = _mapping(provenance.get("official_check"))
+    status = check.get("status")
+    if status not in {"agrees", "differs", "not_checked"}:
+        return None
+    out = {"status": status, "catalogue_year": check.get("catalogue_year")}
+    if status == "differs":
+        out["official_categories"] = [label for label in (
+            normalize_ge_category(value) for value in check.get("official_categories") or []) if label]
+        url = check.get("source_url")
+        if isinstance(url, str) and url.startswith("https://catalogue.uci.edu/"):
+            out["source_url"] = url
+    return out
+
+
+def _ge_difference_line(ge, zh):
+    """One sentence when the official GE list disagrees with the label in use."""
+    check = _mapping(ge.get("official_check"))
+    if check.get("status") != "differs":
+        return None
+    year = _text(check.get("catalogue_year") or "")
+    official = " / ".join(check.get("official_categories") or [])
+    ours = " / ".join(ge.get("categories") or [])
+    if zh:
+        return (f"注意：官方 GE 列表（{year}）{'标注为 ' + official if official else '未列出这门课'}，"
+                f"与 Anteater 的{'标签 ' + ours if ours else '“无 GE 标签”'}不一致；"
+                "这里按 Anteater 判定，选课前请向学院确认。")
+    return (f"Note: the official GE list ({year}) "
+            f"{'lists ' + official if official else 'does not list this course'}, while Anteater "
+            f"{'labels it ' + ours if ours else 'gives it no GE label'}. "
+            "Anteater's label is used here; confirm with your advisor before enrolling.")
 
 
 def _selected_lecture(card):
@@ -303,17 +338,69 @@ def normalize_recommendation_card(card, language="zh"):
                            "comparison_baseline": "not_established"}
     out["presentation_version"] = PRESENTATION_VERSION
     zh = str(language).startswith("zh")
-    if ranking["final_score"] is not None:
+    path_reason = _path_reason(out.get("graduation_path"), zh)
+    if path_reason:
+        # On the degree path the reason is the requirement, not a score.
+        out["reason"] = path_reason
+    elif ranking["final_score"] is not None:
         out["reason"] = ((f"历史证据推荐分 {ranking['final_score']:.1f}/100；修读条件另行核实。") if zh else
                          f"Historical-evidence score {ranking['final_score']:.1f}/100; verify enrollment conditions.")
     elif ge["status"] == "verified" and ge["categories"]:
         labels = " / ".join(ge["categories"])
         out["reason"] = (f"课程 GE 类别已核实：{labels}；个人抵扣另行核实。" if zh else
                          f"Verified course GE categories: {labels}; verify personal degree credit separately.")
+    elif ge["status"] == "verified":
+        out["reason"] = ("课程候选（不是 GE 课程）；历史证据与修读条件另行核实。" if zh else
+                         "Course candidate (not a GE course); verify historical evidence and enrollment conditions.")
     else:
         out["reason"] = ("课程候选；历史证据、GE 类别与修读条件另行核实。" if zh else
                          "Course candidate; verify historical evidence, GE categories and enrollment conditions.")
     return out
+
+
+_QUARTER_ZH = {"Fall": "秋季", "Winter": "冬季", "Spring": "春季"}
+
+
+def _path_reason(path, zh):
+    """One checkable sentence for a course the graduation path put forward."""
+    path = _mapping(path)
+    tier = path.get("tier")
+    if tier == "required":
+        count = _count(path.get("unlock_count")) or 0
+        names = [_text(name) for name in path.get("unlocks") or [] if isinstance(name, str)][:3]
+        quarter = path.get("only_quarter") if path.get("only_quarter") in _QUARTER_ZH else None
+        if zh:
+            parts = ["专业必修"]
+            if count and names:
+                listed = "、".join(names)
+                parts.append(f"{listed} 等 {count} 门后续必修直接或间接以它为先修" if count > len(names)
+                             else f"后续必修 {listed} 直接或间接以它为先修")
+            if quarter:
+                parts.append(f"近两年只在{_QUARTER_ZH[quarter]}开课")
+            return "；".join(parts) + "。"
+        parts = ["Required for your major"]
+        if count and names:
+            more = " and others" if count > len(names) else ""
+            parts.append(f"a direct or indirect prerequisite for {count} later required "
+                         f"course{'s' if count != 1 else ''} ({', '.join(names)}{more})")
+        if quarter:
+            parts.append(f"offered only in {quarter} over the last two years")
+        return "; ".join(parts) + "."
+    if tier == "choice":
+        label = _text(path.get("requirement") or "")
+        count = _count(path.get("alternatives"))
+        if zh:
+            return f"可满足专业要求「{label}」" + (f"，本学期有 {count} 门可选" if count and count > 1 else "") + "。"
+        return (f"Counts toward the major requirement \"{label}\""
+                + (f"; {count} options this term" if count and count > 1 else "") + ".")
+    if tier == "ge":
+        labels = " / ".join(label for label in (normalize_ge_category(value) for value in path.get("ge_categories") or [])
+                            if label)
+        if not labels:
+            return None
+        return (f"补 GE {labels} 类（按已录入课程估算）。" if zh else
+                f"Fills GE category {labels} (estimated from your recorded courses).")
+    return None
 
 
 def _text(value):
@@ -369,6 +456,10 @@ def _grade_line(entry, zh):
 def _ge_source_label(ge, zh):
     source = _mapping(ge.get("source"))
     # Internal loader names and source-file paths are provenance, not user-facing labels.
+    if source.get("source") == ANTEATER_SOURCE:
+        synced = str(source.get("retrieved_at") or "")[:10]
+        return (f"Anteater API 课程目录（同步于 {_text(synced)}）" if zh else
+                f"Anteater API course catalogue (synced {_text(synced)})")
     url = source.get("source_url") or source.get("url")
     if isinstance(url, str):
         parsed = urlsplit(url)
@@ -445,8 +536,67 @@ def _blocked_recommendation_text(gate, zh):
     return "\n\n".join([opening, *descriptions, actions[0]])
 
 
-def render_recommendation_answer(cards, language="zh", *, gate=None, incomplete=False, failure_reason=None,
-                                 plan=None, requested_count=None, requested_plan=None):
+def render_recommendation_answer(cards, language="zh", *, follow_up=None, **options):
+    """The controlled answer, then the server's own closing note when there is one.
+
+    ``follow_up`` is what was saved to the student's record this turn and at
+    most one question about a gap in it. It is server-written, like the rest.
+    """
+    text = _recommendation_text(cards, language, **options)
+    note = str(follow_up or "").strip()
+    return f"{text}\n\n{note}" if note else text
+
+
+def plan_review_text(review, language="zh"):
+    """What the server's check of a term plan found, as lines for the answer.
+
+    The model's own paragraph comes first when its picks stood; every other
+    line states a fact from the degree path or a change the check made.
+    """
+    review = _mapping(review)
+    if not review:
+        return None
+    zh = str(language).startswith("zh")
+    sep = "、" if zh else ", "
+    names = lambda values: sep.join("**" + _text(value) + "**" for value in values or [])  # noqa: E731
+    lines = []
+    if review.get("note"):
+        lines.append(_text(review["note"]))
+    for entry in review.get("left_out_required") or []:
+        entry = _mapping(entry)
+        count, later = _count(entry.get("unlock_count")) or 0, [_text(name) for name in entry.get("unlocks") or []]
+        reason = _text(entry["reason"]) if entry.get("reason") else None
+        if reason and reason[-1] not in "。.!！?？":
+            reason += "。" if zh else "."
+        if zh:
+            delay = (f"；会推迟 {'、'.join(later)}" + (f" 等 {count} 门" if count > len(later) else "") + "后续必修"
+                     if later else "")
+            lines.append(f"这次没有排入专业必修 **{_text(entry.get('course_id'))}**{delay}。"
+                         + (f"原因：{reason}" if reason else ""))
+        else:
+            delay = (f"; this delays {', '.join(later)}" + (f" and {count - len(later)} more required courses"
+                                                             if count > len(later) else "") if later else "")
+            lines.append(f"Required course **{_text(entry.get('course_id'))}** is not in this plan{delay}."
+                         + (f" Reason: {reason}" if reason else ""))
+    for key, zh_text, en_text in (
+            ("removed_outside_tray", "已去掉不在你本学期可选范围内的课程：{}。",
+             "Removed, not among the courses you can take toward your degree this term: {}."),
+            ("removed_for_time_conflict", "已去掉讲座时间与其他已选课程冲突的课程：{}。",
+             "Removed for a lecture-time clash with the other picks: {}."),
+            ("added_companions", "已补上必须同修的课程：{}。", "Added, because it must be taken together: {}."),
+            ("substituted", "已用毕业路径上的课程补位：{}。", "Filled the freed slot from the degree path: {}.")):
+        if review.get(key):
+            lines.append((zh_text if zh else en_text).format(names(review[key])))
+    outside = [_mapping(entry).get("course_id") for entry in review.get("required_outside_time_condition") or []]
+    if any(outside):
+        lines.append(("这些专业必修本学期只有不符合你时间条件的班次，没有排入：{}。" if zh else
+                      "These required courses only have sections outside your time condition this term "
+                      "and are not in the plan: {}.").format(names([value for value in outside if value])))
+    return "\n\n".join(lines) or None
+
+
+def _recommendation_text(cards, language="zh", *, gate=None, incomplete=False, failure_reason=None,
+                         plan=None, requested_count=None, requested_plan=None, lead=None):
     """Controlled text from normalized source facts, never an LLM answer.
 
     ``failure_reason`` is a signal only: raw provider/model error text is not
@@ -469,11 +619,18 @@ def render_recommendation_answer(cards, language="zh", *, gate=None, incomplete=
     unknown = sum(card["ge_evidence"]["status"] == "unknown" for card in normalized)
     opening = (("本次核实尚未完成；以下仅列已取得证据的课程候选。" if zh else
                 "Verification is incomplete; the following are course candidates with the evidence obtained so far.")
-               if incomplete or failure_reason else ("以下为当前课程候选及已取得的证据。" if zh else
-                                                     "Current course candidates and the evidence obtained are listed below."))
+               if incomplete or failure_reason else (
+                   ("以下按毕业路径推荐：先列现在能上的专业必修，再列有选择余地的要求和还缺的 GE。" if zh else
+                    "Recommended along your degree path: required courses you can take now first, "
+                    "then requirements with a choice and missing GE categories.")
+                   if all(_mapping(card.get("graduation_path")).get("tier") for card in normalized) else
+                   ("以下为当前课程候选及已取得的证据。" if zh else
+                    "Current course candidates and the evidence obtained are listed below.")))
     count_line = (f"课程 GE 类别已确认 {confirmed} 门，待核实 {unknown} 门；课程标签不等于个人毕业抵扣已确认。" if zh else
                   f"Verified GE course tags: {confirmed} courses; unknown: {unknown}. Course tags do not establish personal degree credit.")
     blocks = [opening + ("\n\n" + count_line if ge_scope else "")]
+    if str(lead or "").strip():
+        blocks.append(str(lead).strip())
     count = _count(requested_count)
     if count is not None and count > len(normalized):
         blocks.append((f"目前可展示 {len(normalized)} 门，少于请求的 {count} 门；未用未经核实的课程补足数量。" if zh else
@@ -481,6 +638,8 @@ def render_recommendation_answer(cards, language="zh", *, gate=None, incomplete=
     for card in normalized:
         facts = card["presentation"]
         lines = ["**" + _text(card.get("course_id") or "Unknown course") + "**"]
+        if _mapping(card.get("graduation_path")).get("tier") and card.get("reason"):
+            lines.append(("推荐依据：" if zh else "Why: ") + card["reason"])
         selected = facts["selected_lecture"]
         if selected:
             identity = " ".join(_text(value) for value in (selected["type"], selected["num"]) if value)
@@ -515,9 +674,12 @@ def render_recommendation_answer(cards, language="zh", *, gate=None, incomplete=
         elif ge_scope and ge["categories"]:
             lines.append(("已核实课程 GE 类别：" if zh else "Verified course GE categories: ") + " / ".join(ge["categories"]) + "。")
         elif ge_scope:
-            lines.append("已核实的课程 GE 列表为空。" if zh else "The verified course GE list is empty.")
+            lines.append("这门课没有 GE 标签，不计为 GE 课程。" if zh else "This course has no GE label and is not counted as a GE course.")
         if ge_scope and ge["status"] == "verified":
             lines.append(("GE 标签来源：" if zh else "GE tag source: ") + _ge_source_label(ge, zh) + "。")
+        difference = _ge_difference_line(ge, zh)
+        if difference:
+            lines.append(difference)
         personal = ge["personal_contribution"]
         if ge_scope and personal["status"] == "unknown":
             lines.append("个人毕业要求抵扣仍待核实。" if zh else "Personal degree-requirement credit remains unverified.")

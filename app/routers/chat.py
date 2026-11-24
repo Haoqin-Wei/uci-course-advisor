@@ -783,6 +783,9 @@ def _controlled_agent_reply(cards, language, final_event=None, *, failed=False):
         plan=event.get("presentation_plan") or (event.get("prefilter") or {}).get("applied_plan"),
         requested_count=event.get("requested_count"),
         requested_plan=event.get("requested_plan") or (event.get("prefilter") or {}).get("requested_plan"),
+        # Decided by the agent loop for a complete answer; a failed turn asks nothing.
+        follow_up=None if failed else event.get("follow_up"),
+        lead=event.get("lead"),
     )
 
 

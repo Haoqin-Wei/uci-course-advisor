@@ -304,7 +304,26 @@ function _renderCardSourceBadges(card) {
   const officialGE = ge?.status === 'verified' && geSource?.source === 'uci_catalogue'
     && /^\d{4}-\d{2}$/.test(geSource?.catalogue_year || '')
     && typeof url === 'string' && /^https:\/\/catalogue\.uci\.edu\//.test(url);
-  return sourceHTML + (officialGE ? `<a class="cc-badge cc-source-badge cc-source-uci_catalog" href="${_gradeAttr(url)}" target="_blank" rel="noopener noreferrer">UCI GE ${escHTML(geSource.catalogue_year)}</a>` : '');
+  // Anteater's label decides GE status; the official list is a cross-check
+  // whose disagreement is shown, never hidden.
+  const zh = typeof currentResponseLanguage === 'string' && /^zh/i.test(currentResponseLanguage);
+  const anteaterGE = ge?.status === 'verified' && geSource?.source === 'anteater_catalogue';
+  const check = anteaterGE ? ge?.official_check : null;
+  const synced = String(geSource?.retrieved_at || '').slice(0, 10);
+  let anteaterHTML = '';
+  if (anteaterGE && ge.is_ge) {
+    const title = (zh ? 'GE 标签来自 Anteater API 课程目录' : 'GE label from the Anteater API course catalogue')
+      + (synced ? (zh ? `，同步于 ${synced}` : `, synced ${synced}`) : '');
+    anteaterHTML += `<span class="cc-badge cc-source-badge cc-source-anteater_ge" title="${_gradeAttr(title)}">GE · Anteater</span>`;
+  }
+  if (check?.status === 'differs') {
+    const official = (check.official_categories || []).join(' / ');
+    const note = zh
+      ? `官方 GE 列表（${check.catalogue_year || ''}）${official ? '标注为 ' + official : '未列出这门课'}，与 Anteater 不一致`
+      : `The official GE list (${check.catalogue_year || ''}) ${official ? 'lists ' + official : 'does not list this course'}; Anteater differs`;
+    anteaterHTML += `<span class="cc-badge cc-source-badge cc-ge-differs" title="${_gradeAttr(note)}">${escHTML(zh ? 'GE 与官方列表不一致' : 'GE differs from official list')}</span>`;
+  }
+  return sourceHTML + anteaterHTML + (officialGE ? `<a class="cc-badge cc-source-badge cc-source-uci_catalog" href="${_gradeAttr(url)}" target="_blank" rel="noopener noreferrer">UCI GE ${escHTML(geSource.catalogue_year)}</a>` : '');
 }
 
 /* Section enrollment row: the primary (Lec) code as the headline

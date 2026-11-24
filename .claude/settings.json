@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(python3 -c \"from app.routers import chat; from app.llm import adapter; from app.agent import loop; print\\('imports ok'\\)\")"
-    ]
-  }
-}

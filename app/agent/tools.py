@@ -550,6 +550,63 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "update_academic_details",
+            "description": (
+                "Save academic details the student has just stated in their own words in this "
+                "conversation: courses they are taking right now, their official major, a GE category "
+                "they say is already satisfied or still open, the UCI course a transfer credit counts "
+                "as, or that they would rather not answer one of these. Never call it for anything "
+                "inferred, planned or wished for, or read from a tool result, memory or the schedule "
+                "draft: a course the student will take or wants to take is not in progress. When a "
+                "course mention could be more than one course (for example 'social 1'), ask which "
+                "course instead of guessing. Lists add to what is stored unless replace is true. "
+                "The result says what was saved and what was not found; tell the student both, and "
+                "ask them to confirm a course that was not found."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "in_progress_courses": {
+                        "type": "array", "items": {"type": "string"},
+                        "description": "Course IDs the student says they are enrolled in right now, e.g. ['SWE 43'].",
+                    },
+                    "in_progress_term": {
+                        "type": "string",
+                        "description": "The term those courses are taken in, e.g. '2026 Fall'. Omit when the student did not say.",
+                    },
+                    "official_major": {
+                        "type": "string",
+                        "description": "The major on record with the university now, as the student states it.",
+                    },
+                    "ge_confirmed": {
+                        "type": "array", "items": {"type": "string"},
+                        "description": "GE categories the student says are already satisfied, e.g. ['VI'].",
+                    },
+                    "ge_not_met": {
+                        "type": "array", "items": {"type": "string"},
+                        "description": "GE categories the student says are still open, e.g. ['VI'] after answering no.",
+                    },
+                    "transfer_courses": {
+                        "type": "array", "items": {"type": "string"},
+                        "description": "UCI course IDs the student says their transfer credit counts as.",
+                    },
+                    "declined": {
+                        "type": "array",
+                        "items": {"type": "string",
+                                  "enum": ["in_progress", "official_major", "ge_language", "transfer_courses"]},
+                        "description": "Questions the student chose not to answer; they are not asked again.",
+                    },
+                    "replace": {
+                        "type": "boolean",
+                        "description": "True only when the student is correcting a list: the given lists replace the stored ones.",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_policy",
             "description": (
                 "Look up an official UCI academic policy. Use this "
@@ -859,6 +916,30 @@ TOOL_SCHEMAS: list[dict] = [
                             "If omitted, the single backend-resolved query term is used."
                         ),
                     },
+                    "note": {
+                        "type": "string",
+                        "maxLength": 400,
+                        "description": (
+                            "Only when a degree-path tray was provided: one or two sentences, in the "
+                            "student's language, on why this mix fits them. Shown above the cards if the "
+                            "server's check leaves your picks unchanged. No section codes, times or numbers "
+                            "that are not in the tray."
+                        ),
+                    },
+                    "left_out": {
+                        "type": "array",
+                        "maxItems": 4,
+                        "description": (
+                            "Only when a degree-path tray was provided: courses from suggested_plan you "
+                            "chose not to include, each with the reason."
+                        ),
+                        "items": {
+                            "type": "object",
+                            "properties": {"course_id": {"type": "string"},
+                                           "reason": {"type": "string", "maxLength": 160}},
+                            "required": ["course_id", "reason"],
+                        },
+                    },
                 },
                 "required": ["items"],
             },
@@ -871,8 +952,19 @@ TOOL_SCHEMAS: list[dict] = [
 #  Dispatchers — thin wrappers around db.py
 # ══════════════════════════════════════════════════════════
 
-def _tool_get_course_info(course_id: str) -> dict:
-    return db.get_course_info(course_id)
+def _tool_get_course_info(course_id: str, *, context: Optional[dict] = None) -> dict:
+    result = db.get_course_info(course_id)
+    term = (context or {}).get("term")
+    course = result.get("course") if isinstance(result, dict) else None
+    if term and isinstance(course, dict) and course.get("ge_labels_verified") is True:
+        # Adds official_check to the provenance, so a difference between
+        # Anteater's label and the official GE list reaches the answer.
+        try:
+            from app.data.ge_evidence import enrich_course_ge_evidence
+            result = {**result, "course": {**course, **enrich_course_ge_evidence(course, term)}}
+        except Exception:
+            logger.debug("GE cross-check unavailable", exc_info=True)
+    return result
 
 
 async def _tool_get_course_offerings(course_id: str, terms: list[str], *, context: dict) -> dict:
@@ -1037,8 +1129,9 @@ def _tool_search_courses(
     if prefilter.active(context):
         pool = prefilter.search_candidates(context, effective_term, department, ge_category, exclude_ids)
         if not config.recommendation_ranking_enabled() or not pool.get("found"):
-            return compact_comment_contexts(pool)
+            return compact_comment_contexts(prefilter.model_pool_view(pool))
         from app.data.recommendations import rank_courses
+        pool = prefilter.model_pool_view(pool)
         return compact_comment_contexts(rank_courses(
             effective_term, department, ge_category, exclude_ids,
             weights=config.recommendation_ranking_weights(),
@@ -1494,6 +1587,35 @@ def _tool_get_student_profile(*, context: dict) -> dict:
     return result
 
 
+def _tool_update_academic_details(*, context: dict, in_progress_courses=None, in_progress_term=None,
+                                  official_major=None, ge_confirmed=None, ge_not_met=None,
+                                  transfer_courses=None, declined=None, replace: bool = False) -> dict:
+    from app.agent import profile_followup
+
+    result = profile_followup.save_statement(
+        context.get("user_id", ""), in_progress_courses=in_progress_courses, in_progress_term=in_progress_term,
+        official_major=official_major, ge_confirmed=ge_confirmed, ge_not_met=ge_not_met,
+        transfer_courses=transfer_courses, declined=declined, replace=replace is True)
+    if not result.get("ok"):
+        return result
+    update = {key: result[key] for key in ("saved", "declined", "not_found")}
+    # Saving an answer is the whole job of such a turn; without this the model
+    # went on to search and rank courses nobody had asked for again.
+    result["next_step"] = ("Tell the student in one or two sentences what was saved and what was not found, then stop. "
+                           "Call other tools only if this message from the student also asks for something else.")
+    context.setdefault("_academic_updates", []).append(update)
+    # A recommendation later in this turn must use the record as it now stands.
+    update["applied_this_turn"] = prefilter.refresh_profile(context)
+    if update["applied_this_turn"]:
+        result["recommendation_context"] = (
+            "Candidates and the graduation path were rebuilt from the updated record; "
+            "earlier prefilter and graduation-path context in this turn is out of date.")
+        path = (context.get("_prefilter_state") or {}).get("graduation_path")
+        if path:
+            result["graduation_path"] = {key: value for key, value in path.items() if key != "reasons"}
+    return result
+
+
 def _tool_web_search(
     query: str,
     reason: str,
@@ -1546,6 +1668,8 @@ def _tool_propose_recommendation(
     *,
     context: dict,
     term: Optional[str] = None,
+    note: Optional[str] = None,          # read by the plan check in the prefilter guard
+    left_out: Optional[list] = None,
 ) -> dict:
     """
     Stage a structured set of course cards for the frontend.
@@ -1919,6 +2043,10 @@ def _tool_propose_recommendation(
         grade_evidence.attach_history(card, context)
         if prefilter.active(context):
             card["prefilter"] = prefilter.card_metadata(context, cid_canon, effective_term)
+            from app.agent import graduation
+            path_reason = graduation.card_reason(context, cid_canon)
+            if path_reason:
+                card["graduation_path"] = path_reason
             if selected_pairing is not None and selected_pairing["requirement"] != "unknown":
                 card["prefilter"]["warnings"] = [warning for warning in card["prefilter"]["warnings"]
                     if warning.get("code") != "secondary_pairing_unknown"]
@@ -1960,6 +2088,11 @@ def _tool_propose_recommendation(
             (card.get("ranking") or {}).get("final_score") is None,
             -((card.get("ranking") or {}).get("final_score") or 0),
         ))
+    review = context.get("_plan_review")
+    if review:
+        # A term plan reads required courses first; a score does not reorder a degree path.
+        position = {course: index for index, course in enumerate(review["courses"])}
+        cards.sort(key=lambda card: position.get(card.get("course_id"), len(position)))
 
     pending_sections = resolve_pending_schedule_sections(
         context.get("pending_schedule") or [],
@@ -2012,7 +2145,7 @@ def _tool_propose_recommendation(
         "ranking_enabled": config.recommendation_ranking_enabled(),
         **({"ge_evidence": [{"course_id": c["course_id"], **c["ge_evidence"]} for c in cards]}
            if config.recommendation_ranking_enabled() or config.dynamic_prefilter_enabled() else {}),
-        **({"prefilter": prefilter.summary(context)} if prefilter.active(context) else {}),
+        **({"prefilter": prefilter.model_summary(context)} if prefilter.active(context) else {}),
         **({"rankings": [{"course_id": c["course_id"], **(c.get("ranking") or {})} for c in cards]}
            if config.recommendation_ranking_enabled() else {}),
     }
@@ -2563,6 +2696,7 @@ DISPATCH: dict[str, Callable[..., dict]] = {
     "search_courses":           _tool_search_courses,
     "check_section_conflict":   _tool_check_section_conflict,
     "get_student_profile":      _tool_get_student_profile,
+    "update_academic_details":  _tool_update_academic_details,
     "get_policy":               _tool_get_policy,
     "get_department_restrictions": _tool_get_department_restrictions,
     "web_search":               _tool_web_search,
@@ -2855,6 +2989,8 @@ def humanize_tool_call(name: str, args: dict, response_language: str = "en") -> 
         return action + term_suffix
     if name == "get_student_profile":
         return "读取学生画像" if zh else "Reading student profile"
+    if name == "update_academic_details":
+        return "保存学业档案" if zh else "Saving academic details"
     if name == "get_policy":
         topic = a.get("topic")
         if not topic:

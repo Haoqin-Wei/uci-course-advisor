@@ -330,6 +330,13 @@ def get_student_profile(student_id: str) -> dict:
         graded.get(_to_ref(course_id) or course_id, course_id)
         for course_id in profile.get("completed_courses") or []
     ]
+    try:
+        # Exam credit, mapped transfer credit, renamed courses and courses in
+        # progress, so prerequisites and the degree path see the whole record.
+        from app.academic.record import recommendation_record
+        profile.update(recommendation_record(student_id, profile["completed_course_attempts"]))
+    except Exception:
+        logger.warning("academic record could not be merged into the profile", exc_info=True)
     return {"found": True, "source": "db", "profile": profile}
 
 

@@ -904,3 +904,55 @@ def test_private_beta_registration_rejects_non_uci_email(app_client):
 
     assert response.status_code == 400
     assert "@uci.edu" in response.json()["detail"]
+
+
+def test_major_on_record_is_stored_with_the_transcript_date_and_replaced_by_the_next_import(app_client):
+    _create_and_login(app_client)
+    first = {**_payload(printed_at="2026-09-18T15:23:00Z"), "declared_major": "undeclared  (unaffiliated)"}
+    assert app_client.post("/api/academic/transcript/import", json=first).status_code == 200
+    profile = app_client.get("/api/academic/profile").json()
+    assert profile["declared_major"] == "UNDECLARED (UNAFFILIATED)"
+    assert profile["declared_major_as_of"].startswith("2026-09-18")
+
+    second = {**_payload(printed_at="2026-11-19T18:00:00Z"), "declared_major": "COMPUTER SCI & ENGR"}
+    assert app_client.post("/api/academic/transcript/import", json=second).status_code == 200
+    assert app_client.get("/api/academic/profile").json()["declared_major"] == "COMPUTER SCI & ENGR"
+
+    without = _payload(printed_at="2026-11-20T18:00:00Z")
+    assert app_client.post("/api/academic/transcript/import", json=without).status_code == 200
+    profile = app_client.get("/api/academic/profile").json()
+    assert profile["declared_major"] is None and profile["declared_major_as_of"] is None
+
+
+def test_stated_details_are_saved_validated_and_survive_a_new_import(app_client):
+    assert app_client.post("/api/academic/details", json={"official_major": "X"}).status_code == 401
+    _create_and_login(app_client)
+    first = {**_payload(printed_at="2026-09-18T15:23:00Z"), "declared_major": "UNDECLARED (UNAFFILIATED)"}
+    assert app_client.post("/api/academic/transcript/import", json=first).status_code == 200
+    details = app_client.get("/api/academic/profile").json()["details"]
+    assert (details["official_major"], details["official_major_source"]) == ("UNDECLARED (UNAFFILIATED)", "transcript")
+
+    saved = app_client.post("/api/academic/details", json={
+        "official_major": "computer science and engineering", "in_progress_term": "Fall 2026",
+        "in_progress_courses": ["swe 43", "UNI STU 10", "not a course", "SWE 43"],
+        "ge_confirmed": ["VI", "GE-VII", "IX"], "transfer_courses": ["WRITING 39B"],
+    }).json()["details"]
+    assert saved["official_major"] == "COMPUTER SCIENCE AND ENGINEERING" and saved["official_major_source"] == "student"
+    assert saved["in_progress_term"] == "2026 Fall"
+    assert saved["in_progress_courses"] == ["SWE 43", "UNI STU 10"]
+    assert saved["ge_confirmed"] == ["VI", "VII"] and saved["transfer_courses"] == ["WRITING 39B"]
+    assert saved["rejected"] == ["not a course", "IX"]
+
+    # A field that is left out is untouched; an empty list clears.
+    partial = app_client.post("/api/academic/details", json={"ge_confirmed": []}).json()["details"]
+    assert partial["ge_confirmed"] == [] and partial["in_progress_courses"] == ["SWE 43", "UNI STU 10"]
+
+    # Re-importing the older transcript keeps the student's entry...
+    assert app_client.post("/api/academic/transcript/import", json=first).status_code == 200
+    kept = app_client.get("/api/academic/profile").json()["details"]
+    assert kept["official_major_source"] == "student" and kept["in_progress_courses"] == ["SWE 43", "UNI STU 10"]
+    # ...and a transcript printed after the entry replaces it.
+    later = {**_payload(printed_at="2030-01-01T00:00:00Z"), "declared_major": "COMPUTER SCI & ENGR"}
+    assert app_client.post("/api/academic/transcript/import", json=later).status_code == 200
+    newest = app_client.get("/api/academic/profile").json()["details"]
+    assert (newest["official_major"], newest["official_major_source"]) == ("COMPUTER SCI & ENGR", "transcript")

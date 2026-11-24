@@ -32,7 +32,7 @@ GE_CATEGORIES: dict[str, GECategory] = {
     "GE-Ia": {
         "code": "GE-Ia",
         "name": "Lower-Division Writing",
-        "min_courses": 1,
+        "min_courses": 2,   # catalogue: "two lower-division plus one upper-division course"
         "ap_exempt": True,
         "notes": (
             "Typically WRITING 39A→39B→39C sequence, or 1 quarter of accelerated "

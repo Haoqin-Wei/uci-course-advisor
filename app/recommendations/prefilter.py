@@ -293,6 +293,8 @@ def apply_dynamic_prefilter(candidates, plan, profile=None) -> dict:
                 reasons.append("not_offered_this_term")
             else:
                 warnings.append("offering_status_unknown")
+        if candidate.get("in_progress_now") is True:
+            reasons.append("in_progress_now")
         prereq_result = candidate.get("prerequisite_result") or {}
         prerequisite = candidate.get("prerequisite_status", prereq_result.get("status", "unknown") if isinstance(prereq_result, Mapping) else "unknown")
         prereq_authoritative = candidate.get("prerequisite_authoritative") is True or (
@@ -329,6 +331,9 @@ def apply_dynamic_prefilter(candidates, plan, profile=None) -> dict:
                       "excluded_sections": section_exclusions}
             if contribution is not None:
                 record["ge_contribution"] = contribution
+            missing = candidate.get("prerequisite_missing")
+            if "prerequisite_not_met" in reasons and isinstance(missing, (list, tuple)) and missing:
+                record["missing_prerequisites"] = [str(item) for item in missing[:4]]
             excluded.append(record)
             continue
         removed_sections += original_section_count - len(candidate["sections"])

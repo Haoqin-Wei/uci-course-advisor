@@ -1,7 +1,14 @@
-"""Annual official GE evidence, shared by every course in the same catalogue.
+"""Which GE categories a course carries, and where that answer comes from.
 
-Only a course explicitly listed in a successfully parsed matching edition is
-verified. A local CSV label, a missing course, or a failed GET stays unknown.
+The synced Anteater course catalogue decides: a GE label there means the
+course is a GE course in that category, and a course it lists without a label
+is not a GE course. The official catalogue's GE page is read as a cross-check
+only; when it says something else the Anteater answer stands and the
+difference is reported next to it.
+
+Without a synced catalogue (the checked-in CSV is in use) the earlier rule
+still applies: only a course listed on a parsed official page of the matching
+edition is verified, and everything else stays unknown.
 """
 from __future__ import annotations
 
@@ -27,6 +34,11 @@ from app.catalog.normalization import parse_course_mention
 from app.terms import parse_term_key
 
 SOURCE = "uci_catalogue"
+ANTEATER_SOURCE = "anteater_catalogue"
+ANTEATER_URL = "https://anteaterapi.com/v2/rest/courses"
+# The official page's course tables start at category II; writing (I, Ia, Ib)
+# is described there in prose, so those labels cannot be cross-checked.
+_NOT_ON_OFFICIAL_LIST = frozenset({"I", "IA", "IB"})
 PARSER_VERSION = 1
 GE_PATH = "informationforadmittedstudents/requirementsforabachelorsdegree/"
 CURRENT_URL = "https://catalogue.uci.edu/" + GE_PATH
@@ -61,9 +73,33 @@ def _official_url(value):
             and bool(re.fullmatch(r"/(?:previouseditions/20\d{2}-\d{2}/)?" + re.escape(GE_PATH), parsed.path)))
 
 
+def anteater_provenance(synced_at, *, unrecognized=()):
+    """Provenance of labels read from the synced Anteater course catalogue."""
+    source = {"source": ANTEATER_SOURCE, "status": "verified", "source_url": ANTEATER_URL,
+              "retrieved_at": synced_at}
+    if unrecognized:
+        source["unrecognized_labels"] = list(unrecognized)
+    return source
+
+
+def anteater_sync_time(snapshot):
+    """When the stored catalogue was synced from Anteater; None for any other origin.
+
+    Rows copied into the store from the CSV carry labels of unknown edition
+    and are not Anteater's answer.
+    """
+    snapshot = snapshot if isinstance(snapshot, Mapping) else {}
+    synced_at = snapshot.get("last_synced_at")
+    return synced_at if snapshot.get("source") == "anteater_courses" and isinstance(synced_at, str) else None
+
+
 def verified_ge_provenance(provenance, term):
     """A server field named verified alone does not authenticate old CSV tags."""
     source = provenance if isinstance(provenance, Mapping) else {}
+    if source.get("source") == ANTEATER_SOURCE:
+        return bool(source.get("status") == "verified" and source.get("source_url") == ANTEATER_URL
+                    and isinstance(source.get("retrieved_at"), str) and source["retrieved_at"]
+                    and academic_year_for_term(term) is not None)
     year = academic_year_for_term(term)
     archive = re.search(r"/previouseditions/(20\d{2}-\d{2})/", str(source.get("source_url") or ""))
     return bool(year and source.get("source") == SOURCE and source.get("status") == "verified"
@@ -212,12 +248,91 @@ def _annual_evidence(year, allow_network):
         return deepcopy(result)
 
 
+_anteater_index_cache = (None, {}, None)   # (catalogue token, {course: labels}, synced_at)
+_official_view_cache = {}                  # year -> (monotonic time, annual evidence)
+_OFFICIAL_VIEW_TTL_S = 60.0
+
+
+def _anteater_index():
+    """``({"ECON 20B": {"categories": [...], "unrecognized": [...]}}, synced_at)``.
+
+    ``(None, None)`` while no synced catalogue is stored.
+    """
+    global _anteater_index_cache
+    from app.catalog import course_source, course_store
+
+    token = course_source.course_rows_token()
+    if token is None:
+        return None, None
+    if _anteater_index_cache[0] == token:
+        return _anteater_index_cache[1], _anteater_index_cache[2]
+    index = {}
+    for row in course_source.course_rows():
+        department = " ".join(str(row.get("department") or "").split()).upper()
+        number = str(row.get("course_number") or "").strip().upper()
+        if department and number:
+            index[f"{department} {number}"] = parse_ge_categories(row.get("ge_list"))
+    synced_at = anteater_sync_time(course_store.get_course_snapshot())
+    if not index or not synced_at:
+        return None, None
+    _anteater_index_cache = (token, index, synced_at)
+    return index, synced_at
+
+
+def _official_view(year, allow_network):
+    """The official list of one edition, re-read at most once a minute."""
+    cached = _official_view_cache.get(year)
+    if cached and time.monotonic() - cached[0] < _OFFICIAL_VIEW_TTL_S:
+        return cached[1]
+    annual = _annual_evidence(year, allow_network)
+    if annual.get("status") == "verified":
+        _official_view_cache[year] = (time.monotonic(), annual)
+    return annual
+
+
+def official_check(course, labels, term, *, allow_network=True):
+    """Compare Anteater's labels with the official GE list of the term's edition.
+
+    ``agrees`` / ``differs`` / ``not_checked``. A difference never changes the
+    answer; it is shown beside it.
+    """
+    year = academic_year_for_term(term)
+    annual = _official_view(year, allow_network) if year else {}
+    if annual.get("status") != "verified":
+        return {"status": "not_checked", "catalogue_year": year,
+                "reason": annual.get("reason", "official_ge_evidence_unavailable")}
+    ours = sorted(set(labels) - _NOT_ON_OFFICIAL_LIST)
+    official = sorted(set(annual.get("courses", {}).get(course) or []) - _NOT_ON_OFFICIAL_LIST)
+    result = {"status": "agrees" if ours == official else "differs", "catalogue_year": year,
+              "source_url": annual["source"]["source_url"]}
+    if ours != official:
+        result.update(official_categories=official, anteater_categories=sorted(labels))
+    return result
+
+
+def _anteater_evidence(course, term, allow_network):
+    """Anteater's answer for one course, or None when it cannot give one."""
+    index, synced_at = _anteater_index()
+    if index is None or course is None or academic_year_for_term(term) is None:
+        return None
+    entry = index.get(course.upper())
+    if entry is None:
+        return None  # Not in the catalogue: unknown, not "not a GE course".
+    labels = list(entry["categories"])
+    source = anteater_provenance(synced_at, unrecognized=entry["unrecognized"])
+    source["official_check"] = official_check(course, labels, term, allow_network=allow_network)
+    return {"status": "verified", "categories": labels, "is_ge": bool(labels), "source": source}
+
+
 def get_course_ge_evidence(course_id, term, *, allow_network=True):
     course, year = _course(course_id), academic_year_for_term(term)
     base = {"status": "unknown", "categories": [], "course_id": course,
             "term": term, "catalogue_year": year, "source": None}
     if not course or not year:
         return {**base, "reason": "course_or_term_unverified"}
+    anteater = _anteater_evidence(course, term, allow_network)
+    if anteater is not None:
+        return {**base, **anteater, "reason": None}
     annual = _annual_evidence(year, allow_network)
     if annual.get("status") != "verified":
         return {**base, "reason": annual.get("reason", "official_ge_evidence_unavailable")}
@@ -234,7 +349,10 @@ def enrich_course_ge_evidence(course, term, *, allow_network=True):
     cid = _course(course.get("course_id"))
     local = parse_ge_categories(course.get("ge_categories", course.get("ge_list")))
     provenance = course.get("ge_provenance") or {}
-    if (course.get("ge_labels_verified") is True and verified_ge_provenance(provenance, term)
+    anteater = _anteater_evidence(cid, term, allow_network)
+    if anteater is not None:
+        official = anteater
+    elif (course.get("ge_labels_verified") is True and verified_ge_provenance(provenance, term)
             and cid is not None and _course(course.get("ge_evidence_course_id")) == cid
             and academic_year_for_term(course.get("ge_evidence_term")) == academic_year_for_term(term)
             and not local["unrecognized"]):

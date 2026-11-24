@@ -64,7 +64,7 @@ function activityRunningLabel(label, zh) {
 
 const ACTIVITY_PAST_TENSE = {
   'Looking up': 'Looked up', Checking: 'Checked', Reading: 'Read', Summarizing: 'Summarized',
-  Searching: 'Searched', Listing: 'Listed', Preparing: 'Prepared', Calling: 'Called',
+  Searching: 'Searched', Listing: 'Listed', Preparing: 'Prepared', Saving: 'Saved', Calling: 'Called',
 };
 
 function activityDoneLabel(label, zh) {
