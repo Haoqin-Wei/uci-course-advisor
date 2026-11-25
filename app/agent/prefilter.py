@@ -65,39 +65,117 @@ async def initialize(context, messages):
         return
     if context.get("_prefilter_state"):
         return
+    from app.llm.safety import student_turns
+    # Only earlier human turns are supplementary context: profile and memory
+    # data share the user role and are not the student's words. The validator
+    # requires current-message evidence for every hard rule, never source/model prose.
+    await _start(context, context.get("user_query") or "", student_turns(messages)[-3:-1])
+    if recommendation_gate(context)["ready"]:
+        await _in_thread(_build_pools, context)
+
+
+async def _start(context, request_text, earlier, *, term_plan=None):
+    """Read the conditions in ``request_text`` and open this turn's prefilter state.
+
+    ``term_plan`` marks a plan the model asked for after reading the
+    conversation: ``{"term", "carried"}``.
+    """
     from app.llm.filter_plan import parse_filter_plan
+    from app.recommendations.filter_plan import empty_filter_plan, unresolved_requested_constraints
     profile_result = await _in_thread(db.get_student_profile, context.get("user_id", ""))
     profile = (profile_result.get("profile") if profile_result.get("found") else {}) or {}
-    # Only earlier human turns are supplementary context. The validator requires
-    # current-message evidence for every hard rule, never source/model prose.
-    earlier = [row.get("content", "") for row in messages
-               if row.get("role") == "user" and isinstance(row.get("content"), str)][-3:-1]
-    envelope = await parse_filter_plan(context.get("user_query") or "", {
-        "recent_turns": [{"role": "user", "content": value} for value in earlier],
-    }, profile)
+    if request_text.strip():
+        envelope = await parse_filter_plan(request_text, {
+            "recent_turns": [{"role": "user", "content": value} for value in earlier],
+        }, profile)
+    else:
+        envelope = {"plan": empty_filter_plan(), "status": "validated", "issues": [],
+                    "metrics": {"parse_elapsed_ms": 0.0, "llm_calls": 0, "failure_reason": None,
+                                "skipped": "no_time_rule_stated"}}
     metrics = envelope.get("metrics") or {}
     observability.observe_ms("prefilter.parse_ms", metrics.get("parse_elapsed_ms", 0))
     observability.increment("prefilter.parser_llm_calls", metrics.get("llm_calls", 0))
     if envelope["status"] != "validated":
         observability.increment("prefilter.plan_downgrades", status=envelope["status"])
-    from app.recommendations.filter_plan import unresolved_requested_constraints
+    plan, requested = envelope["plan"], envelope.get("requested_plan", envelope["plan"])
     unresolved = list(dict.fromkeys([
         *envelope.get("unresolved_constraints", []),
-        *unresolved_requested_constraints(envelope["plan"], context.get("user_query") or "", profile),
+        *unresolved_requested_constraints(plan, request_text, profile),
     ]))
+    if term_plan is not None:
+        # Only time and day rules bear on a term plan. A GE-only scope
+        # describes a list of courses, which the model decided this is not.
+        plan = {**plan, "course_scope": "any", "hard_filters": {**plan["hard_filters"], "only_unmet_ge": False}}
+        requested, unresolved = plan, _time_rules(unresolved)
     context["_prefilter_state"] = {
-        "enabled": True, "plan": envelope["plan"], "plan_status": envelope["status"],
-        "requested_plan": envelope.get("requested_plan", envelope["plan"]),
+        "enabled": True, "plan": plan, "plan_status": envelope["status"],
+        "requested_plan": requested,
         "unresolved_constraints": unresolved,
         "issues": list(envelope.get("issues") or []), "parse_metrics": envelope.get("metrics") or {},
         "profile": profile, "pools": {}, "candidates": {}, "excluded": {}, "section_overrides": {},
         "detail_query_attempts": 0,
-        "ge_scope_requested": envelope["plan"].get("course_scope") == "ge",
+        "ge_scope_requested": plan.get("course_scope") == "ge",
+        **({"term_plan": dict(term_plan)} if term_plan is not None else {}),
     }
     context["_ranking_profile"] = profile
-    if not recommendation_gate(context)["ready"]:
-        return
-    await _in_thread(_build_pools, context)
+
+
+_TIME_RULE_CODES = frozenset({"excluded_weekday_not_applied", "partial_day_time_scope_unsupported",
+                              "earliest_start_scope_unsupported", "earliest_start_not_applied"})
+
+
+def _time_rules(codes):
+    return [code for code in codes if str(code).split(":")[0] in _TIME_RULE_CODES]
+
+
+async def start_term_plan(context, term, conditions=None):
+    """Open, or reuse, the state for a term plan the model asked for.
+
+    The model decides from the whole conversation that a plan is wanted; the
+    wording of the current message is not classified here. Time and day
+    rules still come from the student's own words. In the current message
+    they are found by the detector that audits every parsed plan. From an
+    earlier message they arrive as ``conditions``, the model's exact quotes,
+    and count only when found in what the student typed. Returns
+    ``not_found`` (quotes that are not the student's words), ``ignored``
+    (quotes that state no time or day rule) and ``reused`` (this turn's tray
+    already covered the request, so nothing was rebuilt).
+    """
+    from app.recommendations.filter_plan import empty_filter_plan, unresolved_requested_constraints
+
+    def squeeze(text):
+        return " ".join(str(text or "").split())
+
+    def states_rule(text):
+        return bool(_time_rules(unresolved_requested_constraints(empty_filter_plan(), text)))
+
+    message = str(context.get("user_query") or "")
+    current = squeeze(message)
+    turns = [squeeze(turn) for turn in context.get("_student_turns") or []]
+    carried, not_found, ignored = [], [], []
+    quoted = [conditions] if isinstance(conditions, str) else conditions
+    for raw in quoted if isinstance(quoted, (list, tuple)) else []:
+        quote = squeeze(raw)
+        if not quote or quote in current or quote in carried:
+            continue                      # the current message is read below, whatever the model quoted
+        if not any(quote in turn for turn in turns):
+            not_found.append(quote[:200])
+        elif not states_rule(quote):
+            ignored.append(quote[:200])
+        else:
+            carried.append(quote)
+    state = context.get("_prefilter_state") or {}
+    path = state.get("graduation_path") or {}
+    already = (state.get("term_plan") or {}).get("carried") or []
+    outcome = {"not_found": not_found, "ignored": ignored, "reused": False}
+    if path.get("term") == term and set(carried) <= set(already):
+        return {**outcome, "reused": True}
+    context.pop("_prefilter_state", None)
+    parts = [text for text in (message, *carried) if states_rule(text)]
+    await _start(context, "\n".join(parts), turns[-3:-1], term_plan={"term": term, "carried": carried})
+    if recommendation_gate(context)["ready"]:
+        await _in_thread(_build_pools, context)
+    return outcome
 
 
 def _build_pools(context):
@@ -107,9 +185,11 @@ def _build_pools(context):
     # No stated preference means "what moves my degree forward": the server
     # derives that shortlist from the filtered pool it just built.
     from app.agent import graduation
-    path_term = (context.get("allowed_query_terms") or [context.get("term")])[0]
-    if path_term and len(context.get("allowed_query_terms") or [path_term]) == 1:
-        context["_prefilter_state"]["graduation_path"] = graduation.build(context, path_term)
+    state = context["_prefilter_state"]
+    terms = context.get("allowed_query_terms") or [context.get("term")]
+    path_term = (state.get("term_plan") or {}).get("term") or (terms[0] if len(terms) == 1 else None)
+    if path_term:
+        state["graduation_path"] = graduation.build(context, path_term)
 
 
 def refresh_profile(context):
@@ -506,7 +586,9 @@ def guard_call(name, args, context):
                       "error": "A degree-path tray was built for this request; search_courses is disabled this "
                                "turn. Pick from the tray and call propose_recommendation."}
     if name == "propose_recommendation":
-        args = graduation.review_proposal(context, args, term)
+        args, refused = graduation.review_proposal(context, args, term)
+        if refused:
+            return args, refused
         kept, excluded = filter_items(context, args.get("items"), term)
         hard = context["_prefilter_state"]["plan"].get("hard_filters") or {}
         if hard.get("excluded_weekdays") or hard.get("earliest_start_is_hard"):

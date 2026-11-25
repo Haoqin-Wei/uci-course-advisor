@@ -67,35 +67,60 @@ def tray(context: dict, term: Optional[str] = None) -> Optional[dict]:
     return path
 
 
-def review_proposal(context: dict, args: dict, term: str) -> dict:
-    """Keep the model's picks inside the tray; the changes are kept for the answer."""
+def review_proposal(context: dict, args: dict, term: str) -> tuple[dict, Optional[dict]]:
+    """Keep the model's picks inside the tray; the changes are kept for the answer.
+
+    Returns the arguments to stage and, when no pick can stand, the refusal
+    to hand back to the model instead.
+    """
     path = tray(context, term)
     items = args.get("items")
     if not path or not isinstance(items, list):
-        return args
+        return args, None
     from app.recommendations.plan_check import review_picks
 
     state = context["_prefilter_state"]
     rows = {compact(row.get("course_id")): row for (row_term, _), row in state.get("candidates", {}).items()
             if row_term == term}
     given = {compact(item.get("course_id")): item for item in items if isinstance(item, dict)}
+    # A plan the model asked for is a follow-up: the student may be swapping a
+    # course out, so a removed pick is handed back to the model, not refilled.
+    follow_up = bool(state.get("term_plan"))
     review = review_picks(path, [item.get("course_id") for item in items if isinstance(item, dict)], rows,
-                          left_out=args.get("left_out"), note=args.get("note"))
+                          left_out=args.get("left_out"), note=args.get("note"), substitute=not follow_up)
+    review["follow_up"] = follow_up
     if not review["courses"]:
-        return args       # nothing usable: the ordinary guard reports why
+        # Passing these on would stage courses the degree path never weighed.
+        return args, {"ok": False, "error_code": "no_pick_in_tray",
+                      "error": "None of the proposed courses can stand: each is outside the degree-path tray "
+                               "or clashes in lecture time. Pick from required_now, choose alternatives and "
+                               "ge candidates in the tray and propose again.",
+                      "removed_outside_tray": review["removed_outside_tray"],
+                      "removed_for_time_conflict": review["removed_for_time_conflict"]}
     review["required_outside_time_condition"] = list(path.get("required_outside_time_condition") or [])
+    hard = (state.get("plan") or {}).get("hard_filters") or {}
+    review["time_rules"] = {"earliest_start": hard.get("earliest_start") if hard.get("earliest_start_is_hard") else None,
+                            "excluded_weekdays": list(hard.get("excluded_weekdays") or [])}
+    logged = dict(term=term, proposed=len(items), staged=review["courses"], changed=review["changed"],
+                  removed_outside_tray=review["removed_outside_tray"],
+                  removed_for_time_conflict=review["removed_for_time_conflict"],
+                  added_companions=review["added_companions"], substituted=review["substituted"],
+                  left_out_required=[e["course_id"] for e in review["left_out_required"]],
+                  time_rules=review["time_rules"])
+    if context.get("_plan_review_logged") != logged:    # the same picks are checked again when the cards are built
+        observability.log_event(logger, logging.INFO, "plan_review", **logged)
+        context["_plan_review_logged"] = logged
     context["_plan_review"] = review
-    observability.log_event(
-        logger, logging.INFO, "plan_review", term=term, proposed=len(items), staged=review["courses"],
-        changed=review["changed"], removed_outside_tray=review["removed_outside_tray"],
-        removed_for_time_conflict=review["removed_for_time_conflict"], added_companions=review["added_companions"],
-        substituted=review["substituted"], left_out_required=[e["course_id"] for e in review["left_out_required"]])
+    # A checked term plan is answered in the server's words, also when the
+    # model asked for the tray in the middle of the turn.
+    context["_controlled_recommendation"] = True
+    context.setdefault("_controlled_recommendation_cards", [])
     staged = []
     for course in review["courses"]:
         tier = (path.get("reasons") or {}).get(course, {}).get("tier")
         staged.append(given.get(compact(course)) or {
             "course_id": course, "category": "core" if tier != "ge" else "elective", "reason": ""})
-    return {**args, "items": staged}
+    return {**args, "items": staged}, None
 
 
 def _loads(value):
@@ -177,7 +202,9 @@ def build(context: dict, term: str) -> Optional[dict]:
     profile = state.get("profile") or {}
     plan = state.get("plan") if isinstance(state.get("plan"), dict) else {}
     program_id = profile.get("program_id")
-    blocker = path_blocker(plan, context.get("user_query") or "") or (
+    # A plan the model asked for after reading the conversation is not second-guessed by wording.
+    asked = bool(state.get("term_plan"))
+    blocker = (None if asked else path_blocker(plan, context.get("user_query") or "")) or (
         None if program_id else "no_program") or (
         None if profile.get("completed_courses") else "no_recorded_courses")
     if blocker:
@@ -268,21 +295,35 @@ def instruction_messages(context: dict) -> list[dict]:
 
     model_view = {key: value for key, value in path.items() if key != "reasons"}
     return [{"role": "system", "content": (
-        "The student asked what to take this term, so the server built the degree-path tray in the separate "
-        "context data. It already applies their recorded courses, courses in progress, prerequisites, program "
-        "requirements and any time condition they stated. The tray is the whole candidate set: search_courses "
-        "is disabled this turn, and a course outside required_now, choose and ge candidates cannot be staged. "
-        "Your job is to pick and adjust inside it. Start from suggested_plan (about four courses, 16 units) "
-        "and call propose_recommendation once. Change the mix only for a reason in the student's own message "
-        "or in the tray: swap within a tier, compare alternatives inside one choose entry or one GE category "
+        "A degree-path tray for this term is in the separate context data: the server built it because the "
+        "student asked what to take, or you asked for it with plan_term. It already applies their recorded "
+        "courses, courses in progress, prerequisites, program requirements and the time rules they stated. "
+        "Do not call plan_term again, unless a time or day rule from an earlier message of the student still "
+        "applies and has to be carried over. The tray is the whole candidate set for a term plan: "
+        "search_courses is disabled this turn, and a course outside required_now, choose and ge candidates "
+        "cannot be staged. If the student only asks about the plan (why a course is or is not in it), answer "
+        "from the tray in your own words and do not propose again. A course marked all_sections_full stays a valid "
+        "pick: the server marks its card as full, and whether to wait for a seat is the student's call, so do "
+        "not avoid or drop a course for that mark alone. "
+        "Otherwise your job is to pick and adjust "
+        "inside it. Start from suggested_plan (about four courses, 16 units) and call propose_recommendation "
+        "once. Change the mix only for a reason in the conversation or in the tray: drop or swap what the "
+        "student asked to change, swap within a tier, compare alternatives inside one choose entry or one GE category "
         "by a_rate and rating as given (null means no cached data, not zero), or pick another course from the "
         "same GE category. You may leave out a course from suggested_plan, even the first required one, but "
         "then list it in left_out with the reason; the server adds what leaving it out delays. A required "
-        "course is justified by its requirement and what it unlocks, never by its A rate. Put one or two "
+        "course is justified by its requirement and what it unlocks, never by its A rate. When the student asks "
+        "for an easier plan, swap, do not cut: keep the number of courses and replace picks with courses whose "
+        "a_rate or rating in the tray is better — another candidate of the same GE category or choose entry "
+        "first, then another required_now course in place of a harder one (list the one you replaced in "
+        "left_out). If the tray has no easier course for a slot, keep the pick and say so in note. Remove a "
+        "course without replacing it only when the student asks for fewer courses or units. Put one or two "
         "sentences on why this mix fits the student in note; the server writes the per-course lines, the "
         "blocked and out-of-time-condition courses and any question about their record, so do not repeat "
         "those. The server then checks your picks: a course outside the tray or clashing in lecture time is "
-        "removed, a lab that must accompany its lecture is added, and note is dropped if the picks changed."
+        "removed, a lab that must accompany its lecture is added, and note is dropped if the picks changed. "
+        "The server also chooses each course's lecture so that lectures do not overlap; you do not see section "
+        "times, so do not state or promise any."
     )}, untrusted_context_message("graduation path", json.dumps(model_view, ensure_ascii=False, default=str))]
 
 

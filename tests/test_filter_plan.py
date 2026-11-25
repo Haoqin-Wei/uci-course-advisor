@@ -257,7 +257,7 @@ def test_parser_reuses_existing_json_call_and_sends_only_bounded_context(monkeyp
         return json.dumps({"goal": "gpa_optimization", "soft_preferences": {"high_a_rate": True}})
 
     monkeypatch.setattr(adapter, "_call_llm", call)
-    result = asyncio.run(parse_filter_plan("推荐容易拿A的课", {"summary": "x" * 3000,
+    result = asyncio.run(parse_filter_plan("推荐容易拿A的课，最好不要早八", {"summary": "x" * 3000,
                         "recent_turns": [{"role": "user", "content": "hello"}],
                         "transcript": "PRIVATE TRANSCRIPT"}, {**_audit(), "transcript": "PRIVATE GRADES"}))
     assert result["status"] == "validated"
@@ -342,10 +342,9 @@ def test_parser_timeout_is_bounded_and_cancels_work(monkeypatch):
             cancelled.append(True)
 
     monkeypatch.setattr(adapter, "_call_llm", call)
-    result = asyncio.run(parser.parse_filter_plan("选课"))
+    result = asyncio.run(parser.parse_filter_plan("选课，不要早八"))
     assert cancelled == [True, True]                               # both attempts are bounded and cancelled
-    assert result["metrics"]["recovered_from"] == "model_timeout"   # "选课" carries no condition to lose
-    assert result["status"] == "validated" and result["plan"] == empty_filter_plan()
+    assert result["metrics"]["failure_reason"] == "model_timeout" and result["status"] == "fallback"
 
 
 def test_parser_validates_model_hard_rules_against_current_not_prior_request(monkeypatch):
@@ -359,7 +358,7 @@ def test_parser_validates_model_hard_rules_against_current_not_prior_request(mon
         return json.dumps(_hard("earliest_start", "10:00", old))
 
     monkeypatch.setattr(adapter, "_call_llm", call)
-    result = asyncio.run(parse_filter_plan("推荐容易拿A的课", {"history": [{"role": "user", "content": old}]}))
+    result = asyncio.run(parse_filter_plan("推荐容易拿A的课，下午也行", {"history": [{"role": "user", "content": old}]}))
     assert result["status"] == "downgraded"
     assert result["plan"]["hard_filters"]["earliest_start_is_hard"] is False
     assert result["metrics"]["failure_reason"] is None
@@ -369,12 +368,12 @@ def test_parser_validates_model_hard_rules_against_current_not_prior_request(mon
     ("推荐一下下学期的选课", True), ("帮我排下学期的课", True), ("what should I take next quarter", True),
     ("推荐下学期的课，周五绝对不能上课", False), ("不要早八", False), ("推荐3门课", True),
     ("只推荐我还缺的GE", False), ("no classes before 10am", False), ("下午的课", False), ("", False)])
-def test_only_a_sentence_with_no_condition_wording_survives_a_failed_parse(message, carries_nothing):
+def test_only_a_sentence_with_no_condition_wording_skips_the_parser(message, carries_nothing):
     from app.recommendations.filter_plan import states_no_condition
     assert states_no_condition(message) is carries_nothing
 
 
-def test_a_failed_parse_of_a_plain_request_goes_on_with_defaults_after_one_retry(monkeypatch):
+def test_a_plain_request_is_not_sent_to_the_parser_and_a_conditioned_one_gets_one_retry(monkeypatch):
     from app.llm import adapter
     from app.llm.filter_plan import parse_filter_plan
 
@@ -385,22 +384,12 @@ def test_a_failed_parse_of_a_plain_request_goes_on_with_defaults_after_one_retry
         replies.append(1)
         if len(replies) == 1:
             raise asyncio.TimeoutError()
-        return '{"type": "term_plan"}'
-
-    monkeypatch.setattr(adapter, "_call_llm", call)
-    result = asyncio.run(parse_filter_plan("推荐一下下学期的选课"))
-    assert result["status"] == "validated" and result["plan"] == empty_filter_plan() and result["issues"] == []
-    assert result["metrics"] == {**result["metrics"], "llm_calls": 2, "failure_reason": None,
-                                 "recovered_from": "model_invalid_schema"}
-
-    replies.clear()
-
-    async def second_time_lucky(*args, **kwargs):
-        replies.append(1)
-        if len(replies) == 1:
-            raise asyncio.TimeoutError()
         return "{}"
 
-    monkeypatch.setattr(adapter, "_call_llm", second_time_lucky)
+    monkeypatch.setattr(adapter, "_call_llm", call)
+    plain = asyncio.run(parse_filter_plan("推荐一下下学期的选课"))
+    assert replies == [] and plain["status"] == "validated" and plain["plan"] == empty_filter_plan()
+    assert plain["metrics"]["llm_calls"] == 0 and plain["metrics"]["skipped"] == "no_condition_in_message"
+
     retried = asyncio.run(parse_filter_plan("推荐下学期的课，周五绝对不能上课"))
-    assert retried["status"] == "validated" and "recovered_from" not in retried["metrics"]
+    assert replies == [1, 1] and retried["status"] == "validated" and "skipped" not in retried["metrics"]

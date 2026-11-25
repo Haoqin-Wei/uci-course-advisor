@@ -133,6 +133,8 @@ const ACTIVITY_KINDS = {
   summarize_professor_reviews: ['查了教授评价', 'looked up professor reviews'],
   check_section_conflict: ['检查了时间冲突', 'checked time conflicts'],
   get_student_profile: ['读取了你的资料', 'read your profile'],
+  plan_term: ['核对了毕业进度', 'checked your degree progress'],
+  update_academic_details: ['保存了学业档案', 'saved your academic details'],
   get_policy: ['查了学校政策', 'checked university policy'],
   web_search: ['搜索了网页', 'searched the web'],
   fetch_page: ['读了网页', 'read a web page'],

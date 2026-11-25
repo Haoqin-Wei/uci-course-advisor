@@ -547,6 +547,21 @@ def render_recommendation_answer(cards, language="zh", *, follow_up=None, **opti
     return f"{text}\n\n{note}" if note else text
 
 
+_NOT_STAGED_ZH = {"full": "实时课表显示它本学期的班次都已满", "restricted": "它的班次对你的年级有限制或已满",
+                  "no_section": "没有查到它本学期可选的班次", "pairing": "它必选的讨论或实验班没有可用的组合",
+                  "unavailable": "出卡片时没有找到可以选的班次",
+                  "time_conflict": "它有名额的讲座都和已排课程的讲座时间重叠"}
+_NOT_STAGED_EN = {"full": "the live timetable shows all of its sections full this term",
+                  "restricted": "its sections are restricted for your class level or full",
+                  "no_section": "no section to enroll in was found for this term",
+                  "pairing": "its required discussion or lab has no available combination",
+                  "unavailable": "no section to enroll in was found when its card was built",
+                  "time_conflict": "each of its lectures with room overlaps the lecture of a course already in the plan"}
+_WEEKDAY_ZH = {"Mon": "周一", "Tue": "周二", "Wed": "周三", "Thu": "周四", "Fri": "周五", "Sat": "周六", "Sun": "周日"}
+_WEEKDAY_EN = {"Mon": "Monday", "Tue": "Tuesday", "Wed": "Wednesday", "Thu": "Thursday", "Fri": "Friday",
+               "Sat": "Saturday", "Sun": "Sunday"}
+
+
 def plan_review_text(review, language="zh"):
     """What the server's check of a term plan found, as lines for the answer.
 
@@ -578,6 +593,14 @@ def plan_review_text(review, language="zh"):
                                                              if count > len(later) else "") if later else "")
             lines.append(f"Required course **{_text(entry.get('course_id'))}** is not in this plan{delay}."
                          + (f" Reason: {reason}" if reason else ""))
+    reasons = _NOT_STAGED_ZH if zh else _NOT_STAGED_EN
+    for entry in review.get("not_staged") or []:
+        entry = _mapping(entry)
+        why = reasons.get(entry.get("code")) or reasons["unavailable"]
+        if entry.get("code") == "time_conflict" and entry.get("clashes_with"):
+            why += (f"（{_text(entry['clashes_with'])}）" if zh else f" ({_text(entry['clashes_with'])})")
+        lines.append((f"**{_text(entry.get('course_id'))}** 没有排入：{why}。" if zh else
+                      f"**{_text(entry.get('course_id'))}** is not in the plan: {why}."))
     for key, zh_text, en_text in (
             ("removed_outside_tray", "已去掉不在你本学期可选范围内的课程：{}。",
              "Removed, not among the courses you can take toward your degree this term: {}."),
@@ -587,6 +610,19 @@ def plan_review_text(review, language="zh"):
             ("substituted", "已用毕业路径上的课程补位：{}。", "Filled the freed slot from the degree path: {}.")):
         if review.get(key):
             lines.append((zh_text if zh else en_text).format(names(review[key])))
+    rules = _mapping(review.get("time_rules"))
+    days = [day for day in rules.get("excluded_weekdays") or [] if day in _WEEKDAY_ZH]
+    start = rules.get("earliest_start") if re.fullmatch(r"\d{2}:\d{2}", str(rules.get("earliest_start") or "")) else None
+    if days or start:
+        # Says which of the student's time rules is in force, including one carried over from an earlier message.
+        if zh:
+            parts = ([("、".join(_WEEKDAY_ZH[day] for day in days)) + "不排课"] if days else []) + (
+                [f"{start} 之前不排课"] if start else [])
+            lines.append("这份计划按你提的时间条件排：" + "；".join(parts) + "。")
+        else:
+            parts = (["no classes on " + ", ".join(_WEEKDAY_EN[day] for day in days)] if days else []) + (
+                [f"nothing before {start}"] if start else [])
+            lines.append("This plan keeps to the time conditions you gave: " + "; ".join(parts) + ".")
     outside = [_mapping(entry).get("course_id") for entry in review.get("required_outside_time_condition") or []]
     if any(outside):
         lines.append(("这些专业必修本学期只有不符合你时间条件的班次，没有排入：{}。" if zh else
@@ -640,6 +676,9 @@ def _recommendation_text(cards, language="zh", *, gate=None, incomplete=False, f
         lines = ["**" + _text(card.get("course_id") or "Unknown course") + "**"]
         if _mapping(card.get("graduation_path")).get("tier") and card.get("reason"):
             lines.append(("推荐依据：" if zh else "Why: ") + card["reason"])
+        if card.get("all_sections_full") is True:
+            lines.append("本学期所有班次都已满：需要排等位名单，或联系开课院系。" if zh else
+                         "Every section is full this term: join the waitlist or contact the department.")
         selected = facts["selected_lecture"]
         if selected:
             identity = " ".join(_text(value) for value in (selected["type"], selected["num"]) if value)
@@ -650,6 +689,12 @@ def _recommendation_text(cards, language="zh", *, gate=None, incomplete=False, f
             schedule = " ".join(_text(value) for value in schedule_parts if value)
             lines.append(("当前主班：" if zh else "Current primary: ") + f"{identity} ({code})" +
                          (f"，{names}" if names else "") + (f"，{schedule}" if schedule else "") + "。")
+            moved = _mapping(card.get("lecture_moved"))
+            if moved.get("avoids"):
+                other = _text(moved.get("instead_of")) if moved.get("instead_of") else None
+                lines.append((f"为避开 **{_text(moved['avoids'])}** 的讲座时间，这里没有选排名更靠前的{(' ' + other) if other else '班次'}。" if zh else
+                              f"Chosen to stay clear of the **{_text(moved['avoids'])}** lecture"
+                              + (f", ahead of the higher-ranked {other}." if other else ".")))
         else:
             lines.append("当前主班信息待核实。" if zh else "The current primary section is unverified.")
         rank = facts["ranking"]

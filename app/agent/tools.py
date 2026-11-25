@@ -462,7 +462,9 @@ TOOL_SCHEMAS: list[dict] = [
             "name": "search_courses",
             "description": (
                 "Retrieve local catalog candidates for a specific term, optionally "
-                "filtered by department or GE category. Returns available catalog "
+                "filtered by department or GE category. To build or revise a term "
+                "plan (what to take, redo it, swap a course), call plan_term instead: "
+                "it returns the student's degree-path tray. Returns available catalog "
                 "metadata plus prefilter/ranking evidence when enabled; request "
                 "get_course_info only for missing details needed for a decision. "
                 "The local pool may be partial, and a candidate may have no verified "
@@ -545,6 +547,50 @@ TOOL_SCHEMAS: list[dict] = [
                 "in their profile, plus their preferences."
             ),
             "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "plan_term",
+            "description": (
+                "Build the degree-path tray for one term from the student's latest record (recorded "
+                "courses, courses in progress, exam and transfer credit, target major) and that "
+                "term's timetable: required courses they can take now, requirements with a choice, "
+                "missing GE categories with candidates, what is blocked and why, and a suggested "
+                "plan. Decide from the whole conversation, not from the wording of the last message: "
+                "call it when the student wants a plan for a term or is following up on one (redo "
+                "it, swap or drop a course, fewer courses, 'what about spring', why something is or "
+                "is not in it) and no tray for that term is in your context. After it returns, pick "
+                "inside the tray and call propose_recommendation once; never assemble a term plan "
+                "from search_courses, check_prerequisites_met or get_sections. Not for a question "
+                "about one course or professor, for listing what a department offers, or for a "
+                "request for one kind of course such as easy-A or GE-only courses."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "term": {
+                        "type": "string",
+                        "description": (
+                            "Term to plan, e.g. '2027 Winter'. If omitted, the single "
+                            "backend-resolved query term is used."
+                        ),
+                    },
+                    "conditions": {
+                        "type": "array",
+                        "maxItems": 4,
+                        "items": {"type": "string", "maxLength": 200},
+                        "description": (
+                            "Time or day rules the student stated in an EARLIER message of this "
+                            "conversation that still apply to the plan, each quoted exactly in "
+                            "their words, e.g. ['周五绝对不能上课']. The server reads the current "
+                            "message itself, so do not repeat rules from it. Omit when there are "
+                            "none, or when the student has since dropped them."
+                        ),
+                    },
+                },
+            },
         },
     },
     {
@@ -823,7 +869,8 @@ TOOL_SCHEMAS: list[dict] = [
             "description": (
                 "Use when actually recommending a SET of target-term course "
                 "options (e.g. a schedule or elective shortlist), after candidate "
-                "verification. When the dynamic recommendation gate is enabled, "
+                "verification. For a term plan, pick from the degree-path tray; when "
+                "none is in context, call plan_term first. When the dynamic recommendation gate is enabled, "
                 "it must be ready before calling this tool. Stages "
                 "a structured course-card list that the frontend renders as "
                 "click-to-add cards next to your prose. Prose alone does not "
@@ -1587,6 +1634,55 @@ def _tool_get_student_profile(*, context: dict) -> dict:
     return result
 
 
+async def _tool_plan_term(*, context: dict, term: Optional[str] = None, conditions=None) -> dict:
+    """The degree-path tray for a term plan the model asked for after reading the conversation."""
+    import asyncio
+
+    from app.agent import graduation
+
+    as_before = "No degree-path tray could be built, so answer this request with the other tools as before."
+    term = term or context.get("term")
+    if not config.dynamic_prefilter_enabled() or not term:
+        return {"ok": False, "available": False, "reason_code": "not_enabled", "next_step": as_before}
+    found = await asyncio.to_thread(db.get_student_profile, context.get("user_id", ""))
+    profile = (found.get("profile") if found.get("found") else {}) or {}
+    if not profile.get("program_id") or not profile.get("completed_courses"):
+        return {"ok": False, "available": False,
+                "reason_code": "no_program" if not profile.get("program_id") else "no_recorded_courses",
+                "next_step": as_before + " Tell the student that a target major and recorded courses "
+                             "(a transcript import) let a term plan follow their degree."}
+    outcome = await prefilter.start_term_plan(context, term, conditions)
+    not_found, ignored = outcome["not_found"], outcome["ignored"]
+    notes = {**({"conditions_not_found": not_found,
+                 "conditions_not_found_note": "These are not the student's exact words in this conversation "
+                                              "and were not applied. Tell the student."} if not_found else {}),
+             **({"conditions_without_a_rule": ignored} if ignored else {})}
+    gate = prefilter.recommendation_gate(context)
+    if not gate["ready"]:
+        return {"ok": False, "error_code": "conditions_unresolved", "recommendation_gate": gate, **notes,
+                "next_step": "A time or day condition the student stated could not be applied, so no plan was "
+                             "built. Say which one and ask them to restate it; do not propose courses this turn."}
+    path = graduation.tray(context, term)
+    if not path:
+        # Without a tray this turn goes on exactly as it would have without the call.
+        context.pop("_prefilter_state", None)
+        return {"ok": False, "available": False, "reason_code": "tray_not_built", **notes, "next_step": as_before}
+    hard = context["_prefilter_state"]["plan"].get("hard_filters") or {}
+    return {"ok": True, "term": term,
+            # Rebuilding nothing, repeating nothing: the tray is already in front of the model.
+            **({"tray": "unchanged: it is already in this turn's context (the 'graduation path' data, or "
+                        "your earlier plan_term result)"} if outcome["reused"] else
+               {"tray": {key: value for key, value in path.items() if key != "reasons"}}),
+            "time_rules_applied": {
+                "earliest_start": hard.get("earliest_start") if hard.get("earliest_start_is_hard") else None,
+                "excluded_weekdays": list(hard.get("excluded_weekdays") or [])},
+            **notes,
+            "next_step": "To give or revise a plan, pick inside the tray and call propose_recommendation once "
+                         "(items, note, left_out); the server checks the picks and writes the answer. "
+                         "search_courses is disabled for the rest of this turn. If the student only asked "
+                         "about the plan, answer from the tray without proposing."}
+
+
 def _tool_update_academic_details(*, context: dict, in_progress_courses=None, in_progress_term=None,
                                   official_major=None, ge_confirmed=None, ge_not_met=None,
                                   transfer_courses=None, declined=None, replace: bool = False) -> dict:
@@ -1737,6 +1833,9 @@ def _tool_propose_recommendation(
 
     cards: list[dict] = []
     skipped: list[dict] = []     # ack-only; LLM sees this so it knows what fell off
+    # Lectures already given to earlier cards, so two cards never show the same hour.
+    lecture_slots: list[tuple] = []
+    reserved_slots = _single_lecture_slots(context, items[:8], effective_term)
 
     # Cached per-call — same for every card in this batch since they
     # share `effective_term`. Cards get a copy attached so the frontend
@@ -1805,19 +1904,29 @@ def _tool_propose_recommendation(
                     if not s.get("is_cancelled") and s.get("section_code")]
         if not bookable:
             skipped.append({
-                "course_id": cid_canon,
+                "course_id": cid_canon, "code": "no_section",
                 "reason": (f"no usable target-term section code available for {effective_term}; "
                            "this absence alone does not establish not_offered or ineligibility"),
             })
             continue
 
         enrollable = [s for s in bookable if _section_enrollable(s, student_units)]
+        # On the degree path a full course keeps its card, marked full: whether
+        # to wait for a seat is the student's call, not a reason to hide it.
+        all_full = False
+        from app.agent import graduation
+        if graduation.card_reason(context, cid_canon):
+            permitted = [s for s in bookable
+                         if _section_allowed_for_class_level(s.get("restrictions") or "", student_units)]
+            if permitted and _blocked_by_full_sections(permitted, enrollable):
+                enrollable, all_full = permitted, True
         if not enrollable:
             # Diagnose why everything was filtered out so the LLM can
             # explain it to the user (and pick a different course).
             why = _diagnose_unenrollable(bookable, student_units)
+            only_full = all(s.get("status") == "FULL" for s in bookable)
             skipped.append({
-                "course_id": cid_canon,
+                "course_id": cid_canon, "code": "full" if only_full else "restricted",
                 "reason": f"no enrollable section in {effective_term}: {why}",
             })
             continue
@@ -1825,10 +1934,11 @@ def _tool_propose_recommendation(
         # All subsequent classification operates on the ENROLLABLE set
         # — the user only gets credit for things they can actually add.
         active = enrollable
-        if pairing_contract is not None:
+        # A full required course shows its sections as they are: none is available to pair.
+        if pairing_contract is not None and not all_full:
             active, pairing_availability = available_pairing_sections(pairing_contract, active)
             if pairing_availability == "unsatisfied":
-                skipped.append({"course_id": cid_canon, "reason": "verified required pairing has no complete available combination"})
+                skipped.append({"course_id": cid_canon, "code": "pairing", "reason": "verified required pairing has no complete available combination"})
                 continue
 
         # Classify sections into primary vs secondary. UCI WebReg
@@ -1837,6 +1947,10 @@ def _tool_propose_recommendation(
         # that must be paired with a primary on most courses. The
         # registrar rejects schedules that have only one half of the
         # pair — see ENROLLMENT_RULES in policies.py.
+        if not active:
+            skipped.append({"course_id": cid_canon, "code": "pairing",
+                            "reason": "no section remains after the pairing rules were applied"})
+            continue
         primaries, secondaries = _split_primary_secondary(active)
         # If there's no primary at all (rare: studio-only courses,
         # some labs), treat all sections as primary so the student
@@ -1850,7 +1964,7 @@ def _tool_propose_recommendation(
         orig_primaries, orig_secondaries = _split_primary_secondary(bookable)
         if pairing_contract is None and orig_primaries and orig_secondaries and not secondaries:
             skipped.append({
-                "course_id": cid_canon,
+                "course_id": cid_canon, "code": "full",
                 "reason": (f"all Dis/Lab sections of {cid_canon} are FULL — "
                            f"per registrar, the Lec becomes unenrollable when "
                            f"every secondary is full"),
@@ -1883,10 +1997,29 @@ def _tool_propose_recommendation(
             primaries = [row["section"] for row in ranked_sections]
             primary_rankings = {row["section"].get("section_code"): row["ranking"] for row in ranked_sections}
 
-        primary = primaries[0] if config.recommendation_ranking_enabled() else next(
+        preferred = primaries[0] if config.recommendation_ranking_enabled() else next(
             (s for s in primaries if (s.get("section_type") or "").lower().startswith("lec")),
             primaries[0],
         )
+        # The best-ranked lecture that does not sit on a lecture another card
+        # already has, or on the only lecture of a course still to come.
+        ordered = [preferred, *(s for s in primaries if s is not preferred)]
+        others = [entry for entry in reserved_slots if entry[1] != cid_canon]
+        primary, blocker = _lecture_beside(ordered, lecture_slots, others)
+        if primary is None and context.get("_plan_review"):
+            skipped.append({"course_id": cid_canon, "code": "time_conflict", "clashes_with": blocker,
+                            "reason": f"every lecture of {cid_canon} with room overlaps the lecture of {blocker}"})
+            continue
+        lecture_moved = None
+        if primary is None:
+            primary = preferred
+        elif primary is not preferred:
+            lecture_moved = {"instead_of": " ".join(str(value) for value in (
+                                 preferred.get("section_type"), preferred.get("section_num")) if value),
+                             "avoids": blocker}
+        slot = _lecture_slot(primary)
+        if slot:
+            lecture_slots.append((slot, cid_canon))
         primary_code = primary.get("section_code")
         selected_pairing = pairing_for_primary(pairing_contract, primary_code) if pairing_contract is not None else None
         # Reorder so primary comes first — the frontend treats
@@ -2047,6 +2180,11 @@ def _tool_propose_recommendation(
             path_reason = graduation.card_reason(context, cid_canon)
             if path_reason:
                 card["graduation_path"] = path_reason
+        if all_full:
+            card["all_sections_full"] = True
+        if lecture_moved:
+            card["lecture_moved"] = lecture_moved
+        if prefilter.active(context):
             if selected_pairing is not None and selected_pairing["requirement"] != "unknown":
                 card["prefilter"]["warnings"] = [warning for warning in card["prefilter"]["warnings"]
                     if warning.get("code") != "secondary_pairing_unknown"]
@@ -2089,10 +2227,30 @@ def _tool_propose_recommendation(
             -((card.get("ranking") or {}).get("final_score") or 0),
         ))
     review = context.get("_plan_review")
+    repick = None
     if review:
         # A term plan reads required courses first; a score does not reorder a degree path.
         position = {course: index for index, course in enumerate(review["courses"])}
         cards.sort(key=lambda card: position.get(card.get("course_id"), len(position)))
+        # A checked pick that could not get a card is never dropped in silence:
+        # the answer names it, and the model gets one chance to pick again.
+        squeeze = lambda value: "".join(str(value or "").split()).upper()  # noqa: E731
+        picked = {squeeze(course) for course in position}
+        review["not_staged"] = [{"course_id": entry["course_id"], "code": entry.get("code") or "unavailable",
+                                 **({"clashes_with": entry["clashes_with"]} if entry.get("clashes_with") else {})}
+                                for entry in skipped if squeeze(entry.get("course_id")) in picked]
+        # In a follow-up the check removes a bad pick without refilling its slot.
+        removed = ([*review.get("removed_outside_tray", []), *review.get("removed_for_time_conflict", [])]
+                   if review.get("follow_up") else [])
+        missing = [*(entry["course_id"] for entry in review["not_staged"]), *removed]
+        context["_plan_repick"] = bool(missing) and not context.get("_plan_repick_used")
+        if context["_plan_repick"]:
+            context["_plan_repick_used"] = True
+            repick = ("These picks are not in the plan: " + ", ".join(missing) + " (not staged: see skipped; "
+                      "removed: outside the tray, or a lecture-time clash). Call propose_recommendation once "
+                      "more with the complete set, replacing each of them with another course from the same "
+                      "tray tier or GE category. Do not bring back a course the student asked to drop or swap "
+                      "out. If nothing in the tray can replace one, propose the rest and say so in note.")
 
     pending_sections = resolve_pending_schedule_sections(
         context.get("pending_schedule") or [],
@@ -2127,6 +2285,7 @@ def _tool_propose_recommendation(
         "staged_count": len(cards),
         "skipped_count": len(skipped),
         "skipped": skipped,
+        **({"next_step": repick} if repick else {}),
         "term": effective_term,
         "course_ids": [c["course_id"] for c in cards],
         "primary_codes": [c.get("primary_code") for c in cards],
@@ -2334,6 +2493,65 @@ def _section_enrollable(s: dict, units: Optional[float]) -> bool:
     if not _section_allowed_for_class_level(s.get("restrictions") or "", units):
         return False
     return True
+
+
+def _lecture_slot(section: dict):
+    from app.recommendations.graduation_path import _slot
+    return _slot(section)
+
+
+def _lecture_beside(ordered: list[dict], taken: list[tuple], reserved: list[tuple]):
+    """``(section, None)`` for the first section clear of every other lecture,
+    falling back to one clear of the lectures already given; ``(section, course)``
+    names the course the preferred section had to step aside for. ``(None,
+    course)`` when every section overlaps a lecture already given.
+
+    Only lectures are compared: a course usually has several discussions or
+    labs to choose from, so those are left to the student.
+    """
+    from app.recommendations.graduation_path import _clash
+
+    def hit(section, slots):
+        slot = _lecture_slot(section)
+        return next((course for other, course in slots if _clash(slot, other)), None) if slot else None
+
+    first_blocker = hit(ordered[0], taken) or hit(ordered[0], reserved)
+    for slots in ([*taken, *reserved], taken):
+        for section in ordered:
+            if hit(section, slots) is None:
+                return section, (first_blocker if section is not ordered[0] else None)
+    return None, first_blocker
+
+
+def _single_lecture_slots(context: dict, items: list, term: str) -> list[tuple]:
+    """Lecture hours that a picked course cannot move away from: the courses on
+    the degree-path tray whose lectures all meet at one time."""
+    from app.agent import graduation
+    from app.recommendations.graduation_path import _primary_sections, compact
+
+    if not graduation.tray(context, term):
+        return []
+    rows = {compact(row.get("course_id")): row
+            for (row_term, _), row in (context.get("_prefilter_state") or {}).get("candidates", {}).items()
+            if row_term == term}
+    found = []
+    for item in items:
+        row = rows.get(compact((item or {}).get("course_id"))) if isinstance(item, dict) else None
+        slots = [_lecture_slot(section) for section in _primary_sections(row or {})]
+        if slots and all(slots) and all(slot == slots[0] for slot in slots):
+            found.append((slots[0], row.get("course_id")))
+    return found
+
+
+def _blocked_by_full_sections(permitted: list[dict], enrollable: list[dict]) -> bool:
+    """True when full sections alone keep the course from being added: no
+    open section at all, or none left of a kind the course has (every lecture,
+    or every discussion/lab)."""
+    if not enrollable:
+        return True
+    all_primary, all_secondary = _split_primary_secondary(permitted)
+    open_primary, open_secondary = _split_primary_secondary(enrollable)
+    return bool((all_primary and not open_primary) or (all_secondary and not open_secondary))
 
 
 def _diagnose_unenrollable(bookable: list[dict],
@@ -2697,6 +2915,7 @@ DISPATCH: dict[str, Callable[..., dict]] = {
     "check_section_conflict":   _tool_check_section_conflict,
     "get_student_profile":      _tool_get_student_profile,
     "update_academic_details":  _tool_update_academic_details,
+    "plan_term":                _tool_plan_term,
     "get_policy":               _tool_get_policy,
     "get_department_restrictions": _tool_get_department_restrictions,
     "web_search":               _tool_web_search,
@@ -2717,6 +2936,7 @@ TERM_SCOPED_TOOLS = {
     "check_section_conflict",
     "get_department_restrictions",
     "propose_recommendation",
+    "plan_term",
 }
 
 
@@ -2991,6 +3211,8 @@ def humanize_tool_call(name: str, args: dict, response_language: str = "en") -> 
         return "读取学生画像" if zh else "Reading student profile"
     if name == "update_academic_details":
         return "保存学业档案" if zh else "Saving academic details"
+    if name == "plan_term":
+        return ("核对毕业进度" if zh else "Checking your degree progress") + term_suffix
     if name == "get_policy":
         topic = a.get("topic")
         if not topic:

@@ -99,7 +99,7 @@ logger = logging.getLogger(__name__)
 _GRADE_CONTEXT_KEYS = ("_zotistics_results", "_grade_charts", "_recommendation_sections",
                        "_ranking_profile", "_recommendation_proposed", "_recommendation_card_facts",
                        "query_course_ids", "_prefilter_state", "_controlled_recommendation",
-                       "_controlled_recommendation_cards")
+                       "_controlled_recommendation_cards", "_plan_review", "_plan_repick", "_plan_repick_used")
 
 
 def _grade_snapshot(context):
@@ -170,6 +170,12 @@ def _controlled_card_event(context, staged, term, *, fallback=False):
             "controlled_recommendation": True, **({"from_fallback": True} if fallback else {})}
 
 
+async def _no_stream():
+    """A model reply with nothing in it, for a turn the server finishes itself."""
+    return
+    yield  # pragma: no cover - makes this an async generator
+
+
 def controlled_recommendation_result(context, *, incomplete=False, failure_reason=None):
     """Render only validated backend facts, never a provider's prose."""
     from app.recommendations.presentation import render_recommendation_answer
@@ -225,8 +231,9 @@ MAX_ITERATIONS = 12
 # Allow course searches, eligibility checks, and professor lookups enough
 # room to reach recommendation cards and the final explanation.
 MAX_TOTAL_TOOLS = 50
+# plan_term opens turn state from the student's record as it stands when called.
 IDEMPOTENT_TERM_READ_TOOLS = frozenset(
-    agent_tools.TERM_SCOPED_TOOLS - {"propose_recommendation"}
+    agent_tools.TERM_SCOPED_TOOLS - {"propose_recommendation", "plan_term"}
 )
 _OFFERING_SEARCH_MARKERS = (
     "schedule of classes",
@@ -311,6 +318,7 @@ _FAILURE_KEY_IGNORED_ARGS = frozenset({"restriction_type", "follow_links", "reas
 # errors (a prefilter asking for a step first, a timeout) may pass on retry.
 _FAILURES_NOT_WORTH_REPEATING = frozenset({
     "department_not_in_term",
+    "conditions_unresolved",
     "websoc_comments_missing",
     "websoc_department_unavailable",
     "provider_network_error",
@@ -1083,6 +1091,10 @@ async def _run_loop(
         tool_context.setdefault("_controlled_recommendation_cards", [])
         yield {"type": "response_mode", "controlled_recommendation": True,
                "response_language": response_language}
+    from app.llm.safety import student_turns
+    # The student's own messages: a term plan the model asks for later in the
+    # turn may carry over a time rule only in words found here.
+    tool_context["_student_turns"] = student_turns(messages)
     await prefilter.initialize(tool_context, messages)
     workflow_route = route_solution(user_query, term=term)
     primary_plan = build_primary_workflow_plan(workflow_route)
@@ -1276,43 +1288,53 @@ async def _run_loop(
             history_hint_message=history_hint_message,
         )
         request_messages = _messages_with_run_hints(messages, hint_messages)
-        prompt_layers = observability.estimate_prompt_layers(
-            request_messages,
-            tool_schemas=agent_tools.TOOL_SCHEMAS,
-        )
-        observability.increment(
-            "llm.input_tokens",
-            prompt_layers["total_input"],
-            model=model,
-            source="layered_estimate",
-        )
-        observability.log_event(
-            logger,
-            logging.INFO,
-            "llm_prompt_layers",
-            model=model,
-            iteration=iteration,
-            **prompt_layers,
-        )
-        try:
-            response = await client.chat.completions.create(
-                model=model,
-                messages=request_messages,
-                tools=agent_tools.TOOL_SCHEMAS,
-                tool_choice="auto",
-                stream=True,
+        # A term plan the server checked and staged is the answer: its text is
+        # written by the server, so another model call would only cost time.
+        plan_staged = (controlled_output and bool(tool_context.get("_plan_review"))
+                       and bool(tool_context.get("_controlled_recommendation_cards"))
+                       # ...unless a pick fell out while its card was built: the model picks again, once.
+                       and not tool_context.get("_plan_repick"))
+        if plan_staged:
+            observability.log_event(logger, logging.INFO, "plan_staged_final_call_skipped", iteration=iteration)
+            response = _no_stream()
+        else:
+            prompt_layers = observability.estimate_prompt_layers(
+                request_messages,
+                tool_schemas=agent_tools.TOOL_SCHEMAS,
             )
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logger.error("[agent] LLM call failed (iter %d): %s: %s",
-                         iteration, type(e).__name__, e)
-            if controlled_output:
-                for event in _controlled_failure_events(tool_context, "model_unavailable"):
-                    yield event
+            observability.increment(
+                "llm.input_tokens",
+                prompt_layers["total_input"],
+                model=model,
+                source="layered_estimate",
+            )
+            observability.log_event(
+                logger,
+                logging.INFO,
+                "llm_prompt_layers",
+                model=model,
+                iteration=iteration,
+                **prompt_layers,
+            )
+            try:
+                response = await client.chat.completions.create(
+                    model=model,
+                    messages=request_messages,
+                    tools=agent_tools.TOOL_SCHEMAS,
+                    tool_choice="auto",
+                    stream=True,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error("[agent] LLM call failed (iter %d): %s: %s",
+                             iteration, type(e).__name__, e)
+                if controlled_output:
+                    for event in _controlled_failure_events(tool_context, "model_unavailable"):
+                        yield event
+                    return
+                yield {"type": "error", "message": f"LLM call failed: {e}"}
                 return
-            yield {"type": "error", "message": f"LLM call failed: {e}"}
-            return
 
         accumulated_content = ""
         # DeepSeek's reasoning-mode models emit `reasoning_content`
@@ -1603,6 +1625,12 @@ async def _run_loop(
                     result = {"error": f"{type(e).__name__}: {e}"}
             if professor_grades and isinstance(result, dict):
                 result = {**result, "historical_grades": professor_grades}
+            if not controlled_output and tool_context.get("_controlled_recommendation") is True:
+                # A plan picked from a tray the model asked for mid-turn: from here
+                # the server writes the answer, as for a request it recognised itself.
+                controlled_output = True
+                yield {"type": "response_mode", "controlled_recommendation": True,
+                       "response_language": response_language}
             if (tc["name"] == "get_live_sections" and args.get("force_refresh") is True
                     and (config.dynamic_prefilter_enabled() or config.recommendation_ranking_enabled())):
                 # A new rule/timetable snapshot invalidates earlier read tools,
@@ -1936,6 +1964,10 @@ async def _emit_limit_reached_and_fallback(
             logger.warning("[agent fallback] propose_recommendation dispatch failed: %s",
                            result.get("error"))
             continue
+        if not controlled_output and tool_context.get("_controlled_recommendation") is True:
+            controlled_output = True      # a plan picked from a tray the model asked for
+            yield {"type": "response_mode", "controlled_recommendation": True,
+                   "response_language": response_language}
         staged = tool_context.pop("_proposed_cards", None)
         if staged is not None:
             if controlled_output:

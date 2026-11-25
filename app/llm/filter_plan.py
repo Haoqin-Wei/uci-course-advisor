@@ -105,8 +105,13 @@ async def parse_filter_plan(user_message: str, conversational_context: object = 
     calls = 0
     failure = None
     result = None
+    # No time, day, GE or must/cannot wording: there is no rule to extract, so
+    # the model is not asked. (Its labels are not used for anything else.)
+    plain = isinstance(user_message, str) and adapter.LLM_ENABLED and states_no_condition(user_message)
+    if plain:
+        result = {"plan": empty_filter_plan(), "status": "validated", "issues": []}
     # One retry: a timeout or a malformed reply is usually a one-off.
-    for _ in range(PARSER_ATTEMPTS):
+    for _ in range(0 if plain else PARSER_ATTEMPTS):
         failure = None
         try:
             if not isinstance(user_message, str):
@@ -144,19 +149,12 @@ async def parse_filter_plan(user_message: str, conversational_context: object = 
         if failure not in _RETRYABLE:
             break
 
-    recovered = None
-    if failure in _RETRYABLE and states_no_condition(user_message):
-        # The parser never answered, but the sentence carries no time, day,
-        # GE or must/cannot wording: there was no rule for it to find. Go on
-        # with the defaults instead of asking the student to restate
-        # conditions they never gave.
-        result = {"plan": empty_filter_plan(), "status": "validated", "issues": []}
-        recovered, failure = failure, None
     if failure is not None:
         result = {"plan": empty_filter_plan(), "status": "fallback", "issues": [failure]}
     result["metrics"] = {"parse_elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
                          "llm_calls": calls, "failure_reason": failure,
-                         **({"recovered_from": recovered} if recovered else {})}
-    logger.info("Filter plan status=%s parse_elapsed_ms=%.1f llm_calls=%d failure_reason=%s recovered_from=%s",
-                result["status"], result["metrics"]["parse_elapsed_ms"], calls, failure, recovered)
+                         **({"skipped": "no_condition_in_message"} if plain else {})}
+    logger.info("Filter plan status=%s parse_elapsed_ms=%.1f llm_calls=%d failure_reason=%s skipped=%s",
+                result["status"], result["metrics"]["parse_elapsed_ms"], calls, failure,
+                result["metrics"].get("skipped"))
     return result

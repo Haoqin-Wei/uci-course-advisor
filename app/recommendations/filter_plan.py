@@ -349,11 +349,11 @@ _CONDITION_WORDS = re.compile(
 
 
 def states_no_condition(message: object) -> bool:
-    """True when the message cannot be carrying a rule a failed parse would lose.
+    """True when the message cannot be carrying a rule for the parser to extract.
 
-    Used only after the parser failed. Any digit, clock time, weekday, part
-    of the day, GE mention or "must / cannot / only" wording counts as a
-    possible condition, so the error is on the side of stopping to ask.
+    Such a message is not sent to the parser at all. Any clock time, weekday,
+    part of the day, GE mention or "must / cannot / only" wording counts as a
+    possible condition, so the error is on the side of asking the model.
     """
     if not isinstance(message, str) or not message.strip():
         return False

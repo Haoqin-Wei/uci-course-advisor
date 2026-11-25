@@ -23,12 +23,14 @@ def _clean(text, limit: int) -> Optional[str]:
 
 
 def review_picks(path: Mapping, picks, rows: Mapping[str, Mapping], *, left_out=None, note=None,
-                 max_items: int = 8) -> dict:
+                 max_items: int = 8, substitute: bool = True) -> dict:
     """The picks to stage, in tier order, and every change made to them.
 
     ``rows`` maps compact course IDs to this term's candidate rows (for
     lecture times). ``left_out`` is the model's own account of required
-    courses it dropped: ``[{course_id, reason}]``.
+    courses it dropped: ``[{course_id, reason}]``. With ``substitute`` off a
+    removed pick leaves its slot empty: in a follow-up the server's own plan
+    may hold the very course the student asked to swap out.
     """
     tray = {compact(course): reason for course, reason in (path.get("reasons") or {}).items()}
     name = {compact(course): course for course in path.get("reasons") or {}}
@@ -86,7 +88,7 @@ def review_picks(path: Mapping, picks, rows: Mapping[str, Mapping], *, left_out=
     # A removed pick is replaced from the server's own plan, never from outside
     # the tray, and never with a course the model said it was leaving out.
     substitutes: list[str] = []
-    for course in planned:
+    for course in planned if substitute else []:
         if len(substitutes) >= len(outside) + len(clashed) or len(kept) >= max_items:
             break
         if (course in tray and course not in kept and course not in stated

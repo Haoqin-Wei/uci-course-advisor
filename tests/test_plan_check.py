@@ -132,7 +132,7 @@ def test_without_a_tray_nothing_changes(monkeypatch):
     assert error is None and args["items"] == items and "_plan_review" not in context
     # A tray built for another term does not govern this one.
     other = _context(monkeypatch, path={**PATH, "term": "2027 Spring"})
-    assert graduation.review_proposal(other, {"items": items}, TERM) == {"items": items}
+    assert graduation.review_proposal(other, {"items": items}, TERM) == ({"items": items}, None)
 
 
 def test_a_complete_term_plan_says_how_to_ask_for_a_list_instead(monkeypatch):
@@ -148,3 +148,81 @@ def test_a_complete_term_plan_says_how_to_ask_for_a_list_instead(monkeypatch):
     assert chat._controlled_agent_reply(result["cards"], "zh", result) == result["text"]
     plain = loop.controlled_recommendation_result({key: value for key, value in context.items() if key != "_plan_review"})
     assert "follow_up" not in plain and "lead" not in plain
+
+
+def test_in_a_follow_up_a_removed_pick_leaves_its_slot_for_the_model_to_fill():
+    review = review_picks(PATH, ["EARTHSS 3", "PHYSICS 7D", "PHYSICS 7LD", "EECS 31L"], ROWS, substitute=False)
+    assert review["removed_outside_tray"] == ["EARTHSS 3"] and review["substituted"] == []
+    assert review["courses"] == ["PHYSICS 7D", "PHYSICS 7LD", "EECS 31L"]       # SOC SCI 4A is not put back
+    assert review_picks(PATH, ["EARTHSS 3"], ROWS, substitute=False)["courses"] == []
+
+
+def test_a_pick_that_got_no_card_and_a_full_required_course_are_both_said_out_loud():
+    review = {"courses": ["ICS 46", "HISTORY 10"], "changed": False,
+              "not_staged": [{"course_id": "HISTORY 10", "code": "full"}, {"course_id": "X 1", "code": "other"}]}
+    text = plan_review_text(review, "zh")
+    assert "**HISTORY 10** 没有排入：实时课表显示它本学期的班次都已满。" in text
+    assert "**X 1** 没有排入：出卡片时没有找到可以选的班次。" in text
+    assert "**HISTORY 10** is not in the plan: the live timetable shows all of its sections full this term." in plan_review_text(review, "en")
+    full = render_recommendation_answer([{"course_id": "ENGR 190W", "term": TERM, "all_sections_full": True}], "zh")
+    assert "本学期所有班次都已满：需要排等位名单，或联系开课院系。" in full
+    assert "已满" not in render_recommendation_answer([{"course_id": "ENGR 190W", "term": TERM}], "zh")
+
+
+def test_only_full_sections_let_a_tray_course_keep_its_card_marked_full():
+    from app.agent.tools import _blocked_by_full_sections
+    lec, dis = {"section_code": "1", "section_type": "Lec"}, {"section_code": "2", "section_type": "Dis"}
+    assert _blocked_by_full_sections([lec, dis], []) is True
+    assert _blocked_by_full_sections([lec, dis], [lec]) is True              # every discussion is full
+    assert _blocked_by_full_sections([lec, dis], [dis]) is True              # every lecture is full
+    assert _blocked_by_full_sections([lec, dis], [lec, dis]) is False
+    assert _blocked_by_full_sections([lec], [lec]) is False
+
+
+def _lec(code, days, start, end, num="A"):
+    return {"section_code": code, "section_type": "Lec", "section_num": num, "days": days, "start_time": start, "end_time": end}
+
+
+def test_a_card_takes_the_best_lecture_that_is_clear_of_the_other_cards():
+    from app.agent.tools import _lecture_beside, _lecture_slot
+    best, same_prof, online = _lec("3", "TuTh", "12:30", "13:50", "C"), _lec("4", "TuTh", "14:00", "15:20", "D"), {
+        "section_code": "1", "section_type": "Lec", "section_num": "A"}
+    taken = [(_lecture_slot(_lec("9", "TuTh", "12:30", "13:50")), "I&C SCI 6B")]
+    assert _lecture_beside([best, same_prof, online], [], []) == (best, None)
+    assert _lecture_beside([best, same_prof, online], taken, []) == (same_prof, "I&C SCI 6B")
+    assert _lecture_beside([online, best], taken, []) == (online, None)       # no published time: nothing against it
+    assert _lecture_beside([best], taken, []) == (None, "I&C SCI 6B")
+
+
+def test_a_card_leaves_the_only_lecture_hour_of_a_later_course_free_when_it_can():
+    from app.agent.tools import _lecture_beside, _lecture_slot
+    best, other = _lec("3", "MWF", "10:00", "10:50"), _lec("4", "MWF", "11:00", "11:50", "B")
+    later = [(_lecture_slot(_lec("9", "MWF", "10:00", "10:50")), "EECS 31L")]
+    assert _lecture_beside([best, other], [], later) == (other, "EECS 31L")
+    assert _lecture_beside([best], [], later) == (best, None)                 # nowhere else to go: first come
+
+
+def test_only_lectures_are_compared_and_discussions_are_left_to_the_student():
+    from app.agent.tools import _single_lecture_slots
+    rows = {(TERM, "ICS 6B"): {"course_id": "ICS 6B", "sections": [
+                _lec("1", "TuTh", "12:30", "13:50"),
+                {"section_code": "2", "section_type": "Dis", "days": "MW", "start_time": "17:00", "end_time": "17:50"}]},
+            (TERM, "SOC SCI 172AW"): {"course_id": "SOC SCI 172AW", "sections": [
+                _lec("3", "TuTh", "12:30", "13:50", "C"), _lec("4", "TuTh", "14:00", "15:20", "D")]}}
+    context = {"_prefilter_state": {"graduation_path": {"term": TERM}, "candidates": rows}}
+    found = _single_lecture_slots(context, [{"course_id": "ICS 6B"}, {"course_id": "SOC SCI 172AW"}], TERM)
+    assert [course for _, course in found] == ["ICS 6B"]
+    assert _single_lecture_slots({}, [{"course_id": "ICS 6B"}], TERM) == []
+
+
+def test_a_moved_lecture_and_a_pick_with_no_free_lecture_are_said_out_loud():
+    card = {"course_id": "SOC SCI 172AW", "term": TERM, "primary_code": "70380",
+            "lecture_moved": {"instead_of": "Lec C", "avoids": "I&C SCI 6B"},
+            "section_groups": [{"letter": "D", "secondaries": [], "primary": {
+                "code": "70380", "num": "D", "type": "Lec", "days": "TuTh", "time": "TuTh 2:00- 3:20p"}}]}
+    text = render_recommendation_answer([card], "zh")
+    assert "为避开 **I&C SCI 6B** 的讲座时间，这里没有选排名更靠前的 Lec C。" in text
+    assert "为避开" not in render_recommendation_answer([{**card, "lecture_moved": None}], "zh")
+    review = {"courses": ["ICS 46"], "changed": False,
+              "not_staged": [{"course_id": "ICS 6B", "code": "time_conflict", "clashes_with": "EECS 31L"}]}
+    assert "**ICS 6B** 没有排入：它有名额的讲座都和已排课程的讲座时间重叠（EECS 31L）。" in plan_review_text(review, "zh")

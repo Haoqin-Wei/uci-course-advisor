@@ -211,7 +211,11 @@ def _fit(row: Mapping, taken: list) -> tuple[Optional[Mapping], bool]:
     clashes. A section without a published time fits, since nothing is known
     against it.
     """
-    for section in _primary_sections(row):
+    primary = _primary_sections(row)
+    # The card stage offers the sections with room; only a course that is full
+    # throughout is shown with all of them.
+    with_room = [section for section in primary if str(section.get("status") or "").upper() != "FULL"]
+    for section in with_room or primary:
         slot = _slot(section)
         if slot is None or not any(_clash(slot, other) for other in taken):
             return section, True
@@ -228,6 +232,23 @@ def _only_time_rules(record: Mapping) -> bool:
     found = {reason for section in record.get("excluded_sections") or [] if isinstance(section, Mapping)
              for reason in section.get("reasons") or []}
     return bool(found & _TIME_RULES)
+
+
+def all_sections_full(row: Mapping) -> bool:
+    """Every lecture is full, or every discussion/lab the course has is.
+
+    Read from the timetable the pool was built from; the card stage looks at
+    the live one. Waitlisted sections are not full: a student can join.
+    """
+    sections = [section for section in row.get("sections") or []
+                if isinstance(section, Mapping) and not section.get("is_cancelled") and section.get("section_code")]
+    if not sections:
+        return False
+    primary = _primary_sections(row)
+    codes = {section.get("section_code") for section in primary}
+    secondary = [section for section in sections if section.get("section_code") not in codes]
+    full = lambda group: bool(group) and all(str(s.get("status") or "").upper() == "FULL" for s in group)  # noqa: E731
+    return full(primary) or full(secondary)
 
 
 # ── the path ─────────────────────────────────────────────
@@ -318,7 +339,8 @@ def build_graduation_path(
                         "unlock_count": len(following), "unlocks": following[:6],
                         "offered_quarters": quarters,
                         "only_quarter": quarters[0] if len(quarters) == 1 else None,
-                        "take_with": companions}
+                        "take_with": companions,
+                        **({"all_sections_full": True} if all_sections_full(candidates[course]) else {})}
                 required_now.append(item)
                 reasons[course] = {"tier": "required", "requirement": need["label"],
                                    "unlock_count": len(following), "unlocks": following[:3],
@@ -348,14 +370,21 @@ def build_graduation_path(
             and (info(course).get("numeric") or 0) < 200]
 
     wanted_evidence = sorted({course for choice in choices for course in choice["_takeable"]}
-                             | {course for pool in ge_pool.values() for course in pool})
+                             | {course for pool in ge_pool.values() for course in pool} | placed)
     facts = dict(evidence(wanted_evidence) or {}) if evidence and wanted_evidence else {}
+    # Required courses carry the same figures: they never justify taking one,
+    # but an "easier term" request is a swap, and a swap needs something to compare.
+    for item in required_now:
+        fact = facts.get(compact(item["course_id"])) or {}
+        item.update({key: fact.get(key) for key in ("a_rate", "a_rate_sample", "rating", "rating_sample")})
 
     def measured(course: str) -> dict:
         fact = facts.get(course) or {}
         return {"course_id": display(course), "title": info(course).get("title"), "units": units_of(course),
                 **{key: fact.get(key) for key in ("a_rate", "a_rate_sample", "a_rate_scope",
-                                                  "rating", "rating_sample", "instructor")}}
+                                                  "rating", "rating_sample", "instructor")},
+                # A mark for the student, not a filter: a full course is still theirs to chase.
+                **({"all_sections_full": True} if all_sections_full(candidates[course]) else {})}
 
     def by_evidence(course: str):
         fact = facts.get(course) or {}

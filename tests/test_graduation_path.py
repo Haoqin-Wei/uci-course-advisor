@@ -106,7 +106,10 @@ def test_required_courses_are_ordered_by_what_waits_on_them_not_by_grades():
     first = required[0]
     assert first["unlock_count"] == 3 and set(first["unlocks"]) == {"ICS46", "CS161", "CS141"}
     assert required[1]["unlock_count"] == 1          # ICS 6B only holds back CS 161
-    assert all("a_rate" not in item for item in required)
+    # The figures ride along for an "easier term" swap; they do not order the list.
+    graded = path(evidence=lambda ids: {"ICS6B": {"a_rate": 0.9, "rating": 4.8}})["required_now"]
+    assert [item["course_id"] for item in graded] == [item["course_id"] for item in required]
+    assert graded[1]["a_rate"] == 0.9 and graded[0]["a_rate"] is None
 
 
 def test_a_lab_taken_alongside_is_a_companion_not_something_unlocked():
@@ -238,3 +241,49 @@ def test_a_rejected_plan_logs_where_the_schema_broke_and_not_the_text(caplog):
     with caplog.at_level("INFO"):
         assert validate_filter_plan({"type": "PRIVATE"}, "推荐一下下学期的选课")["status"] == "fallback"
     assert "type:extra_forbidden" in caplog.text and "PRIVATE" not in caplog.text
+
+
+def _status(row_, status):
+    return {**row_, "sections": [{**section, "status": status} for section in row_["sections"]]}
+
+
+def test_a_full_course_stays_on_the_tray_and_is_only_marked():
+    rows = candidates()
+    plain = path(candidates=rows)
+    rows.update(SOC1=_status(rows["SOC1"], "FULL"), CS132=_status(rows["CS132"], "FULL"),
+                CSE90=_status(rows["CSE90"], "FULL"), ANTH2=_status(rows["ANTH2"], "Waitl"))
+    result = path(candidates=rows)
+    listed = lambda found: {item["course_id"]: item for item in (                      # noqa: E731
+        *found["required_now"], *(alt for choice in found["choose"] for alt in choice["alternatives"]),
+        *(item for entry in found["ge"]["categories"] for item in entry.get("candidates", [])))}
+    marked = listed(result)
+    assert set(marked) == set(listed(plain))                         # nothing is taken off for being full
+    assert [item["course_id"] for item in result["suggested_plan"]["courses"]] == [
+        item["course_id"] for item in plain["suggested_plan"]["courses"]]
+    assert {name for name, item in marked.items() if item.get("all_sections_full")} == {"SOC 1", "CS 132", "CSE 90"}
+    assert "all_sections_full" not in marked["ANTH 2"]               # a waitlist can still be joined
+    assert not any("full_courses" in entry for entry in (*result["choose"], *result["ge"]["categories"]))
+
+
+def test_a_full_required_course_still_covers_its_ge_category():
+    rows = candidates(CSE90=_status(row("CSE 90", "Tu", "14:00", "15:20", ge=("VII",)), "FULL"))
+    ge = {entry["category"]: entry for entry in path(candidates=rows)["ge"]["categories"]}
+    assert ge["VII"]["covered_by_required_course"] == ["CSE 90"] and ge["VII"]["candidates"] == []
+
+
+def test_a_lecture_with_room_is_tried_before_a_full_one():
+    from app.recommendations.graduation_path import _fit, _slot
+    lec = lambda code, start, status: {"section_code": code, "section_type": "Lec", "days": "MWF",   # noqa: E731
+                                       "start_time": start, "end_time": start[:3] + "50", "status": status}
+    taken = [_slot(lec("9", "10:00", "OPEN"))]
+    section, fits = _fit({"sections": [lec("1", "11:00", "FULL"), lec("2", "10:00", "OPEN")]}, taken)
+    assert (section, fits) == (None, False)                          # the free hour belongs to a full lecture
+    assert _fit({"sections": [lec("1", "11:00", "FULL"), lec("2", "10:00", "FULL")]}, taken)[0]["section_code"] == "1"
+
+
+def test_every_discussion_full_counts_as_full_and_one_open_lecture_does_not():
+    from app.recommendations.graduation_path import all_sections_full
+    lec = {"section_code": "1", "section_type": "Lec", "status": "OPEN"}
+    assert all_sections_full({"sections": [lec, {"section_code": "2", "section_type": "Dis", "status": "FULL"}]}) is True
+    assert all_sections_full({"sections": [lec, {**lec, "section_code": "3", "status": "FULL"}]}) is False
+    assert all_sections_full({"sections": []}) is False and all_sections_full({"sections": [{**lec, "status": None}]}) is False
